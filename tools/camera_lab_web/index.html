@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera Lab</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">ComfyUI Camera Test Bench</div>
+      <h1>Camera Lab</h1>
+    </div>
+    <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel setup-panel">
+      <div class="section-title">
+        <span>Experiment</span>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <label>
+        Workflow
+        <select id="workflowSelect"></select>
+      </label>
+
+      <label>
+        Camera move
+        <select id="moveSelect"></select>
+      </label>
+
+      <label>
+        Source image
+        <input id="sourceInput" type="file" accept="image/*">
+        <span id="sourceStatus" class="hint">No image uploaded</span>
+      </label>
+      <div class="source-preview">
+        <img id="sourcePreview" alt="source preview">
+      </div>
+      <div id="swapSourceEndWrap" class="swap-row">
+        <button id="swapSourceEndBtn" type="button">Swap Source / End</button>
+      </div>
+      <div id="swapSourceMiddleWrap" class="swap-row">
+        <button id="swapSourceMiddleBtn" type="button">Swap Source / Middle</button>
+      </div>
+
+      <label id="middleImageWrap">
+        Middle image
+        <input id="middleInput" type="file" accept="image/*">
+        <span id="middleStatus" class="hint">No image uploaded</span>
+      </label>
+      <div id="middlePreviewWrap" class="source-preview">
+        <img id="middlePreview" alt="middle image preview">
+      </div>
+      <div id="swapMiddleEndWrap" class="swap-row">
+        <button id="swapMiddleEndBtn" type="button">Swap Middle / End</button>
+      </div>
+
+      <label id="endImageWrap">
+        End image
+        <input id="endInput" type="file" accept="image/*">
+        <span id="endStatus" class="hint">No image uploaded</span>
+      </label>
+      <div id="endPreviewWrap" class="source-preview">
+        <img id="endPreview" alt="end image preview">
+      </div>
+
+      <div class="grid-2">
+        <label>
+          Duration
+          <input id="durationInput" type="number" min="1" max="12" step="0.5" value="4">
+        </label>
+        <label>
+          Frame size
+          <select id="sizePreset">
+            <option value="512x512">1:1</option>
+            <option value="1280x720" selected>16:9</option>
+            <option value="720x1280">9:16</option>
+            <option value="768x1152">2:3</option>
+            <option value="1152x768">3:2</option>
+          </select>
+        </label>
+      </div>
+
+      <label>
+        Scale <span id="sizeReadout">1280x720 / 100%</span>
+        <input id="sizeScale" type="range" min="50" max="150" step="5" value="100">
+      </label>
+
+      <label>
+        Seed
+        <input id="seedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
+      </label>
+
+      <label>
+        Negative prompt
+        <textarea id="negativePrompt" rows="7"></textarea>
+      </label>
+
+    </section>
+
+    <section class="panel prompt-panel">
+      <div class="section-title">
+        <span>Prompt</span>
+        <button id="resetPromptsBtn" type="button">Reset defaults</button>
+      </div>
+      <article class="motion-example">
+        <div class="example-head">
+          <span>Motion reference</span>
+          <a id="exampleSource" href="#" target="_blank" rel="noreferrer">CC0 source</a>
+        </div>
+        <video id="exampleVideo" controls muted loop playsinline preload="metadata"></video>
+        <canvas id="exampleCanvas" class="example-canvas" width="640" height="360"></canvas>
+        <div class="example-meta">
+          <span id="exampleTitle"></span>
+          <span id="exampleLicense"></span>
+        </div>
+      </article>
+      <article class="prompt-card">
+        <div class="prompt-head">
+          <span id="promptTag" class="variant-tag">I2V</span>
+        </div>
+        <textarea id="promptText" class="variant-prompt" rows="16"></textarea>
+      </article>
+      <label id="audioUploadWrap" class="audio-upload">
+        Dialogue audio
+        <input id="audioInput" type="file" accept="audio/*,video/mp4">
+        <span id="audioStatus" class="hint">No audio uploaded</span>
+      </label>
+      <button class="primary prompt-run" id="runBtn" type="button">Queue Run</button>
+      <div class="hint" id="runHint">Runs are saved under tasks/camera_lab_runs.</div>
+    </section>
+
+    <section class="results-shell">
+      <div class="results-header">
+        <div>
+          <div class="eyebrow">Compare</div>
+          <h2>Results</h2>
+        </div>
+        <div class="queue-text" id="queueText">No active batch</div>
+      </div>
+      <div id="resultsGrid" class="results-grid"></div>
+    </section>
+  </main>
+
+  <template id="resultTemplate">
+    <article class="result-card">
+      <div class="result-top">
+        <div class="result-side">
+          <div class="result-badges">
+            <span class="mode-tag"></span>
+            <span class="run-status"></span>
+          </div>
+          <div class="result-actions">
+            <button class="use-prompt-run" type="button">Use Prompt</button>
+            <button class="use-seed-run" type="button">Use Seed</button>
+            <button class="pin-run" type="button">Pin</button>
+            <button class="delete-run" type="button">Delete</button>
+          </div>
+        </div>
+      </div>
+      <div class="media-box"></div>
+      <div class="paths"></div>
+    </article>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
