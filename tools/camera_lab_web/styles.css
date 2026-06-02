@@ -176,13 +176,28 @@ button:hover {
   aspect-ratio: 16 / 9;
   margin: -5px 0 13px;
   overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .source-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: none;
+}
+
+.source-preview.has-image img {
   display: block;
+}
+
+.source-preview:not(.has-image)::before {
+  content: "upload image";
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0;
 }
 
 .swap-row {

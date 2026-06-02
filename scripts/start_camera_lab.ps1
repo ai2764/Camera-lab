@@ -1,5 +1,6 @@
 param(
-    [int]$Port = 8766,
+    [Alias("p")]
+    [int]$Port = 1234,
     [switch]$Restart,
     [switch]$Open
 )
@@ -13,10 +14,6 @@ $logDir = Join-Path $repoRoot "tasks"
 $stdoutLog = Join-Path $logDir "camera_lab_server.log"
 $stderrLog = Join-Path $logDir "camera_lab_server.log.err"
 $url = "http://127.0.0.1:$Port"
-
-if ($Port -ne 8766) {
-    throw "camera_lab_server.py currently listens on 8766. Run without -Port, or update the server first."
-}
 
 if (!(Test-Path $serverPath)) {
     throw "Server not found: $serverPath"
@@ -47,7 +44,7 @@ if ($listeners.Count -gt 0) {
 Write-Host "Starting Camera Lab..."
 $proc = Start-Process `
     -FilePath "python" `
-    -ArgumentList @($serverPath) `
+    -ArgumentList @($serverPath, "--port", $Port) `
     -WorkingDirectory $repoRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdoutLog `

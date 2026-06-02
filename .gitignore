@@ -6,6 +6,10 @@ tasks/camera_lab_runs/
 tasks/camera_lab_uploads/
 tasks/camera_lab_server.log
 tasks/camera_lab_server.log.err
+tasks/cam_control_subtitles/
+tasks/mia_voice/
+tasks/youtube_thumbnails/
+references/
 
 # Local/editor noise
 .DS_Store

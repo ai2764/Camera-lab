@@ -19,9 +19,15 @@ python -m pip install -r requirements.txt
 .\scripts\start_camera_lab.ps1 -Open
 ```
 
+Use a custom port if needed:
+
+```powershell
+.\scripts\start_camera_lab.ps1 -p 9000 -Open
+```
+
 Default URLs:
 
-- Camera Lab: `http://127.0.0.1:8766`
+- Camera Lab: `http://127.0.0.1:1234`
 - ComfyUI: `http://127.0.0.1:8000`
 
 ## Expected Local ComfyUI Paths

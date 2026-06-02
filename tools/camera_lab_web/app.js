@@ -251,6 +251,7 @@ function updateWorkflowFields() {
 
 function collectPayload() {
   const size = currentSize();
+  const prompt = $("promptText").value.trim();
 
   return {
     workflow_id: $("workflowSelect").value,
@@ -263,7 +264,7 @@ function collectPayload() {
     height: size.height,
     seed: $("seedInput").value.trim(),
     negative_prompt: $("negativePrompt").value.trim(),
-    prompt: $("promptText").value.trim(),
+    prompt,
     audio_path: state.audioPath,
   };
 }
@@ -397,12 +398,23 @@ function imageSlotValue(kind) {
   };
 }
 
+function setImagePreview(kind, src) {
+  const slot = imageSlots[kind];
+  const preview = $(slot.previewId);
+  const previewBox = preview.parentElement;
+  if (src) {
+    preview.src = src;
+    previewBox.classList.add("has-image");
+    return;
+  }
+  preview.removeAttribute("src");
+  previewBox.classList.remove("has-image");
+}
+
 function setImageSlotValue(kind, value) {
   const slot = imageSlots[kind];
   state[slot.pathKey] = value.path || "";
-  const preview = $(slot.previewId);
-  if (value.src) preview.src = value.src;
-  else preview.removeAttribute("src");
+  setImagePreview(kind, value.src || "");
   $(slot.statusId).textContent = value.status || slot.empty;
 }
 
@@ -547,14 +559,12 @@ async function uploadImage(file, kind) {
   });
   if (kind === "source") {
     state.sourcePath = uploaded.path;
-    $("sourcePreview").src = mediaUrl(uploaded.path);
   } else if (kind === "middle") {
     state.middlePath = uploaded.path;
-    $("middlePreview").src = mediaUrl(uploaded.path);
   } else {
     state.endPath = uploaded.path;
-    $("endPreview").src = mediaUrl(uploaded.path);
   }
+  setImagePreview(kind, mediaUrl(uploaded.path));
   status.textContent = uploaded.name;
 }
 

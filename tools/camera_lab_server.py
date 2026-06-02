@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import mimetypes
 import random
@@ -175,7 +176,7 @@ CAMERA_MOVES = [
         "id": "roll_clockwise",
         "name": "Roll Clockwise",
         "prompts": {
-            "base": "Smooth clockwise camera roll. The frame rotates around the lens axis. No cut.",
+            "base": "Subtle camera orbit to the right. The viewpoint arcs smoothly with curved parallax and a small angle change. No cut.",
         },
     },
     {
@@ -201,7 +202,7 @@ CAMERA_MOVES = [
         "id": "foreground_pass",
         "name": "Foreground Pass",
         "prompts": {
-            "base": "Slow lateral camera move with a close foreground pass near the edge of frame, creating strong parallax. No cut.",
+            "base": "Slow lateral camera move with a close foreground {object} pass near the edge of frame, creating strong parallax. No cut.",
         },
     },
 ]
@@ -1832,10 +1833,14 @@ def validate_seed(value: Any) -> int:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the Camera Lab local server.")
+    parser.add_argument("--port", "-p", type=int, default=1234, help="Port to listen on.")
+    args = parser.parse_args()
+
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 8766), Handler)
-    print("Camera Lab: http://127.0.0.1:8766", flush=True)
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(f"Camera Lab: http://127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
 
 
