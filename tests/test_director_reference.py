@@ -1,0 +1,237 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from PIL import Image
+
+from tools import camera_lab_server as server
+
+
+class DirectorReferenceTests(unittest.TestCase):
+    def test_comfy_config_defaults_do_not_include_personal_local_path(self):
+        env = {}
+
+        config = server.comfy_config_from_env(env)
+
+        self.assertEqual(config["root"], Path(r"C:\ComfyUI"))
+
+    def test_comfy_config_uses_comfyui_root_and_url_from_environment(self):
+        root = Path(tempfile.gettempdir()) / "camera_lab_test_comfy"
+        env = {
+            "COMFYUI_ROOT": str(root),
+            "COMFYUI_URL": "http://127.0.0.1:8188",
+        }
+
+        config = server.comfy_config_from_env(env)
+
+        self.assertEqual(config["url"], "http://127.0.0.1:8188")
+        self.assertEqual(config["input"], root / "input")
+        self.assertEqual(config["output"], root / "output")
+        self.assertEqual(config["models"], root / "models")
+        self.assertEqual(config["workflows"], root / "user" / "default" / "workflows")
+        self.assertEqual(
+            config["template_workflows"],
+            root
+            / ".venv"
+            / "Lib"
+            / "site-packages"
+            / "comfyui_workflow_templates_media_video"
+            / "templates",
+        )
+        self.assertEqual(config["ttp_toolset"], root / "custom_nodes" / "Comfyui_TTP_Toolset")
+
+    def test_dotenv_loader_does_not_override_existing_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dotenv = Path(tmp) / ".env"
+            dotenv.write_text(
+                "\n".join(
+                    [
+                        "COMFYUI_ROOT=C:\\ComfyUIFromFile",
+                        "COMFYUI_URL=http://127.0.0.1:8188",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            env = {"COMFYUI_ROOT": r"C:\ExistingComfyUI"}
+
+            loaded = server.load_env_file(dotenv, env)
+
+            self.assertEqual(loaded["COMFYUI_ROOT"], r"C:\ExistingComfyUI")
+            self.assertEqual(loaded["COMFYUI_URL"], "http://127.0.0.1:8188")
+
+    def test_runexx_length_primitive_stays_in_seconds(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "fml_runexx_guider_local")
+        api = server.workflow_to_api(json.loads(server.Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "prompt": "walks",
+            "negative_prompt": "",
+            "duration": 4,
+            "width": 1280,
+            "height": 720,
+            "batch_id": "dry",
+            "run_id": "01_runexx",
+            "seed": "123",
+        }
+
+        server.patch_api(api, workflow, run, {"source": "source.png", "middle": "middle.png", "end": "end.png"})
+
+        self.assertEqual(api["2078"]["class_type"], "INTConstant")
+        self.assertEqual(api["2078"]["_meta"]["title"], "LENGTH (in seconds)")
+        self.assertEqual(api["2078"]["inputs"]["value"], 4)
+
+    def test_director_timeline_normalizes_segments_and_references(self):
+        payload = {
+            "global_prompt": "same white mecha, same hangar",
+            "segments": [
+                {
+                    "prompt": "walks toward the ship",
+                    "duration": 2.0,
+                    "reference": "character",
+                    "guide_frame": 0,
+                    "strength": 0.8,
+                },
+                {
+                    "prompt": "sits in cockpit",
+                    "duration": 3.0,
+                    "reference": "prop",
+                    "guide_frame": 48,
+                    "strength": 0.45,
+                },
+            ],
+            "reference_images": {
+                "character": "C:/tmp/character.png",
+                "prop": "C:/tmp/ship.png",
+            },
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["global_prompt"], "same white mecha, same hangar")
+        self.assertEqual(timeline["local_prompts"], "walks toward the ship | sits in cockpit")
+        self.assertEqual(timeline["segment_lengths"], "48,72")
+        self.assertEqual(timeline["duration_seconds"], 5.0)
+        self.assertEqual(timeline["duration_frames"], 120)
+        self.assertEqual(timeline["segments"][0]["image_path"], "")
+        self.assertEqual(timeline["segments"][0]["reference"], "")
+        self.assertEqual(timeline["segments"][1]["reference"], "")
+        self.assertEqual(timeline["guide_frames"], [])
+        self.assertEqual(timeline["guide_strengths"], [])
+        self.assertEqual(timeline["guide_roles"], [])
+
+    def test_director_timeline_keeps_image_guides_without_local_prompt(self):
+        payload = {
+            "segments": [
+                {
+                    "prompt": "",
+                    "duration": 1.5,
+                    "image_path": "C:/tmp/keyframe.png",
+                    "guide_frame": 24,
+                    "strength": 0.6,
+                },
+            ],
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["local_prompts"], "visual guide")
+        self.assertEqual(timeline["segments"][0]["image_path"], "C:/tmp/keyframe.png")
+        self.assertEqual(timeline["segments"][0]["start_frame"], 0)
+        guide_segments = server.director_reference_timeline_segments(timeline, {}, {1: "keyframe.png"})
+        self.assertEqual(guide_segments[0]["start"], 24)
+        self.assertEqual(guide_segments[0]["imageFile"], "keyframe.png")
+
+    def test_director_global_reference_images_are_not_encoded_as_timeline_guides(self):
+        run = {
+            "batch_id": "dry",
+            "run_id": "01_director",
+            "workflow_id": "ltx_director_reference_mvp",
+            "global_prompt": "same character",
+            "segments": [
+                {
+                    "prompt": "walks",
+                    "duration": 1.0,
+                    "reference": "character",
+                    "image_path": "C:/tmp/timeline.png",
+                    "guide_frame": 0,
+                    "strength": 0.75,
+                },
+            ],
+            "reference_images": ["C:/tmp/character_front.png", "C:/tmp/character_side.png"],
+            "width": 512,
+            "height": 512,
+            "seed": "123",
+            "prompt": "same character | walks",
+            "negative_prompt": "",
+        }
+        original_refs = server.copy_director_reference_images
+        original_timeline = server.copy_director_timeline_images
+        original_workflow_to_api = server.workflow_to_api
+        original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
+        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: [
+            "dry_reference_01.png",
+            "dry_reference_02.png",
+        ]
+        server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
+        server.workflow_to_api = lambda _workflow: {
+            "46": {
+                "class_type": "LTXDirector",
+                "inputs": {
+                    "global_prompt": "",
+                    "duration_frames": 0,
+                    "duration_seconds": 0,
+                    "timeline_data": "",
+                    "local_prompts": "",
+                    "segment_lengths": "",
+                    "guide_strength": "",
+                    "frame_rate": 0,
+                    "custom_width": 0,
+                    "custom_height": 0,
+                },
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            server.DIRECTOR_WORKFLOW_PATH = Path(tmp) / "director.json"
+            server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            try:
+                api = server.build_ltx_director_reference_api(run)
+            finally:
+                server.copy_director_reference_images = original_refs
+                server.copy_director_timeline_images = original_timeline
+                server.workflow_to_api = original_workflow_to_api
+                server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
+
+        director_inputs = api["46"]["inputs"]
+        timeline = json.loads(director_inputs["timeline_data"])
+        self.assertNotIn("9001", api)
+        self.assertEqual(len(timeline["segments"]), 1)
+        self.assertEqual(timeline["segments"][0]["id"], "camera-lab-segment-1")
+        self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
+        self.assertEqual(timeline["segments"][0]["strength"], 0.75)
+        self.assertEqual(director_inputs["guide_strength"], "0.75")
+
+    def test_global_reference_resize_preserves_full_wide_image_with_padding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "wide_ref.png"
+            dst = Path(tmp) / "wide_ref_out.png"
+            img = Image.new("RGB", (300, 100), (0, 200, 0))
+            for x in range(0, 100):
+                for y in range(100):
+                    img.putpixel((x, y), (220, 0, 0))
+            for x in range(200, 300):
+                for y in range(100):
+                    img.putpixel((x, y), (0, 0, 220))
+            img.save(src)
+
+            server.resize_contain_pad(src, dst, width=100, height=100)
+
+            out = Image.open(dst).convert("RGB")
+            self.assertEqual(out.size, (100, 100))
+            self.assertLess(sum(out.getpixel((50, 5))), 10)
+            self.assertGreater(out.getpixel((5, 50))[0], 150)
+            self.assertGreater(out.getpixel((50, 50))[1], 120)
+            self.assertGreater(out.getpixel((95, 50))[2], 150)
+
+
+if __name__ == "__main__":
+    unittest.main()

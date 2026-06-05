@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 import random
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ import copy
 import ctypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, MutableMapping
 
 from PIL import Image, ImageDraw
 
@@ -26,20 +27,58 @@ WEB_DIR = ROOT / "tools" / "camera_lab_web"
 RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
-COMFY_URL = "http://127.0.0.1:8000"
-COMFY_INPUT = Path(r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\input")
-COMFY_OUTPUT = Path(r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\output")
-COMFY_MODELS = Path(r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\models")
-WORKFLOW_ROOT = Path(r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\user\default\workflows")
-TEMPLATE_WORKFLOW_ROOT = Path(
-    r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\.venv\Lib\site-packages\comfyui_workflow_templates_media_video\templates"
-)
+
+
+def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
+    target = env if env is not None else os.environ
+    if not path.exists():
+        return target
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in target:
+            target[key] = value
+    return target
+
+
+def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
+    root = Path(env.get("COMFYUI_ROOT") or r"C:\ComfyUI")
+    return {
+        "url": env.get("COMFYUI_URL") or "http://127.0.0.1:8000",
+        "root": root,
+        "input": root / "input",
+        "output": root / "output",
+        "models": root / "models",
+        "workflows": root / "user" / "default" / "workflows",
+        "template_workflows": root
+        / ".venv"
+        / "Lib"
+        / "site-packages"
+        / "comfyui_workflow_templates_media_video"
+        / "templates",
+        "ttp_toolset": root / "custom_nodes" / "Comfyui_TTP_Toolset",
+    }
+
+
+load_env_file(ROOT / ".env")
+COMFY_CONFIG = comfy_config_from_env(os.environ)
+COMFY_URL = COMFY_CONFIG["url"]
+COMFY_INPUT = COMFY_CONFIG["input"]
+COMFY_OUTPUT = COMFY_CONFIG["output"]
+COMFY_MODELS = COMFY_CONFIG["models"]
+WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
+TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 LOCAL_LTX23_DISTILLED_LORA = "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"
 DOWNLOADED_WORKFLOW_ROOT = ROOT / "tasks" / "camera_lab_workflows" / "downloaded"
-TTP_TOOLSET_ROOT = Path(r"C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\custom_nodes\Comfyui_TTP_Toolset")
+TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+DIRECTOR_WORKFLOW_PATH = WORKFLOW_ROOT / "LTX Director Example Workflow (Fixed).json"
 
 REFERENCE_IMAGES = [
     {
@@ -58,6 +97,16 @@ REFERENCE_IMAGES = [
         "path": str(ROOT / "tasks" / "LTX_camera_prompt_suite_xiaomei" / "references" / "truck_middle.png"),
     },
 ]
+REFERENCE_IMAGES = [image for image in REFERENCE_IMAGES if Path(image["path"]).exists()]
+BUNDLED_XIAOMEI_IMAGE = ROOT / "tasks" / "LTX 去字幕" / "小美头像.png"
+if BUNDLED_XIAOMEI_IMAGE.exists():
+    REFERENCE_IMAGES.append(
+        {
+            "id": "xiaomei_front",
+            "label": "Xiaomei front portrait",
+            "path": str(BUNDLED_XIAOMEI_IMAGE),
+        }
+    )
 
 WORKFLOWS = [
     {
@@ -92,6 +141,21 @@ WORKFLOWS = [
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
         "path": str(WORKFLOW_ROOT / "ltx23-nag-ia2v-extendcrop" / "ltx23_nag_ia2v_extendcrop_general.json"),
+    },
+    {
+        "id": "sulphur2_t2v_base",
+        "label": "Sulphur 2 T2V Base",
+        "mode": "t2v",
+        "path": str(DOWNLOADED_WORKFLOW_ROOT / "Sulphur_2_t2v_base.json"),
+        "disable_crop_guides": True,
+        "disable_prompt_enhance": True,
+    },
+    {
+        "id": "ltx_director_reference_mvp",
+        "label": "LTX Director Reference MVP",
+        "mode": "director_ref",
+        "path": str(DIRECTOR_WORKFLOW_PATH),
+        "builder": "ltx_director_reference_mvp",
     },
 ]
 
@@ -290,6 +354,18 @@ def resize_cover(src: Path, dst: Path, width: int = 1280, height: int = 720) -> 
     cropped = resized.crop((left, top, left + width, top + height))
     dst.parent.mkdir(parents=True, exist_ok=True)
     cropped.save(dst, quality=95)
+
+
+def resize_contain_pad(src: Path, dst: Path, width: int = 1280, height: int = 720) -> None:
+    img = Image.open(src).convert("RGB")
+    scale = min(width / img.width, height / img.height)
+    resized = img.resize((round(img.width * scale), round(img.height * scale)), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (width, height), (0, 0, 0))
+    left = (width - resized.width) // 2
+    top = (height - resized.height) // 2
+    canvas.paste(resized, (left, top))
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(dst, quality=95)
 
 
 def build_link_map(workflow: dict) -> dict[int, tuple[int, int]]:
@@ -575,6 +651,213 @@ def kj_dynamic_inputs(node: dict, nodes_by_id: dict[int, dict], links: dict[int,
     return inputs
 
 
+def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> dict[str, Any]:
+    raw_segments = payload.get("segments") or []
+    segments: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_segments, start=1):
+        prompt = str(raw.get("prompt") or "").strip()
+        duration = max(0.25, float(raw.get("duration") or 1.0))
+        frames = max(1, round(duration * fps))
+        role = ""
+        image_path = str(raw.get("image_path") or "").strip()
+        if not prompt and not image_path:
+            continue
+        if not prompt:
+            prompt = "visual guide"
+        strength = max(0.0, min(10.0, float(raw.get("strength") or 0.0)))
+        guide_frame = int(raw.get("guide_frame") if raw.get("guide_frame") is not None else sum(s["frames"] for s in segments))
+        segments.append(
+            {
+                "prompt": prompt,
+                "duration": duration,
+                "frames": frames,
+                "reference": role,
+                "image_path": image_path,
+                "guide_frame": max(0, guide_frame),
+                "strength": strength,
+                "start_frame": sum(s["frames"] for s in segments),
+            }
+        )
+    if not segments:
+        segments = [
+            {
+                "prompt": str(payload.get("prompt") or "A continuous cinematic shot.").strip(),
+                "duration": max(0.25, float(payload.get("duration") or 4.0)),
+                "frames": max(1, round(float(payload.get("duration") or 4.0) * fps)),
+                "reference": "",
+                "image_path": "",
+                "guide_frame": 0,
+                "strength": 0.0,
+                "start_frame": 0,
+            }
+        ]
+    duration_frames = sum(segment["frames"] for segment in segments)
+    duration_seconds = round(duration_frames / fps, 3)
+    return {
+        "global_prompt": str(payload.get("global_prompt") or "").strip(),
+        "local_prompts": " | ".join(segment["prompt"] for segment in segments),
+        "segment_lengths": ",".join(str(segment["frames"]) for segment in segments),
+        "duration_frames": duration_frames,
+        "duration_seconds": duration_seconds,
+        "fps": fps,
+        "segments": segments,
+        "guide_frames": [],
+        "guide_strengths": [],
+        "guide_roles": [],
+    }
+
+
+def normalize_reference_image_paths(refs: Any) -> list[str]:
+    if isinstance(refs, list):
+        return [str(path) for path in refs if str(path or "").strip()]
+    if isinstance(refs, dict):
+        paths: list[str] = []
+        for key in ("global", "character", "scene", "prop", "style"):
+            value = refs.get(key)
+            if isinstance(value, list):
+                paths.extend(str(path) for path in value if str(path or "").strip())
+            elif str(value or "").strip():
+                paths.append(str(value))
+        return paths
+    if str(refs or "").strip():
+        return [str(refs)]
+    return []
+
+
+def copy_director_reference_images(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> list[str]:
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    refs = normalize_reference_image_paths(run.get("reference_images") or [])
+    input_names: list[str] = []
+    for index, raw_path in enumerate(refs, start=1):
+        src = Path(raw_path)
+        if not src.exists():
+            continue
+        frame = Path(run["run_dir"]) / f"reference_{index:02d}_{width}x{height}.png"
+        resize_contain_pad(src, frame, width=width, height=height)
+        name = f"{run['run_id']}_reference_{index:02d}.png"
+        shutil.copy2(frame, COMFY_INPUT / name)
+        input_names.append(name)
+    return input_names
+
+
+def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> dict[int, str]:
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    input_names: dict[int, str] = {}
+    for index, segment in enumerate(timeline["segments"], start=1):
+        raw_path = segment.get("image_path")
+        if not raw_path:
+            continue
+        src = Path(str(raw_path))
+        if not src.exists():
+            continue
+        frame = Path(run["run_dir"]) / f"timeline_{index}_{width}x{height}.png"
+        resize_cover(src, frame, width=width, height=height)
+        name = f"{run['run_id']}_timeline_{index:02d}.png"
+        shutil.copy2(frame, COMFY_INPUT / name)
+        input_names[index] = name
+    return input_names
+
+
+def director_reference_timeline_segments(
+    timeline: dict[str, Any],
+    _global_input_names: Any,
+    timeline_input_names: dict[int, str],
+) -> list[dict[str, Any]]:
+    segments = []
+    for index, segment in enumerate(timeline["segments"], start=1):
+        if index not in timeline_input_names:
+            continue
+        start_frame = segment.get("guide_frame", segment["start_frame"])
+        segments.append(
+            {
+                "id": f"camera-lab-segment-{index}",
+                "type": "image",
+                "label": f"segment {index}",
+                "start": max(0, int(start_frame)),
+                "imageFile": timeline_input_names[index],
+                "strength": float(segment.get("strength") or 0.7),
+            }
+        )
+    return segments
+
+
+def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
+    workflow_json = json.loads(DIRECTOR_WORKFLOW_PATH.read_text(encoding="utf-8"))
+    api = workflow_to_api(workflow_json)
+    timeline = director_timeline_from_payload(run, fps=24)
+    width = int(run["width"])
+    height = int(run["height"])
+    reference_input_names = copy_director_reference_images(run, timeline, width, height)
+    timeline_input_names = copy_director_timeline_images(run, timeline, width, height)
+
+    director = api.get("46")
+    if not director or director["class_type"] != "LTXDirector":
+        raise RuntimeError("Director workflow does not contain expected LTXDirector node 46")
+    director["inputs"]["global_prompt"] = timeline["global_prompt"]
+    director["inputs"]["duration_frames"] = timeline["duration_frames"]
+    director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
+    guide_segments = director_reference_timeline_segments(timeline, reference_input_names, timeline_input_names)
+    director["inputs"]["timeline_data"] = json.dumps({"segments": guide_segments, "audioSegments": []}, ensure_ascii=False)
+    director["inputs"]["local_prompts"] = timeline["local_prompts"]
+    director["inputs"]["segment_lengths"] = timeline["segment_lengths"]
+    director["inputs"]["guide_strength"] = ",".join(str(segment["strength"]) for segment in guide_segments)
+    director["inputs"]["frame_rate"] = timeline["fps"]
+    director["inputs"]["custom_width"] = width
+    director["inputs"]["custom_height"] = height
+
+    for node in api.values():
+        if "filename_prefix" in node["inputs"]:
+            node["inputs"]["filename_prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}"
+        if "noise_seed" in node["inputs"]:
+            node["inputs"]["noise_seed"] = run["seed"]
+    patch_model_names(api, run)
+    patch_ltx23_local_loras(api)
+    bypass_sage_attention_patches(api)
+
+    return api
+
+
+def insert_director_multi_guide(api: dict[str, dict], guide_roles: list[str], input_names: dict[str, str], timeline: dict[str, Any]) -> None:
+    multi_id = "9001"
+    next_id = 9002
+    guide_inputs: dict[str, Any] = {
+        "positive": ["58", 0],
+        "negative": ["58", 1],
+        "vae": ["3", 0],
+        "latent": ["58", 2],
+        "num_guides": str(len(guide_roles)),
+    }
+    frames_by_role: dict[str, int] = {}
+    strengths_by_role: dict[str, float] = {}
+    for role, frame, strength in zip(timeline["guide_roles"], timeline["guide_frames"], timeline["guide_strengths"]):
+        frames_by_role.setdefault(role, int(frame))
+        strengths_by_role.setdefault(role, float(strength))
+    for index, role in enumerate(guide_roles, start=1):
+        load_id = str(next_id)
+        next_id += 1
+        api[load_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": input_names[role]},
+            "_meta": {"title": f"Director reference {role}"},
+        }
+        guide_inputs[f"num_guides.image_{index}"] = [load_id, 0]
+        guide_inputs[f"num_guides.frame_idx_{index}"] = frames_by_role.get(role, 0)
+        guide_inputs[f"num_guides.strength_{index}"] = strengths_by_role.get(role, 0.7)
+    api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": "Director reference guides"}}
+
+    for node in api.values():
+        for input_name, value in list(node["inputs"].items()):
+            if value == ["58", 0]:
+                node["inputs"][input_name] = [multi_id, 0]
+            elif value == ["58", 1]:
+                node["inputs"][input_name] = [multi_id, 1]
+            elif value == ["58", 2]:
+                node["inputs"][input_name] = [multi_id, 2]
+    api[multi_id]["inputs"]["positive"] = ["58", 0]
+    api[multi_id]["inputs"]["negative"] = ["58", 1]
+    api[multi_id]["inputs"]["latent"] = ["58", 2]
+
+
 def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str]) -> None:
     mode = workflow["mode"]
     if workflow.get("disable_crop_guides"):
@@ -781,7 +1064,8 @@ def patch_ltx23_local_loras(api: dict) -> None:
         if node["class_type"] != "LoraLoaderModelOnly":
             continue
         lora_name = str(node["inputs"].get("lora_name", ""))
-        if "ltx_2.3_22b_distilled_1.1_lora_dynamic" in lora_name or "ltx-2.3-22b-distilled-1.1_lora-dynamic" in lora_name:
+        lora_key = lora_name.replace("\\", "/").lower()
+        if "ltx" in lora_key and "distilled" in lora_key and ("lora" in lora_key or "fro" in lora_key):
             node["inputs"]["lora_name"] = LOCAL_LTX23_DISTILLED_LORA
 
 
@@ -899,6 +1183,11 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"available": False, "reason": str(exc)}
+    if not workflow.get("builder") or workflow.get("builder") == "ltx_director_reference_mvp":
+        data = workflow_to_api(data)
+        patch_ltx23_local_loras(data)
+        bypass_sage_attention_patches(data)
+        data = {"extra": {"prompt": data}}
     missing: list[str] = []
     for folder, name in required_models(expand_subgraphs(data)):
         if not (COMFY_MODELS / folder / name).exists():
@@ -922,11 +1211,16 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
             models.append(("vae", str(values[0])))
         elif node_type == "LatentUpscaleModelLoader" and values:
             models.append(("latent_upscale_models", str(values[0])))
+        elif node_type == "LoraLoaderModelOnly" and values:
+            models.append(("loras", str(values[0])))
         elif node_type == "CLIPLoader" and values:
             models.append(("text_encoders", str(values[0])))
         elif node_type == "DualCLIPLoader" and len(values) >= 2:
             models.append(("text_encoders", str(values[0])))
             models.append(("text_encoders", str(values[1])))
+        elif node_type == "LTXAVTextEncoderLoader" and len(values) >= 2:
+            models.append(("text_encoders", str(values[0])))
+            models.append(("checkpoints", str(values[1])))
     for prompt in prompts:
         for node in prompt.values():
             node_type = node.get("class_type")
@@ -939,12 +1233,23 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
                 models.append(("vae", str(inputs["vae_name"])))
             elif node_type == "LatentUpscaleModelLoader" and inputs.get("model_name"):
                 models.append(("latent_upscale_models", str(inputs["model_name"])))
+            elif node_type == "LoraLoaderModelOnly" and inputs.get("lora_name"):
+                models.append(("loras", str(inputs["lora_name"])))
             elif node_type == "CLIPLoader" and inputs.get("clip_name"):
                 models.append(("text_encoders", str(inputs["clip_name"])))
             elif node_type == "DualCLIPLoader":
                 for key in ("clip_name1", "clip_name2"):
                     if inputs.get(key):
                         models.append(("text_encoders", str(inputs[key])))
+            elif node_type == "LTXAVTextEncoderLoader":
+                if inputs.get("text_encoder_name"):
+                    models.append(("text_encoders", str(inputs["text_encoder_name"])))
+                if inputs.get("clip_name"):
+                    models.append(("text_encoders", str(inputs["clip_name"])))
+                if inputs.get("ckpt_name"):
+                    models.append(("checkpoints", str(inputs["ckpt_name"])))
+                if inputs.get("model_name"):
+                    models.append(("checkpoints", str(inputs["model_name"])))
     return sorted(set(models))
 
 
@@ -1313,8 +1618,8 @@ def run_batch_worker(batch_id: str) -> None:
             check_run_canceled(run)
             run_dir = Path(run["run_dir"])
             workflow = next(w for w in WORKFLOWS if w["id"] == run["workflow_id"])
-            source = Path(run["source_image"])
-            end = Path(run["end_image"])
+            source = Path(run["source_image"]) if run.get("source_image") else Path()
+            end = Path(run["end_image"]) if run.get("end_image") else Path()
             width = int(run["width"])
             height = int(run["height"])
             if workflow["mode"] == "fml":
@@ -1322,13 +1627,14 @@ def run_batch_worker(batch_id: str) -> None:
                 run["status"] = "done"
                 run["finished_at"] = time.time()
                 continue
-            source_frame = run_dir / f"source_{width}x{height}.png"
-            end_frame = run_dir / f"end_{width}x{height}.png"
-            resize_cover(source, source_frame, width=width, height=height)
-            source_name = f"{run['run_id']}_source.png"
             COMFY_INPUT.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_frame, COMFY_INPUT / source_name)
-            input_names = {"source": source_name}
+            input_names = {}
+            if workflow["mode"] not in {"t2v", "director_ref"}:
+                source_frame = run_dir / f"source_{width}x{height}.png"
+                resize_cover(source, source_frame, width=width, height=height)
+                source_name = f"{run['run_id']}_source.png"
+                shutil.copy2(source_frame, COMFY_INPUT / source_name)
+                input_names["source"] = source_name
             if workflow["mode"] == "fml_native":
                 middle = Path(run["middle_image"])
                 middle_frame = run_dir / f"middle_{width}x{height}.png"
@@ -1342,6 +1648,7 @@ def run_batch_worker(batch_id: str) -> None:
                 input_names["middle"] = middle_name
                 input_names["end"] = end_name
             if workflow["mode"] == "flf":
+                end_frame = run_dir / f"end_{width}x{height}.png"
                 resize_cover(end, end_frame, width=width, height=height)
                 end_name = f"{run['run_id']}_end.png"
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
@@ -1356,6 +1663,13 @@ def run_batch_worker(batch_id: str) -> None:
 
             if workflow.get("builder") == "ltx23_ttp_flf":
                 api = build_ltx23_ttp_flf_api(run, input_names)
+            elif workflow.get("builder") == "ltx_director_reference_mvp":
+                run["director_timeline"] = director_timeline_from_payload(run, fps=24)
+                (run_dir / "director_timeline.json").write_text(
+                    json.dumps(run["director_timeline"], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                api = build_ltx_director_reference_api(run)
             else:
                 workflow_json = json.loads(Path(workflow["path"]).read_text(encoding="utf-8"))
                 api = workflow_to_api(workflow_json)
@@ -1502,13 +1816,13 @@ class Handler(BaseHTTPRequestHandler):
         if not status["available"]:
             raise RuntimeError(f"{workflow['label']} unavailable: {status['reason']}")
         source_path = payload.get("source_path") or ""
-        if not source_path:
+        if workflow["mode"] not in {"t2v", "director_ref"} and not source_path:
             raise ValueError("source image is required")
-        source = {"path": str(safe_media_path(source_path))}
+        source = {"path": str(safe_media_path(source_path)) if source_path else ""}
         end_path = payload.get("end_path") or source["path"]
         if workflow["mode"] in {"flf", "fml", "fml_native"} and not payload.get("end_path"):
             raise ValueError("FLF/FML requires an uploaded end image")
-        end = {"path": str(safe_media_path(end_path))}
+        end = {"path": str(safe_media_path(end_path)) if end_path else ""}
         middle = {"path": ""}
         if workflow["mode"] in {"fml", "fml_native"}:
             middle_path = payload.get("middle_path") or ""
@@ -1517,11 +1831,20 @@ class Handler(BaseHTTPRequestHandler):
             middle = {"path": str(safe_media_path(middle_path))}
         width, height = validate_size(payload.get("width"), payload.get("height"))
         prompt = (payload.get("prompt") or "").strip()
-        variants = payload.get("variants") or [{"name": "prompt", "prompt": prompt}]
+        if workflow["mode"] == "director_ref":
+            prompt = build_director_prompt_summary(payload)
+            variants = [{"name": "director", "prompt": prompt}]
+        else:
+            variants = payload.get("variants") or [{"name": "prompt", "prompt": prompt}]
         if not any((variant.get("prompt") or "").strip() for variant in variants):
             raise ValueError("prompt is required")
         if workflow["mode"] == "ia2v" and not payload.get("audio_path"):
             raise ValueError("IA2V requires an uploaded audio file")
+        reference_images = {}
+        director_segments = payload.get("segments") or []
+        if workflow["mode"] == "director_ref":
+            reference_images = validate_reference_images(payload.get("reference_images") or {})
+            director_segments = validate_director_segments(payload.get("segments") or [])
         seed = validate_seed(payload.get("seed"))
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
         batch_dir = RUN_ROOT / batch_id
@@ -1539,7 +1862,7 @@ class Handler(BaseHTTPRequestHandler):
                     "workflow_mode": workflow["mode"],
                     "workflow_label": workflow["label"],
                     "workflow_path": workflow.get("path", ""),
-                    "camera_move": payload["camera_move"],
+                    "camera_move": payload.get("camera_move") or workflow["mode"],
                     "source_image": source["path"],
                     "middle_image": middle["path"],
                     "end_image": end["path"],
@@ -1550,6 +1873,9 @@ class Handler(BaseHTTPRequestHandler):
                     "seed": seed,
                     "variant_name": variant["name"],
                     "prompt": variant["prompt"],
+                    "global_prompt": payload.get("global_prompt", ""),
+                    "segments": director_segments,
+                    "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or DEFAULT_NEGATIVE,
                     "status": "queued",
                     "queued_at": time.time(),
@@ -1832,15 +2158,47 @@ def validate_seed(value: Any) -> int:
     return seed
 
 
+def build_director_prompt_summary(payload: dict[str, Any]) -> str:
+    global_prompt = str(payload.get("global_prompt") or "").strip()
+    segment_prompts = [
+        str(segment.get("prompt") or "").strip()
+        for segment in payload.get("segments") or []
+        if str(segment.get("prompt") or "").strip()
+    ]
+    if not global_prompt and not segment_prompts:
+        raise ValueError("director workflow requires a global prompt or at least one segment prompt")
+    return "\n\n".join([part for part in [global_prompt, " | ".join(segment_prompts)] if part])
+
+
+def validate_reference_images(raw: Any) -> list[str]:
+    paths = normalize_reference_image_paths(raw)
+    return [str(safe_media_path(path)) for path in paths]
+
+
+def validate_director_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for segment in raw:
+        item = dict(segment)
+        image_path = str(item.get("image_path") or "").strip()
+        if image_path:
+            item["image_path"] = str(safe_media_path(image_path))
+        else:
+            item["image_path"] = ""
+        segments.append(item)
+    return segments
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Camera Lab local server.")
     parser.add_argument("--port", "-p", type=int, default=1234, help="Port to listen on.")
+    parser.add_argument("--host", default="0.0.0.0", help="Host/IP to listen on. Use 127.0.0.1 for local-only.")
     args = parser.parse_args()
 
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Camera Lab: http://127.0.0.1:{args.port}", flush=True)
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    shown_host = "127.0.0.1" if args.host in {"0.0.0.0", ""} else args.host
+    print(f"Camera Lab: http://{shown_host}:{args.port}", flush=True)
     server.serve_forever()
 
 

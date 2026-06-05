@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "camera-lab",
+    "summary": "Local Python HTTP server and static web UI for driving ComfyUI video workflows."
+  },
+  "runtime": {
+    "os": ["windows"],
+    "python": ">=3.10",
+    "entrypoint": "tools/camera_lab_server.py"
+  },
+  "commands": {
+    "install_python_dependencies": "python -m pip install -r requirements.txt",
+    "check_setup": ".\\scripts\\check_setup.ps1",
+    "start": ".\\scripts\\start_camera_lab.ps1 -Open",
+    "stop": ".\\scripts\\stop_camera_lab.ps1",
+    "test": "python -m pytest -p no:cacheprovider tests/test_director_reference.py"
+  },
+  "local_config": {
+    "template": ".env.example",
+    "ignored_file": ".env",
+    "required_env": {
+      "COMFYUI_ROOT": {
+        "description": "Root folder of the local ComfyUI install.",
+        "default": "C:\\ComfyUI"
+      },
+      "COMFYUI_URL": {
+        "description": "Local ComfyUI server URL.",
+        "default": "http://127.0.0.1:8000"
+      }
+    }
+  },
+  "python_dependencies": {
+    "requirements_file": "requirements.txt",
+    "direct": ["Pillow"]
+  },
+  "external_dependencies": {
+    "comfyui": {
+      "vendored": false,
+      "root_env": "COMFYUI_ROOT",
+      "url_env": "COMFYUI_URL",
+      "required_paths": [
+        "input",
+        "output",
+        "models",
+        "user/default/workflows",
+        ".venv/Lib/site-packages/comfyui_workflow_templates_media_video/templates",
+        "custom_nodes/Comfyui_TTP_Toolset"
+      ],
+      "required_custom_nodes": [
+        "custom_nodes/Comfyui_TTP_Toolset"
+      ],
+      "required_models": [
+        "models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors",
+        "models/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors",
+        "models/loras/ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors",
+        "models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+      ]
+    }
+  },
+  "repo_assets": {
+    "workflow_references": [
+      "tasks/camera_lab_workflows/downloaded/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "tasks/camera_lab_workflows/downloaded/Sulphur_2_t2v_base.json"
+    ],
+    "runtime_output_dirs": [
+      "tasks/camera_lab_runs",
+      "tasks/camera_lab_uploads"
+    ]
+  },
+  "do_not_commit": [
+    ".env",
+    "tasks/camera_lab_runs/",
+    "tasks/camera_lab_uploads/",
+    "local ComfyUI install paths",
+    "generated videos and uploaded media"
+  ]
+}

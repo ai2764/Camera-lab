@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptDir "..")
+$envPath = Join-Path $repoRoot ".env"
 $serverPath = Join-Path $repoRoot "tools\camera_lab_server.py"
 $logDir = Join-Path $repoRoot "tasks"
 $stdoutLog = Join-Path $logDir "camera_lab_server.log"
@@ -17,6 +18,21 @@ $url = "http://127.0.0.1:$Port"
 
 if (!(Test-Path $serverPath)) {
     throw "Server not found: $serverPath"
+}
+
+if (Test-Path $envPath) {
+    Get-Content $envPath | ForEach-Object {
+        $line = $_.Trim()
+        if (!$line -or $line.StartsWith("#") -or !$line.Contains("=")) {
+            return
+        }
+        $name, $value = $line.Split("=", 2)
+        $name = $name.Trim()
+        $value = $value.Trim().Trim('"').Trim("'")
+        if ($name -and !(Get-Item "Env:$name" -ErrorAction SilentlyContinue)) {
+            Set-Item "Env:$name" $value
+        }
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null

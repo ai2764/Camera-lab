@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=director-ui-redesign-1">
 </head>
 <body>
   <header class="topbar">
@@ -12,6 +12,10 @@
       <div class="eyebrow">ComfyUI Camera Test Bench</div>
       <h1>Camera Lab</h1>
     </div>
+    <nav class="workspace-tabs" aria-label="Workspace">
+      <button id="cameraWorkspaceTab" class="workspace-tab active" type="button">Camera Lab</button>
+      <button id="directorWorkspaceTab" class="workspace-tab" type="button">Director</button>
+    </nav>
     <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
   </header>
 
@@ -27,17 +31,17 @@
         <select id="workflowSelect"></select>
       </label>
 
-      <label>
+      <label id="cameraMoveWrap">
         Camera move
         <select id="moveSelect"></select>
       </label>
 
-      <label>
+      <label id="sourceImageWrap">
         Source image
         <input id="sourceInput" type="file" accept="image/*">
         <span id="sourceStatus" class="hint">No image uploaded</span>
       </label>
-      <div class="source-preview">
+      <div id="sourcePreviewWrap" class="source-preview">
         <img id="sourcePreview" alt="source preview">
       </div>
       <div id="swapSourceEndWrap" class="swap-row">
@@ -74,16 +78,20 @@
           <input id="durationInput" type="number" min="1" max="12" step="0.5" value="4">
         </label>
         <label>
-          Frame size
+          Preset
           <select id="sizePreset">
-            <option value="512x512">1:1</option>
-            <option value="1280x720" selected>16:9</option>
-            <option value="720x1280">9:16</option>
-            <option value="768x1152">2:3</option>
-            <option value="1152x768">3:2</option>
+            <option value="512x512">1:1 512x512</option>
+            <option value="1280x720" selected>16:9 1280x720</option>
+            <option value="720x1280">9:16 720x1280</option>
+            <option value="768x1152">2:3 768x1152</option>
+            <option value="1152x768">3:2 1152x768</option>
           </select>
         </label>
       </div>
+      <label class="size-text-row">
+        Frame size
+        <input id="customSizeInput" type="text" value="1280x720" placeholder="1280x720">
+      </label>
 
       <label>
         Scale <span id="sizeReadout">1280x720 / 100%</span>
@@ -104,7 +112,7 @@
 
     <section class="panel prompt-panel">
       <div class="section-title">
-        <span>Prompt</span>
+        <span id="promptPanelTitle">Prompt</span>
         <button id="resetPromptsBtn" type="button">Reset defaults</button>
       </div>
       <article class="motion-example">
@@ -125,6 +133,94 @@
         </div>
         <textarea id="promptText" class="variant-prompt" rows="16"></textarea>
       </article>
+      <section id="directorTimelinePanel" class="director-only director-editor">
+        <div class="director-stage-head">
+          <div>
+            <div class="eyebrow">Director</div>
+            <h2>Timeline Studio</h2>
+          </div>
+          <div class="director-stage-meta">
+            <span>Global refs</span>
+            <span>Timeline</span>
+            <span>Segment edit</span>
+          </div>
+        </div>
+        <div class="director-global-grid">
+          <section id="directorReferenceWrap" class="director-reference-tray">
+            <div class="director-reference-head">
+              <div>
+                <div class="eyebrow">Global</div>
+                <h2>Reference images</h2>
+              </div>
+              <button id="globalAddRefBtn" class="reference-add" type="button">+</button>
+            </div>
+            <div id="globalRefSlots" class="reference-slot-list"></div>
+          </section>
+          <section class="director-global-settings">
+            <label>
+              Global prompt
+              <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
+            </label>
+            <section class="director-video-size">
+              <div class="grid-2">
+                <label>
+                  Preset
+                  <select id="directorSizePreset">
+                    <option value="512x512">1:1 512x512</option>
+                    <option value="1280x720" selected>16:9 1280x720</option>
+                    <option value="720x1280">9:16 720x1280</option>
+                    <option value="768x1152">2:3 768x1152</option>
+                    <option value="1152x768">3:2 1152x768</option>
+                  </select>
+                </label>
+                <label>
+                  Scale <span id="directorSizeReadout">1280x720 / 100%</span>
+                  <input id="directorSizeScale" type="range" min="50" max="150" step="5" value="100">
+                </label>
+              </div>
+              <label class="size-text-row">
+                Frame size
+                <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
+              </label>
+            </section>
+          </section>
+        </div>
+        <div class="director-workspace-grid">
+          <section class="director-main-editor">
+            <div class="director-timeline-shell">
+              <div class="director-timeline-head">
+                <span>Timeline images</span>
+                <div class="timeline-tools">
+                  <label class="timeline-tool-button" title="Split a 2x2 storyboard into four timeline images">
+                    2x2
+                    <input id="storyboardSplitInput" type="file" accept="image/*">
+                  </label>
+                  <button id="toggleDirectorJsonBtn" class="timeline-tool-button" type="button">Prompts</button>
+                  <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+                </div>
+              </div>
+              <div id="directorJsonImport" class="director-json-import">
+                <label>
+                  Bulk segment prompts
+                  <textarea id="directorBulkPromptText" rows="6" placeholder="Paste all segment prompts. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
+                </label>
+                <div class="director-import-actions">
+                  <button id="applyDirectorBulkPromptBtn" type="button">Distribute prompts</button>
+                </div>
+              </div>
+              <div class="director-ruler" id="directorRuler"></div>
+              <div class="director-track" id="directorTrack"></div>
+            </div>
+            <div class="director-edit-row">
+              <div id="directorSegmentInspector" class="director-inspector"></div>
+              <div class="director-shot-list">
+                <div class="eyebrow">Shots</div>
+                <div id="directorSegments" class="director-segments"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
       <label id="audioUploadWrap" class="audio-upload">
         Dialogue audio
         <input id="audioInput" type="file" accept="audio/*,video/mp4">
@@ -132,6 +228,15 @@
       </label>
       <button class="primary prompt-run" id="runBtn" type="button">Queue Run</button>
       <div class="hint" id="runHint">Runs are saved under tasks/camera_lab_runs.</div>
+      <section id="directorInlineResults" class="director-only director-inline-results">
+        <div class="results-header">
+          <div>
+            <div class="eyebrow">Director Output</div>
+            <h2>Generated video</h2>
+          </div>
+        </div>
+        <div id="directorResultsGrid" class="results-grid"></div>
+      </section>
     </section>
 
     <section class="results-shell">
@@ -163,10 +268,11 @@
         </div>
       </div>
       <div class="media-box"></div>
+      <div class="result-segments"></div>
       <div class="paths"></div>
     </article>
   </template>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=director-ui-redesign-1"></script>
 </body>
 </html>

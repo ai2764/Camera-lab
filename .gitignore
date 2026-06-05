@@ -2,10 +2,14 @@ __pycache__/
 *.py[cod]
 
 # Runtime outputs
+.env
 tasks/camera_lab_runs/
 tasks/camera_lab_uploads/
 tasks/camera_lab_server.log
 tasks/camera_lab_server.log.err
+tasks/camera_lab_server*.log
+tasks/camera_lab_readme_screenshot*.log
+.superpowers/
 tasks/cam_control_subtitles/
 tasks/mia_voice/
 tasks/youtube_thumbnails/
