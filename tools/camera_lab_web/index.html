@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=director-ui-redesign-1">
+  <link rel="stylesheet" href="/static/styles.css?v=video-controls-1">
 </head>
 <body>
   <header class="topbar">
@@ -161,6 +161,10 @@
               Global prompt
               <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
             </label>
+            <label>
+              Global ref strength
+              <input id="directorGlobalReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
+            </label>
             <section class="director-video-size">
               <div class="grid-2">
                 <label>
@@ -191,21 +195,8 @@
               <div class="director-timeline-head">
                 <span>Timeline images</span>
                 <div class="timeline-tools">
-                  <label class="timeline-tool-button" title="Split a 2x2 storyboard into four timeline images">
-                    2x2
-                    <input id="storyboardSplitInput" type="file" accept="image/*">
-                  </label>
-                  <button id="toggleDirectorJsonBtn" class="timeline-tool-button" type="button">Prompts</button>
+                  <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
                   <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
-                </div>
-              </div>
-              <div id="directorJsonImport" class="director-json-import">
-                <label>
-                  Bulk segment prompts
-                  <textarea id="directorBulkPromptText" rows="6" placeholder="Paste all segment prompts. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
-                </label>
-                <div class="director-import-actions">
-                  <button id="applyDirectorBulkPromptBtn" type="button">Distribute prompts</button>
                 </div>
               </div>
               <div class="director-ruler" id="directorRuler"></div>
@@ -221,8 +212,33 @@
           </section>
         </div>
       </section>
+      <div id="storyboardImportModal" class="director-modal" aria-hidden="true">
+        <div class="director-modal-backdrop" data-close-storyboard-modal></div>
+        <section class="director-modal-panel" role="dialog" aria-modal="true" aria-labelledby="storyboardImportTitle">
+          <div class="director-modal-head">
+            <div>
+              <div class="eyebrow">Timeline import</div>
+              <h2 id="storyboardImportTitle">2x2 Storyboard</h2>
+            </div>
+            <button id="closeStoryboardImportBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+          </div>
+          <label class="storyboard-file-field">
+            2x2 image
+            <input id="storyboardImportInput" type="file" accept="image/*">
+            <span id="storyboardImportStatus" class="hint">No storyboard selected</span>
+          </label>
+          <label>
+            Batch prompts
+            <textarea id="storyboardPromptText" rows="8" placeholder="Optional. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
+          </label>
+          <div class="director-modal-actions">
+            <button id="cancelStoryboardImportBtn" type="button">Cancel</button>
+            <button id="applyStoryboardImportBtn" class="primary modal-primary" type="button">Add to timeline</button>
+          </div>
+        </section>
+      </div>
       <label id="audioUploadWrap" class="audio-upload">
-        Dialogue audio
+        Dialogue audio (optional for Director)
         <input id="audioInput" type="file" accept="audio/*,video/mp4">
         <span id="audioStatus" class="hint">No audio uploaded</span>
       </label>
@@ -262,6 +278,7 @@
           <div class="result-actions">
             <button class="use-prompt-run" type="button">Use Prompt</button>
             <button class="use-seed-run" type="button">Use Seed</button>
+            <button class="last-frame-run" type="button">Last Frame</button>
             <button class="pin-run" type="button">Pin</button>
             <button class="delete-run" type="button">Delete</button>
           </div>
@@ -273,6 +290,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=director-ui-redesign-1"></script>
+  <script src="/static/app.js?v=global-ref-strength-1"></script>
 </body>
 </html>

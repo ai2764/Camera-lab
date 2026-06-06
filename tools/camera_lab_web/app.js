@@ -18,6 +18,8 @@ const state = {
   directorSelectedId: "",
   directorDrag: null,
   workspace: "camera",
+  cameraWorkflowId: "",
+  directorWorkflowId: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -81,20 +83,38 @@ function cameraWorkflowOption() {
   });
 }
 
+function workflowOptionById(id, mode) {
+  if (!id) return null;
+  const option = [...$("workflowSelect").options].find((opt) => opt.value === id && !opt.disabled);
+  if (!option) return null;
+  const workflow = state.config?.workflows?.find((item) => item.id === option.value);
+  if (mode && workflow?.mode !== mode) return null;
+  if (mode === "camera" && workflow?.mode === "director_ref") return null;
+  return option;
+}
+
+function rememberCurrentWorkflow() {
+  const workflow = currentWorkflow();
+  if (!workflow) return;
+  if (workflow.mode === "director_ref") state.directorWorkflowId = workflow.id;
+  else state.cameraWorkflowId = workflow.id;
+}
+
 function setWorkspace(workspace, { syncWorkflow = true } = {}) {
+  rememberCurrentWorkflow();
   state.workspace = workspace;
   if (!state.config) return;
   if (syncWorkflow && state.config) {
     if (workspace === "director") {
-      const option = directorWorkflowOption();
+      const option = workflowOptionById(state.directorWorkflowId, "director_ref") || directorWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
     } else if (isDirectorWorkflow()) {
-      const option = cameraWorkflowOption();
+      const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
     }
   }
+  rememberCurrentWorkflow();
   updateWorkflowFields();
-  if (workspace === "camera") resetPrompt();
 }
 
 function currentSize() {
@@ -330,7 +350,7 @@ function updateWorkflowFields() {
   $("swapSourceEndWrap").style.display = wf.mode === "flf" ? "block" : "none";
   $("swapSourceMiddleWrap").style.display = showMiddleImage ? "block" : "none";
   $("swapMiddleEndWrap").style.display = showMiddleImage ? "block" : "none";
-  $("audioUploadWrap").style.display = wf.mode === "ia2v" ? "block" : "none";
+  $("audioUploadWrap").style.display = wf.mode === "ia2v" || showDirectorWorkspace ? "block" : "none";
   $("promptTag").textContent = wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : "Prompt";
   if (showDirectorWorkspace) ensureDefaultDirectorSegments();
@@ -356,9 +376,10 @@ function collectPayload() {
       negative_prompt: $("negativePrompt").value.trim(),
       prompt,
       global_prompt: $("directorGlobalPrompt").value.trim(),
+      global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
       segments,
       reference_images: collectReferenceImages(),
-      audio_path: "",
+      audio_path: state.audioPath,
     };
   }
 
@@ -416,21 +437,15 @@ function addDirectorSegment(values = {}) {
   renderDirectorEditor();
 }
 
-function setDirectorSegmentsFromStoryboard(images) {
+function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   const existing = normalizedDirectorSegments();
-  const fallbackPrompts = [
-    "Shot 1 opening beat, establish the character, scene, and key prop clearly",
-    "Continuing seamlessly, Shot 2 develops the action with a clear cause and effect",
-    "Continuing seamlessly, Shot 3 shows the most dynamic action beat",
-    "Continuing seamlessly, Shot 4 resolves the moment with a stable final pose",
-  ];
-  state.directorSegments = images.map((image, index) => {
-    const old = existing[index] || {};
+  const appendStart = existing.reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  const imported = images.map((image, index) => {
     return {
-      id: old.id || `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-      start: index * 4,
-      duration: Number(old.duration) || 4,
-      prompt: old.prompt || fallbackPrompts[index],
+      id: `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+      start: appendStart + index * 4,
+      duration: 4,
+      prompt: prompts[index] || "",
       reference: "",
       imagePath: image.path,
       imageName: image.name,
@@ -438,8 +453,33 @@ function setDirectorSegmentsFromStoryboard(images) {
       strength: index === 0 ? 1 : 0.85,
     };
   });
-  state.directorSelectedId = state.directorSegments[0]?.id || "";
+  state.directorSegments = [...state.directorSegments, ...imported];
+  state.directorSelectedId = imported[0]?.id || state.directorSelectedId;
   renderDirectorEditor();
+}
+
+function openStoryboardImportModal() {
+  const modal = $("storyboardImportModal");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";
+}
+
+function closeStoryboardImportModal() {
+  const modal = $("storyboardImportModal");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+async function applyStoryboardImport() {
+  const file = $("storyboardImportInput").files[0];
+  if (!file) {
+    $("storyboardImportStatus").textContent = "Choose a 2x2 storyboard image first";
+    return;
+  }
+  const prompts = parseBulkSegmentPrompts($("storyboardPromptText").value).slice(0, 4);
+  await splitStoryboardImage(file, prompts);
+  closeStoryboardImportModal();
 }
 
 function parseNumberList(value) {
@@ -478,38 +518,7 @@ function parseBulkSegmentPrompts(raw) {
   return lines.length > 1 ? lines : [normalized];
 }
 
-function applyBulkSegmentPrompts() {
-  const prompts = parseBulkSegmentPrompts($("directorBulkPromptText").value);
-  if (!prompts.length) return;
-  const existing = normalizedDirectorSegments();
-  const count = Math.max(prompts.length, existing.length || prompts.length);
-  const next = [];
-  let cursor = 0;
-  for (let index = 0; index < count; index += 1) {
-    const old = existing[index] || {};
-    const duration = Number(old.duration) || 4;
-    const start = Number.isFinite(Number(old.start)) ? Number(old.start) : cursor;
-    next.push({
-      id: old.id || `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-      start,
-      duration,
-      prompt: prompts[index] || old.prompt || "",
-      reference: "",
-      imagePath: old.imagePath || "",
-      imageName: old.imageName || "",
-      imagePreviewUrl: old.imagePreviewUrl || "",
-      strength: old.strength ?? (index === 0 ? 1 : 0.85),
-    });
-    cursor = start + duration;
-  }
-  state.directorSegments = next;
-  state.directorSelectedId = state.directorSegments[0]?.id || "";
-  $("directorJsonImport").classList.remove("open");
-  renderDirectorEditor();
-  $("runHint").textContent = `Distributed ${prompts.length} prompt(s) into timeline segments`;
-}
-
-async function splitStoryboardImage(file) {
+async function splitStoryboardImage(file, prompts = []) {
   if (!file) return;
   $("runHint").textContent = "Splitting 2x2 storyboard...";
   const image = await loadImageFromFile(file);
@@ -526,8 +535,10 @@ async function splitStoryboardImage(file) {
     });
     uploads.push(uploaded);
   }
-  setDirectorSegmentsFromStoryboard(uploads);
-  $("runHint").textContent = "2x2 storyboard split into four timeline images";
+  setDirectorSegmentsFromStoryboard(uploads, prompts);
+  $("runHint").textContent = prompts.length
+    ? `2x2 storyboard imported with ${prompts.length} prompt(s)`
+    : "2x2 storyboard split into four timeline images";
 }
 
 function loadImageFromFile(file) {
@@ -576,9 +587,9 @@ function renumberDirectorSegments() {
 function ensureDefaultDirectorSegments() {
   if (state.directorSegments.length) return;
   $("directorGlobalPrompt").value = $("directorGlobalPrompt").value || "consistent subject identity, environment continuity, lighting, color, and visual style";
-  addDirectorSegment({ prompt: "the character enters the scene and looks toward the camera", duration: 2, strength: 0.75 });
-  addDirectorSegment({ prompt: "the camera follows as the character interacts with the main prop", start: 2, duration: 2, strength: 0.65 });
-  addDirectorSegment({ prompt: "the scene resolves with a clear view of the environment", start: 4, duration: 2, strength: 0.55 });
+  addDirectorSegment({ duration: 2, strength: 0.75 });
+  addDirectorSegment({ start: 2, duration: 2, strength: 0.65 });
+  addDirectorSegment({ start: 4, duration: 2, strength: 0.55 });
   state.directorSelectedId = state.directorSegments[0]?.id || "";
   renderDirectorEditor();
 }
@@ -1019,7 +1030,7 @@ function renderDirectorSegments(card, run) {
       const player = card.querySelector(".media-box video");
       if (!player) return;
       player.currentTime = start;
-      player.play().catch(() => {});
+      player.pause();
     });
     box.appendChild(item);
   });
@@ -1051,6 +1062,11 @@ function upsertRuns(runs, newestFirst = false) {
       });
       card.querySelector(".use-seed-run").addEventListener("click", () => {
         useRunSeed(card.dataset.seed);
+      });
+      card.querySelector(".last-frame-run").addEventListener("click", () => {
+        captureRunLastFrame(card).catch((err) => {
+          $("runHint").textContent = `Last frame failed: ${err.message}`;
+        });
       });
       card.querySelector(".pin-run").addEventListener("click", () => {
         const action = card.dataset.pinned === "true" ? "unpin" : "pin";
@@ -1102,6 +1118,7 @@ function updateRunCard(card, run) {
     ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
     : !run.prompt;
   card.querySelector(".use-seed-run").disabled = !run.seed;
+  card.querySelector(".last-frame-run").disabled = !run.video;
   const pinButton = card.querySelector(".pin-run");
   pinButton.textContent = run.pinned ? "Unpin" : "Pin";
   pinButton.classList.toggle("active", Boolean(run.pinned));
@@ -1152,6 +1169,53 @@ function runModeLabel(run) {
   return "GEN";
 }
 
+function waitForVideoEvent(video, eventName) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener(eventName, onEvent);
+      video.removeEventListener("error", onError);
+    };
+    const onEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("video could not be read"));
+    };
+    video.addEventListener(eventName, onEvent, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+async function ensureVideoMetadata(video) {
+  if (Number.isFinite(video.duration) && video.duration > 0 && video.videoWidth && video.videoHeight) return;
+  await waitForVideoEvent(video, "loadedmetadata");
+}
+
+async function seekVideo(video, time) {
+  if (Math.abs(video.currentTime - time) < 0.02) return;
+  const done = waitForVideoEvent(video, "seeked");
+  video.currentTime = time;
+  await done;
+}
+
+async function captureRunLastFrame(card) {
+  const run = card._run || {};
+  if (!run.video) throw new Error("no video on this result");
+  const frame = await api("/api/last-frame", {
+    method: "POST",
+    body: JSON.stringify({ video: run.video }),
+  });
+  const link = document.createElement("a");
+  link.href = mediaUrl(frame.path);
+  link.download = frame.name || `${run.run_id || "camera_lab"}_last_frame.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  $("runHint").textContent = "Last frame saved";
+}
+
 function useRunSeed(seed) {
   if (!seed) return;
   $("seedInput").value = seed;
@@ -1178,6 +1242,7 @@ function useRunTimeline(run) {
   }
   setWorkspace("director");
   $("directorGlobalPrompt").value = timeline.global_prompt || run.global_prompt || "";
+  $("directorGlobalReferenceStrength").value = timeline.global_reference_strength ?? run.global_reference_strength ?? 0.35;
   if (run.seed) useRunSeed(run.seed);
   const refs = Array.isArray(run.reference_images) ? run.reference_images.filter(Boolean) : [];
   state.referencePaths = refs.length ? refs : [""];
@@ -1398,6 +1463,7 @@ async function loadConfig() {
   state.config = await api("/api/config");
   fillSelect($("workflowSelect"), state.config.workflows);
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
+  rememberCurrentWorkflow();
   $("negativePrompt").value = state.config.default_negative;
   $("comfyStatus").textContent = state.config.comfy.ok ? "ComfyUI: online" : "ComfyUI: offline";
   $("comfyStatus").className = `status-pill ${state.config.comfy.ok ? "ok" : "bad"}`;
@@ -1447,11 +1513,19 @@ $("resetPromptsBtn").addEventListener("click", resetPrompt);
 $("refreshBtn").addEventListener("click", loadConfig);
 $("runBtn").addEventListener("click", startBatch);
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
-$("toggleDirectorJsonBtn").addEventListener("click", () => $("directorJsonImport").classList.toggle("open"));
-$("applyDirectorBulkPromptBtn").addEventListener("click", applyBulkSegmentPrompts);
-$("storyboardSplitInput").addEventListener("change", () => {
-  splitStoryboardImage($("storyboardSplitInput").files[0]).catch((err) => {
-    $("runHint").textContent = `2x2 storyboard split failed: ${err.message}`;
+$("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);
+$("closeStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
+$("cancelStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
+$("storyboardImportModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-storyboard-modal]")) closeStoryboardImportModal();
+});
+$("storyboardImportInput").addEventListener("change", () => {
+  $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";
+});
+$("applyStoryboardImportBtn").addEventListener("click", () => {
+  applyStoryboardImport().catch((err) => {
+    $("storyboardImportStatus").textContent = err.message;
+    $("runHint").textContent = `2x2 storyboard import failed: ${err.message}`;
   });
 });
 $("globalAddRefBtn").addEventListener("click", addReferenceSlot);

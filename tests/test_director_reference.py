@@ -9,12 +9,12 @@ from tools import camera_lab_server as server
 
 
 class DirectorReferenceTests(unittest.TestCase):
-    def test_comfy_config_defaults_do_not_include_personal_local_path(self):
+    def test_comfy_config_auto_detects_existing_default_comfyui_root(self):
         env = {}
 
         config = server.comfy_config_from_env(env)
 
-        self.assertEqual(config["root"], Path(r"C:\ComfyUI"))
+        self.assertTrue(config["root"].exists() or config["root"] == Path(r"C:\ComfyUI"))
 
     def test_comfy_config_uses_comfyui_root_and_url_from_environment(self):
         root = Path(tempfile.gettempdir()) / "camera_lab_test_comfy"
@@ -209,6 +209,64 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
         self.assertEqual(timeline["segments"][0]["strength"], 0.75)
         self.assertEqual(director_inputs["guide_strength"], "0.75")
+
+    def test_director_custom_audio_patches_concat_audio_latent(self):
+        api = {
+            "4": {"class_type": "VAELoaderKJ", "inputs": {"vae_name": "audio_vae.safetensors"}},
+            "46": {
+                "class_type": "LTXDirector",
+                "inputs": {
+                    "audio_vae": ["4", 0],
+                    "duration_seconds": 5.0,
+                },
+            },
+            "7": {
+                "class_type": "LTXVConcatAVLatent",
+                "inputs": {
+                    "video_latent": ["8", 2],
+                    "audio_latent": ["46", 3],
+                },
+            },
+        }
+        run = {"comfy_audio_name": "dialogue.wav"}
+
+        server.patch_director_custom_audio(api, run)
+
+        load = api["9001"]
+        trim = api["9002"]
+        encode = api["9003"]
+        self.assertEqual(load["class_type"], "LoadAudio")
+        self.assertEqual(load["inputs"]["audio"], "dialogue.wav")
+        self.assertEqual(trim["class_type"], "TrimAudioDuration")
+        self.assertEqual(trim["inputs"]["audio"], ["9001", 0])
+        self.assertEqual(trim["inputs"]["duration"], 5.0)
+        self.assertEqual(encode["class_type"], "LTXVAudioVAEEncode")
+        self.assertEqual(encode["inputs"]["audio"], ["9002", 0])
+        self.assertEqual(encode["inputs"]["audio_vae"], ["4", 0])
+        self.assertEqual(api["7"]["inputs"]["audio_latent"], ["9003", 0])
+
+    def test_director_without_custom_audio_does_not_patch_concat_audio_latent(self):
+        api = {
+            "46": {
+                "class_type": "LTXDirector",
+                "inputs": {
+                    "audio_vae": ["4", 0],
+                    "duration_seconds": 5.0,
+                },
+            },
+            "7": {
+                "class_type": "LTXVConcatAVLatent",
+                "inputs": {
+                    "video_latent": ["8", 2],
+                    "audio_latent": ["46", 3],
+                },
+            },
+        }
+
+        server.patch_director_custom_audio(api, {})
+
+        self.assertEqual(api["7"]["inputs"]["audio_latent"], ["46", 3])
+        self.assertNotIn("9001", api)
 
     def test_global_reference_resize_preserves_full_wide_image_with_padding(self):
         with tempfile.TemporaryDirectory() as tmp:

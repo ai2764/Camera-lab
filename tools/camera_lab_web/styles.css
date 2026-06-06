@@ -419,7 +419,8 @@ button:hover {
 .media-box {
   background: #0b0b09;
   border: 1px solid var(--line);
-  height: 220px;
+  min-height: 300px;
+  height: clamp(300px, 34vw, 520px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -433,6 +434,8 @@ button:hover {
   height: 100%;
   object-fit: contain;
   display: block;
+  position: relative;
+  z-index: 1;
 }
 
 .paths {
@@ -783,44 +786,6 @@ button:hover {
   cursor: pointer;
 }
 
-.timeline-tool-button input {
-  display: none;
-}
-
-.director-json-import {
-  display: none;
-  min-width: 520px;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  background: #0e0e0b;
-}
-
-.director-json-import.open {
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
-}
-
-.director-json-import label {
-  margin: 0;
-}
-
-.director-json-import textarea {
-  margin: 6px 0 0;
-  min-height: 102px;
-  resize: vertical;
-}
-
-.director-import-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.director-import-actions button {
-  min-width: 170px;
-}
-
 .director-ruler {
   position: relative;
   height: 26px;
@@ -1022,6 +987,86 @@ button:hover {
 
 .director-shot-list .eyebrow {
   margin-bottom: 8px;
+}
+
+.director-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+}
+
+.director-modal.open {
+  display: flex;
+}
+
+.director-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5,5,4,.74);
+}
+
+.director-modal-panel {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 44px));
+  overflow: auto;
+  border: 1px solid rgba(215,180,106,.34);
+  background: #14130f;
+  padding: 16px;
+  box-shadow: 0 24px 70px rgba(0,0,0,.5);
+}
+
+.director-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(240,235,225,.12);
+}
+
+.director-modal-head h2 {
+  margin-top: 3px;
+}
+
+.modal-icon-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.storyboard-file-field {
+  border: 1px dashed rgba(143,199,192,.42);
+  background: rgba(143,199,192,.06);
+  padding: 12px;
+}
+
+.storyboard-file-field input {
+  cursor: pointer;
+}
+
+.storyboard-file-field .hint {
+  display: block;
+  margin-top: 7px;
+}
+
+.director-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modal-primary {
+  width: auto;
+  min-width: 180px;
 }
 
 .director-segment-grid {

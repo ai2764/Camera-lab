@@ -46,7 +46,15 @@ def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> Mu
 
 
 def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
-    root = Path(env.get("COMFYUI_ROOT") or r"C:\ComfyUI")
+    root_value = env.get("COMFYUI_ROOT")
+    if root_value:
+        root = Path(root_value)
+    else:
+        candidates = [
+            Path.home() / "Desktop" / "GEN-ART" / "ComfyUI",
+            Path(r"C:\ComfyUI"),
+        ]
+        root = next((candidate for candidate in candidates if candidate.exists()), candidates[-1])
     return {
         "url": env.get("COMFYUI_URL") or "http://127.0.0.1:8000",
         "root": root,
@@ -695,6 +703,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
     duration_seconds = round(duration_frames / fps, 3)
     return {
         "global_prompt": str(payload.get("global_prompt") or "").strip(),
+        "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
         "local_prompts": " | ".join(segment["prompt"] for segment in segments),
         "segment_lengths": ",".join(str(segment["frames"]) for segment in segments),
         "duration_frames": duration_frames,
@@ -812,9 +821,63 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
     patch_ltx23_local_loras(api)
+    patch_director_custom_audio(api, run)
     bypass_sage_attention_patches(api)
 
     return api
+
+
+def patch_director_custom_audio(api: dict[str, dict], run: dict[str, Any]) -> None:
+    audio_name = str(run.get("comfy_audio_name") or "").strip()
+    if not audio_name:
+        return
+
+    director = next((node for node in api.values() if node.get("class_type") == "LTXDirector"), None)
+    if not director:
+        raise RuntimeError("Director workflow does not contain an LTXDirector node")
+    audio_vae = director.get("inputs", {}).get("audio_vae")
+    if not audio_vae:
+        raise RuntimeError("Director workflow does not expose audio_vae for custom audio")
+
+    duration = float(director.get("inputs", {}).get("duration_seconds") or run.get("duration") or 0)
+    load_id = next_free_api_id(api, 9001)
+    trim_id = next_free_api_id(api, load_id + 1)
+    encode_id = next_free_api_id(api, trim_id + 1)
+
+    api[str(load_id)] = {
+        "class_type": "LoadAudio",
+        "inputs": {"audio": audio_name},
+        "_meta": {"title": "Director custom audio"},
+    }
+    api[str(trim_id)] = {
+        "class_type": "TrimAudioDuration",
+        "inputs": {"audio": [str(load_id), 0], "duration": duration},
+        "_meta": {"title": "Trim director custom audio"},
+    }
+    api[str(encode_id)] = {
+        "class_type": "LTXVAudioVAEEncode",
+        "inputs": {"audio": [str(trim_id), 0], "audio_vae": audio_vae},
+        "_meta": {"title": "Encode director custom audio"},
+    }
+
+    patched = False
+    for node in api.values():
+        if node.get("class_type") != "LTXVConcatAVLatent":
+            continue
+        inputs = node.get("inputs") or {}
+        if "audio_latent" in inputs:
+            inputs["audio_latent"] = [str(encode_id), 0]
+            patched = True
+    if not patched:
+        raise RuntimeError("Director workflow does not contain LTXVConcatAVLatent.audio_latent")
+
+
+def next_free_api_id(api: dict[str, dict], start: int) -> int:
+    used = {int(key) for key in api if str(key).isdigit()}
+    value = start
+    while value in used:
+        value += 1
+    return value
 
 
 def insert_director_multi_guide(api: dict[str, dict], guide_roles: list[str], input_names: dict[str, str], timeline: dict[str, Any]) -> None:
@@ -1298,6 +1361,26 @@ def make_contact_sheet(video: Path, contact: Path, title: str) -> None:
     shutil.rmtree(frames_dir)
 
 
+def extract_last_frame(video: Path, image: Path) -> None:
+    image.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-sseof",
+            "-0.08",
+            "-i",
+            str(video),
+            "-frames:v",
+            "1",
+            str(image),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def check_run_canceled(run: dict[str, Any]) -> None:
     if run.get("status") == "canceled":
         raise RunCanceled()
@@ -1653,13 +1736,15 @@ def run_batch_worker(batch_id: str) -> None:
                 end_name = f"{run['run_id']}_end.png"
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
                 input_names["end"] = end_name
-            if workflow["mode"] == "ia2v":
+            if workflow["mode"] == "ia2v" or (workflow["mode"] == "director_ref" and run.get("audio_path")):
                 audio = Path(run.get("audio_path") or "")
                 if not audio.exists():
-                    raise FileNotFoundError("IA2V audio file is missing")
+                    raise FileNotFoundError(f"{workflow['label']} audio file is missing")
                 audio_name = f"{run['run_id']}_{safe_filename(audio.name)}"
                 shutil.copy2(audio, COMFY_INPUT / audio_name)
                 input_names["audio"] = audio_name
+                if workflow["mode"] == "director_ref":
+                    run["comfy_audio_name"] = audio_name
 
             if workflow.get("builder") == "ltx23_ttp_flf":
                 api = build_ltx23_ttp_flf_api(run, input_names)
@@ -1790,6 +1875,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_image()
             if self.path == "/api/history-state":
                 return self.handle_history_state()
+            if self.path == "/api/last-frame":
+                return self.handle_last_frame()
             if self.path == "/api/rate":
                 return self.handle_rate()
             self.send_error(404)
@@ -1874,6 +1961,7 @@ class Handler(BaseHTTPRequestHandler):
                     "variant_name": variant["name"],
                     "prompt": variant["prompt"],
                     "global_prompt": payload.get("global_prompt", ""),
+                    "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
                     "segments": director_segments,
                     "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or DEFAULT_NEGATIVE,
@@ -1937,6 +2025,16 @@ class Handler(BaseHTTPRequestHandler):
         BATCHES[batch["batch_id"]] = batch
         write_batch(batch)
         self.send_json({"ok": True})
+
+    def handle_last_frame(self) -> None:
+        payload = self.read_json()
+        video = safe_media_path(str(payload.get("video") or ""))
+        if video.suffix.lower() not in {".mp4", ".webm", ".mov"}:
+            raise ValueError("last frame requires a video file")
+        ensure_run_artifact_path(video)
+        image = video.with_name(f"{video.stem}_last_frame.png")
+        extract_last_frame(video, image)
+        self.send_json({"path": str(image), "name": image.name})
 
     def handle_history_state(self) -> None:
         payload = self.read_json()
