@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=video-controls-1">
+  <link rel="stylesheet" href="/static/styles.css?v=result-toolbar-icons-1">
 </head>
 <body>
   <header class="topbar">
@@ -140,78 +140,98 @@
             <h2>Timeline Studio</h2>
           </div>
           <div class="director-stage-meta">
-            <span>Global refs</span>
-            <span>Timeline</span>
-            <span>Segment edit</span>
+            <span>01 Global</span>
+            <span>02 Timeline Segments</span>
+            <span>03 Output</span>
           </div>
         </div>
-        <div class="director-global-grid">
-          <section id="directorReferenceWrap" class="director-reference-tray">
-            <div class="director-reference-head">
-              <div>
-                <div class="eyebrow">Global</div>
-                <h2>Reference images</h2>
-              </div>
-              <button id="globalAddRefBtn" class="reference-add" type="button">+</button>
+        <section class="director-workbench-section director-global-zone">
+          <div class="director-section-heading">
+            <div>
+              <div class="director-section-kicker">01</div>
+              <h3>Global Setup</h3>
             </div>
-            <div id="globalRefSlots" class="reference-slot-list"></div>
-          </section>
-          <section class="director-global-settings">
-            <label>
-              Global prompt
-              <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
-            </label>
-            <label>
-              Global ref strength
-              <input id="directorGlobalReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
-            </label>
-            <section class="director-video-size">
-              <div class="grid-2">
-                <label>
-                  Preset
-                  <select id="directorSizePreset">
-                    <option value="512x512">1:1 512x512</option>
-                    <option value="1280x720" selected>16:9 1280x720</option>
-                    <option value="720x1280">9:16 720x1280</option>
-                    <option value="768x1152">2:3 768x1152</option>
-                    <option value="1152x768">3:2 1152x768</option>
-                  </select>
-                </label>
-                <label>
-                  Scale <span id="directorSizeReadout">1280x720 / 100%</span>
-                  <input id="directorSizeScale" type="range" min="50" max="150" step="5" value="100">
-                </label>
+            <p>References / Prompt / Audio / Size</p>
+          </div>
+          <div class="director-global-grid">
+            <section id="directorReferenceWrap" class="director-reference-tray">
+              <div class="director-reference-head">
+                <div>
+                  <div class="eyebrow">Global</div>
+                  <h2>Reference images</h2>
+                </div>
+                <button id="globalAddRefBtn" class="reference-add" type="button">+</button>
               </div>
-              <label class="size-text-row">
-                Frame size
-                <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
-              </label>
+              <div id="globalRefSlots" class="reference-slot-list"></div>
             </section>
-          </section>
-        </div>
-        <div class="director-workspace-grid">
-          <section class="director-main-editor">
-            <div class="director-timeline-shell">
-              <div class="director-timeline-head">
-                <span>Timeline images</span>
-                <div class="timeline-tools">
-                  <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
-                  <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+            <section class="director-global-settings">
+              <label>
+                Global prompt
+                <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
+              </label>
+              <label>
+                Global ref strength
+                <input id="directorGlobalReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
+              </label>
+              <div id="directorAudioSlot" class="director-audio-slot"></div>
+              <section class="director-video-size">
+                <div class="grid-2">
+                  <label>
+                    Preset
+                    <select id="directorSizePreset">
+                      <option value="512x512">1:1 512x512</option>
+                      <option value="1280x720" selected>16:9 1280x720</option>
+                      <option value="720x1280">9:16 720x1280</option>
+                      <option value="768x1152">2:3 768x1152</option>
+                      <option value="1152x768">3:2 1152x768</option>
+                    </select>
+                  </label>
+                  <label>
+                    Scale <span id="directorSizeReadout">1280x720 / 100%</span>
+                    <input id="directorSizeScale" type="range" min="50" max="150" step="5" value="100">
+                  </label>
+                </div>
+                <label class="size-text-row">
+                  Frame size
+                  <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
+                </label>
+              </section>
+            </section>
+          </div>
+        </section>
+        <section class="director-workbench-section director-timeline-zone">
+          <div class="director-section-heading">
+            <div>
+              <div class="director-section-kicker">02</div>
+              <h3>Timeline Segments</h3>
+            </div>
+            <p>Shot image / Duration / Prompt / Guide image</p>
+          </div>
+          <div class="director-workspace-grid">
+            <section class="director-main-editor">
+              <div class="director-timeline-shell">
+                <div class="director-timeline-head">
+                  <span>Timeline images</span>
+                  <div class="timeline-tools">
+                    <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
+                    <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+                  </div>
+                </div>
+                <div class="director-ruler" id="directorRuler"></div>
+                <div class="director-track" id="directorTrack"></div>
+              </div>
+              <div class="director-edit-row">
+                <div id="directorSegmentInspector" class="director-inspector"></div>
+                <div class="director-shot-list">
+                  <div class="eyebrow">Shots</div>
+                  <div id="directorSegments" class="director-segments"></div>
                 </div>
               </div>
-              <div class="director-ruler" id="directorRuler"></div>
-              <div class="director-track" id="directorTrack"></div>
-            </div>
-            <div class="director-edit-row">
-              <div id="directorSegmentInspector" class="director-inspector"></div>
-              <div class="director-shot-list">
-                <div class="eyebrow">Shots</div>
-                <div id="directorSegments" class="director-segments"></div>
-              </div>
-            </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        </section>
       </section>
+      <div id="directorRunSlot" class="director-run-slot"></div>
       <div id="storyboardImportModal" class="director-modal" aria-hidden="true">
         <div class="director-modal-backdrop" data-close-storyboard-modal></div>
         <section class="director-modal-panel" role="dialog" aria-modal="true" aria-labelledby="storyboardImportTitle">
@@ -237,21 +257,30 @@
           </div>
         </section>
       </div>
-      <label id="audioUploadWrap" class="audio-upload">
-        Dialogue audio (optional for Director)
-        <input id="audioInput" type="file" accept="audio/*,video/mp4">
-        <span id="audioStatus" class="hint">No audio uploaded</span>
-      </label>
-      <button class="primary prompt-run" id="runBtn" type="button">Queue Run</button>
-      <div class="hint" id="runHint">Runs are saved under tasks/camera_lab_runs.</div>
-      <section id="directorInlineResults" class="director-only director-inline-results">
-        <div class="results-header">
+      <section class="director-output-zone">
+        <div class="director-section-heading director-output-heading">
           <div>
-            <div class="eyebrow">Director Output</div>
-            <h2>Generated video</h2>
+            <div class="director-section-kicker">03</div>
+            <h3>Output</h3>
+          </div>
+          <p>Queue / Video results / Segment jumps</p>
+        </div>
+        <div id="audioUploadHome">
+          <label id="audioUploadWrap" class="audio-upload">
+            Dialogue audio (optional for Director)
+            <input id="audioInput" type="file" accept="audio/*,video/mp4">
+            <span id="audioStatus" class="hint">No audio uploaded</span>
+          </label>
+        </div>
+        <div id="runStripHome">
+          <div id="directorRunStrip" class="director-run-strip">
+            <button class="primary prompt-run" id="runBtn" type="button">Queue Run</button>
+            <div class="hint" id="runHint">Runs are saved under tasks/camera_lab_runs.</div>
           </div>
         </div>
-        <div id="directorResultsGrid" class="results-grid"></div>
+        <section id="directorInlineResults" class="director-only director-inline-results">
+          <div id="directorResultsGrid" class="results-grid"></div>
+        </section>
       </section>
     </section>
 
@@ -270,19 +299,27 @@
   <template id="resultTemplate">
     <article class="result-card">
       <div class="result-top">
-        <div class="result-side">
-          <div class="result-badges">
-            <span class="mode-tag"></span>
-            <span class="run-status"></span>
-          </div>
-          <div class="result-actions">
-            <button class="use-prompt-run" type="button">Use Prompt</button>
-            <button class="use-seed-run" type="button">Use Seed</button>
-            <button class="last-frame-run" type="button">Last Frame</button>
-            <button class="pin-run" type="button">Pin</button>
-            <button class="delete-run" type="button">Delete</button>
-          </div>
+        <div class="result-badges">
+          <span class="mode-tag"></span>
+          <span class="duration-tag"></span>
+          <span class="run-status"></span>
         </div>
+        <div class="result-icon-actions">
+          <button class="pin-run icon-action" type="button" title="Pin" aria-label="Pin">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3l7 7-3 1-4 6v4l-2 2-3-7-7-3 2-2h4l6-4 1-4z"></path></svg>
+          </button>
+          <button class="preview-run icon-action" type="button" title="Preview" aria-label="Preview">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5zm6 4v6l5-3-5-3z"></path></svg>
+          </button>
+          <button class="delete-run icon-action" type="button" title="Delete" aria-label="Delete">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8l1 2h4v2H3V6h4l1-2zm-2 6h12l-1 10H7L6 10zm4 2v6h2v-6h-2zm4 0v6h2v-6h-2z"></path></svg>
+          </button>
+        </div>
+      </div>
+      <div class="result-text-actions">
+        <button class="use-prompt-run" type="button">Use Prompt</button>
+        <button class="use-seed-run" type="button">Use Seed</button>
+        <button class="last-frame-run" type="button">Last Frame</button>
       </div>
       <div class="media-box"></div>
       <div class="result-segments"></div>
@@ -290,6 +327,22 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=global-ref-strength-1"></script>
+  <div id="videoPreviewModal" class="director-modal video-preview-modal" aria-hidden="true">
+    <div class="director-modal-backdrop" data-close-video-preview></div>
+    <section class="director-modal-panel video-preview-panel" role="dialog" aria-modal="true" aria-labelledby="videoPreviewTitle">
+      <div class="director-modal-head">
+        <div>
+          <div class="eyebrow">Video Preview</div>
+          <h2 id="videoPreviewTitle">Preview</h2>
+        </div>
+        <button id="closeVideoPreviewBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="video-preview-frame">
+        <video id="videoPreviewPlayer" controls playsinline></video>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js?v=result-toolbar-icons-1"></script>
 </body>
 </html>

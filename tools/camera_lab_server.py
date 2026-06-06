@@ -119,11 +119,9 @@ if BUNDLED_XIAOMEI_IMAGE.exists():
 WORKFLOWS = [
     {
         "id": "i2v_official_local",
-        "label": "LTX 2.3 I2V Official Local",
+        "label": "LTX 2.3 NAG I2V Extendcrop",
         "mode": "i2v",
-        "path": str(TEMPLATE_WORKFLOW_ROOT / "video_ltx2_3_i2v.json"),
-        "disable_crop_guides": True,
-        "disable_prompt_enhance": True,
+        "path": str(WORKFLOW_ROOT / "ltx23-nag-i2v-extendcrop" / "ltx23_nag_i2v_extendcrop_general.json"),
     },
     {
         "id": "flf_ttp_control",
@@ -956,7 +954,7 @@ def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str])
         api["7"]["inputs"]["text"] = run["negative_prompt"]
     elif "11" in api and api["11"]["class_type"] == "CLIPTextEncode":
         api["11"]["inputs"]["text"] = run["negative_prompt"]
-    if "340" in api:
+    if "340" in api and "fixed nag" not in str(api["340"].get("_meta", {}).get("title") or "").lower():
         api["340"]["inputs"]["text"] = run["negative_prompt"]
     if "999" in api:
         api["999"]["inputs"]["filename_prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}"
@@ -991,7 +989,7 @@ def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str])
             node["inputs"]["width"] = run["width"]
             node["inputs"]["height"] = run["height"]
             node["inputs"]["length"] = max(9, int(float(run["duration"]) * 24) + 1)
-        if workflow["id"] == "i2v_official_local" and node["class_type"] == "LTXVImgToVideoInplace":
+        if Path(str(workflow.get("path") or "")).name == "video_ltx2_3_i2v.json" and node["class_type"] == "LTXVImgToVideoInplace":
             node["inputs"]["strength"] = 1.0 if node_id == "288" else 0.7
         if node["class_type"] == "ResizeImageMaskNode" and "resize_type.width" in node["inputs"]:
             node["inputs"]["resize_type"] = "scale dimensions"

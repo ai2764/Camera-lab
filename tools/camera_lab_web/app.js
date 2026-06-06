@@ -350,7 +350,13 @@ function updateWorkflowFields() {
   $("swapSourceEndWrap").style.display = wf.mode === "flf" ? "block" : "none";
   $("swapSourceMiddleWrap").style.display = showMiddleImage ? "block" : "none";
   $("swapMiddleEndWrap").style.display = showMiddleImage ? "block" : "none";
+  const audioWrap = $("audioUploadWrap");
+  const audioTarget = showDirectorWorkspace ? $("directorAudioSlot") : $("audioUploadHome");
+  if (audioWrap.parentElement !== audioTarget) audioTarget.appendChild(audioWrap);
   $("audioUploadWrap").style.display = wf.mode === "ia2v" || showDirectorWorkspace ? "block" : "none";
+  const runStrip = $("directorRunStrip");
+  const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
+  if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
   $("promptTag").textContent = wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : "Prompt";
   if (showDirectorWorkspace) ensureDefaultDirectorSegments();
@@ -688,6 +694,7 @@ function renderDirectorInspector() {
       <span>Selected segment</span>
       <button id="removeDirectorSegmentBtn" type="button">Remove</button>
     </div>
+    <button id="removeDirectorSegmentIconBtn" class="director-segment-remove" type="button" title="Remove segment" aria-label="Remove segment">x</button>
     <label>
       Local prompt
       <textarea id="directorSegmentPrompt" rows="5"></textarea>
@@ -736,11 +743,13 @@ function renderDirectorInspector() {
     $("directorSegmentImageStatus").textContent = err.message;
     $("runHint").textContent = `Timeline image upload failed: ${err.message}`;
   }));
-  $("removeDirectorSegmentBtn").addEventListener("click", () => {
+  const removeSegment = () => {
     state.directorSegments = state.directorSegments.filter((item) => item.id !== segment.id);
     state.directorSelectedId = state.directorSegments[0]?.id || "";
     renderDirectorEditor();
-  });
+  };
+  $("removeDirectorSegmentBtn").addEventListener("click", removeSegment);
+  $("removeDirectorSegmentIconBtn").addEventListener("click", removeSegment);
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {
@@ -939,7 +948,7 @@ function renderReferenceSlots() {
         </label>
         <span id="globalRefStatus_${index}" class="hint">${escapeHtml(state.referenceNames[index] || "No image uploaded")}</span>
       </div>
-      <button id="globalRefRemove_${index}" class="reference-remove icon-button" type="button" title="Remove reference">×</button>
+      <button id="globalRefRemove_${index}" class="reference-remove icon-button" type="button" title="Remove reference">x</button>
     `;
     wrap.appendChild(item);
     renderReferencePreview(previewId, state.referencePreviewUrls[index] || "");
@@ -1063,6 +1072,9 @@ function upsertRuns(runs, newestFirst = false) {
       card.querySelector(".use-seed-run").addEventListener("click", () => {
         useRunSeed(card.dataset.seed);
       });
+      card.querySelector(".preview-run").addEventListener("click", () => {
+        openVideoPreview(card._run || {});
+      });
       card.querySelector(".last-frame-run").addEventListener("click", () => {
         captureRunLastFrame(card).catch((err) => {
           $("runHint").textContent = `Last frame failed: ${err.message}`;
@@ -1110,6 +1122,10 @@ function updateRunCard(card, run) {
   const modeTag = card.querySelector(".mode-tag");
   modeTag.textContent = mode;
   modeTag.title = run.workflow_label || run.workflow_id || mode;
+  const durationTag = card.querySelector(".duration-tag");
+  const duration = runDurationSeconds(run);
+  durationTag.textContent = duration ? formatSeconds(duration) : "";
+  durationTag.style.display = duration ? "inline-flex" : "none";
   card.querySelector(".run-status").textContent = `${run.status} ${elapsedText(run)}`;
   const usePromptButton = card.querySelector(".use-prompt-run");
   const directorRun = isDirectorRun(run);
@@ -1118,9 +1134,11 @@ function updateRunCard(card, run) {
     ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
     : !run.prompt;
   card.querySelector(".use-seed-run").disabled = !run.seed;
+  card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
   const pinButton = card.querySelector(".pin-run");
-  pinButton.textContent = run.pinned ? "Unpin" : "Pin";
+  pinButton.title = run.pinned ? "Unpin" : "Pin";
+  pinButton.setAttribute("aria-label", run.pinned ? "Unpin" : "Pin");
   pinButton.classList.toggle("active", Boolean(run.pinned));
 
   const media = card.querySelector(".media-box");
@@ -1156,6 +1174,38 @@ function updateRunCard(card, run) {
     promptLine.textContent = promptKey;
   }
   renderDirectorSegments(card, run);
+}
+
+function runDurationSeconds(run) {
+  const candidates = [
+    run.duration,
+    run.duration_seconds,
+    run.director_timeline?.duration_seconds,
+  ];
+  const duration = candidates.map(Number).find((value) => Number.isFinite(value) && value > 0);
+  return duration || 0;
+}
+
+function openVideoPreview(run) {
+  if (!run.video) return;
+  const modal = $("videoPreviewModal");
+  const player = $("videoPreviewPlayer");
+  $("videoPreviewTitle").textContent = run.run_id || run.batch_id || "Preview";
+  player.src = mediaUrl(run.video);
+  player.loop = true;
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  player.focus();
+}
+
+function closeVideoPreview() {
+  const modal = $("videoPreviewModal");
+  const player = $("videoPreviewPlayer");
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
 }
 
 function runModeLabel(run) {
@@ -1518,6 +1568,13 @@ $("closeStoryboardImportBtn").addEventListener("click", closeStoryboardImportMod
 $("cancelStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("storyboardImportModal").addEventListener("click", (event) => {
   if (event.target.matches("[data-close-storyboard-modal]")) closeStoryboardImportModal();
+});
+$("closeVideoPreviewBtn").addEventListener("click", closeVideoPreview);
+$("videoPreviewModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-video-preview]")) closeVideoPreview();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && $("videoPreviewModal").classList.contains("open")) closeVideoPreview();
 });
 $("storyboardImportInput").addEventListener("change", () => {
   $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";

@@ -80,6 +80,47 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["2078"]["_meta"]["title"], "LENGTH (in seconds)")
         self.assertEqual(api["2078"]["inputs"]["value"], 4)
 
+    def test_camera_lab_i2v_uses_nag_extendcrop_workflow(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "i2v_official_local")
+
+        path = server.Path(workflow["path"])
+
+        self.assertEqual(workflow["mode"], "i2v")
+        self.assertEqual(path.parent.name, "ltx23-nag-i2v-extendcrop")
+        self.assertEqual(path.name, "ltx23_nag_i2v_extendcrop_general.json")
+
+    def test_nag_i2v_keeps_fixed_anti_text_prompt_and_inplace_strengths(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "i2v_official_local")
+        api = server.workflow_to_api(json.loads(server.Path(workflow["path"]).read_text(encoding="utf-8")))
+        fixed_nag_prompt = api["340"]["inputs"]["text"]
+        strengths = {
+            node_id: node["inputs"].get("strength")
+            for node_id, node in api.items()
+            if node["class_type"] == "LTXVImgToVideoInplace"
+        }
+        run = {
+            "prompt": "cinematic shot",
+            "negative_prompt": "custom negative",
+            "duration": 4,
+            "width": 1280,
+            "height": 720,
+            "batch_id": "dry",
+            "run_id": "01_i2v",
+            "seed": "123",
+        }
+
+        server.patch_api(api, workflow, run, {"source": "source.png"})
+
+        self.assertEqual(api["340"]["inputs"]["text"], fixed_nag_prompt)
+        self.assertEqual(
+            {
+                node_id: node["inputs"].get("strength")
+                for node_id, node in api.items()
+                if node["class_type"] == "LTXVImgToVideoInplace"
+            },
+            strengths,
+        )
+
     def test_director_timeline_normalizes_segments_and_references(self):
         payload = {
             "global_prompt": "same white mecha, same hangar",
