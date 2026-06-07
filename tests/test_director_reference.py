@@ -113,6 +113,21 @@ class DirectorReferenceTests(unittest.TestCase):
             else:
                 self.fail(f"Unexpected workflow in dropdown: {workflow['id']}")
 
+    def test_dependency_manifest_matches_dropdown_workflows(self):
+        manifest = json.loads((server.ROOT / "dependency-manifest.json").read_text(encoding="utf-8"))
+        manifest_workflows = {item["id"]: item for item in manifest["workflow_dropdown"]}
+
+        self.assertEqual(set(manifest_workflows), {workflow["id"] for workflow in server.WORKFLOWS})
+        for workflow in server.WORKFLOWS:
+            item = manifest_workflows[workflow["id"]]
+            self.assertEqual(item["label"], workflow["label"])
+            self.assertEqual(item["mode"], workflow["mode"])
+            if workflow.get("path"):
+                relative_path = str(server.Path(workflow["path"]).relative_to(server.ROOT)).replace("\\", "/")
+                self.assertEqual(item["source"], relative_path)
+            else:
+                self.assertEqual(item["source"], f"server builder: {workflow['builder']}")
+
     def test_nag_i2v_keeps_fixed_anti_text_prompt_and_inplace_strengths(self):
         workflow = next(item for item in server.WORKFLOWS if item["id"] == "i2v_official_local")
         api = server.workflow_to_api(json.loads(server.Path(workflow["path"]).read_text(encoding="utf-8")))

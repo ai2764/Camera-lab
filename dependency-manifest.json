@@ -10,13 +10,28 @@
     "entrypoint": "server/camera_lab_server.py"
   },
   "commands": {
+    "agent_setup": ".\\scripts\\agent_setup.ps1",
     "install_python_dependencies": "python -m pip install -r requirements.txt",
+    "install_node_dependencies": "npm install",
+    "install_playwright_chromium": "npx playwright install chromium",
     "check_setup": ".\\scripts\\check_setup.ps1",
     "install_workflows": ".\\scripts\\install_workflows.ps1",
     "start": ".\\scripts\\start_camera_lab.ps1 -Open",
     "stop": ".\\scripts\\stop_camera_lab.ps1",
-    "test": "python -m pytest -p no:cacheprovider tests/test_director_reference.py"
+    "test": "python -m pytest -p no:cacheprovider tests/test_director_reference.py",
+    "test_e2e": "npm run test:e2e",
+    "python_syntax_check": "python -m py_compile server\\camera_lab_server.py",
+    "frontend_app_syntax_check": "node --check frontend\\app.js",
+    "frontend_photography_syntax_check": "node --check frontend\\photography.js"
   },
+  "agent_quickstart": [
+    "Read AGENTS.md and dependency-manifest.json first.",
+    "Run .\\scripts\\agent_setup.ps1 for repo-side dependencies.",
+    "Edit .env so COMFYUI_ROOT points to a local ComfyUI install and COMFYUI_URL points to the running ComfyUI server.",
+    "Run .\\scripts\\install_workflows.ps1 after COMFYUI_ROOT is valid.",
+    "Run .\\scripts\\check_setup.ps1 and fix any MISSING item before starting the app.",
+    "Run python -m pytest -p no:cacheprovider tests/test_director_reference.py before committing backend or workflow changes."
+  ],
   "local_config": {
     "template": ".env.example",
     "ignored_file": ".env",
@@ -34,6 +49,12 @@
   "python_dependencies": {
     "requirements_file": "requirements.txt",
     "direct": ["Pillow"]
+  },
+  "node_dependencies": {
+    "package_file": "package.json",
+    "lock_file": "package-lock.json",
+    "dev": ["@playwright/test"],
+    "required_for": ["browser smoke tests"]
   },
   "external_dependencies": {
     "comfyui": {
@@ -79,6 +100,44 @@
       "tasks/camera_lab_uploads"
     ]
   },
+  "workflow_dropdown": [
+    {
+      "id": "i2v_official_local",
+      "label": "LTX 2.3 NAG I2V Extendcrop",
+      "mode": "i2v",
+      "source": "workflows/app/ltx23_nag_i2v_extendcrop_general.json"
+    },
+    {
+      "id": "flf_ttp_control",
+      "label": "LTX 2.3 FLF TTP Control (2 images)",
+      "mode": "flf",
+      "source": "server builder: ltx23_ttp_flf"
+    },
+    {
+      "id": "fml_two_segment_flf",
+      "label": "LTX 2.3 FML (3 images, 2-stage TTP FLF)",
+      "mode": "fml",
+      "source": "server builder: ltx23_ttp_flf"
+    },
+    {
+      "id": "fml_runexx_guider_local",
+      "label": "LTX 2.3 FML RuneXX Guider Local (3 images)",
+      "mode": "fml_native",
+      "source": "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json"
+    },
+    {
+      "id": "ia2v_extendcrop",
+      "label": "LTX 2.3 IA2V",
+      "mode": "ia2v",
+      "source": "workflows/app/ltx23_nag_ia2v_extendcrop_general.json"
+    },
+    {
+      "id": "ltx_director_reference_mvp",
+      "label": "LTX Director Global Reference MVP",
+      "mode": "director_ref",
+      "source": "workflows/app/ltx_director_global_reference_mvp.json"
+    }
+  ],
   "do_not_commit": [
     ".env",
     "tasks/",

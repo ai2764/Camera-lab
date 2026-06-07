@@ -8,9 +8,31 @@ Camera Lab is a Windows-first local web UI for driving ComfyUI video workflows. 
 
 - Backend: `server/camera_lab_server.py`
 - Frontend: `frontend/`
+- Agent bootstrap: `scripts/agent_setup.ps1`
 - Start: `scripts/start_camera_lab.ps1`
 - Stop: `scripts/stop_camera_lab.ps1`
 - Setup check: `scripts/check_setup.ps1`
+
+## Fast Agent Setup
+
+Use this order on a fresh clone:
+
+```powershell
+.\scripts\agent_setup.ps1
+.\scripts\install_workflows.ps1
+.\scripts\check_setup.ps1
+python -m pytest -p no:cacheprovider tests/test_director_reference.py
+```
+
+Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.ps1` installs repo dependencies, creates `.env` from `.env.example` if it is missing, and installs bundled workflows when `COMFYUI_ROOT` points to a real ComfyUI folder. It does not install ComfyUI, models, or custom nodes.
+
+For browser smoke tests, run:
+
+```powershell
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
 
 ## Local Configuration
 
@@ -64,6 +86,7 @@ Required custom node:
 Run:
 
 ```powershell
+.\scripts\agent_setup.ps1
 .\scripts\install_workflows.ps1
 .\scripts\check_setup.ps1
 python -m pytest -p no:cacheprovider tests/test_director_reference.py

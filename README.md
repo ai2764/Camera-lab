@@ -8,6 +8,16 @@ It runs as a Python HTTP server and talks to a local ComfyUI instance.
 
 ## Quick Start
 
+For coding agents or fresh clones, the fastest repo-side bootstrap is:
+
+```powershell
+.\scripts\agent_setup.ps1
+.\scripts\install_workflows.ps1
+.\scripts\check_setup.ps1
+```
+
+Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.ps1` installs repo dependencies and installs bundled workflows when `COMFYUI_ROOT` is valid. It does not install ComfyUI, models, or custom nodes.
+
 ### 1. Requirements
 
 - Windows
