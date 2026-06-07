@@ -6447,8 +6447,7 @@
             "type": "output",
             "format": "video/h264-mp4",
             "frame_rate": 24,
-            "workflow": "LTX-2_01648.png",
-            "fullpath": "E:\\AI\\ComfyUI\\output\\LTX-2_01648-audio.mp4"
+            "workflow": "LTX-2_01648.png"
           }
         }
       }

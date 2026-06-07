@@ -4669,8 +4669,7 @@
             "type": "output",
             "format": "video/h264-mp4",
             "frame_rate": 24,
-            "workflow": "LTX-2_00256.png",
-            "fullpath": "/workspace/ComfyUI/output/LTX-2_00256-audio.mp4"
+            "workflow": "LTX-2_00256.png"
           }
         }
       }
