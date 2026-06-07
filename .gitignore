@@ -1,19 +1,35 @@
 __pycache__/
 *.py[cod]
+node_modules/
+playwright-report/
+test-results/
 
 # Runtime outputs
 .env
+tasks/
 tasks/camera_lab_runs/
 tasks/camera_lab_uploads/
 tasks/camera_lab_server.log
 tasks/camera_lab_server.log.err
 tasks/camera_lab_server*.log
+tasks/camera_lab_server*.log.err
 tasks/camera_lab_readme_screenshot*.log
 .superpowers/
 tasks/cam_control_subtitles/
 tasks/mia_voice/
 tasks/youtube_thumbnails/
-references/
+tasks/3d/
+tasks/camera_lab_previews/
+tasks/camera_lab_shots/
+tasks/generated_keyframes/
+tasks/keyframes/
+tasks/video_review/
+tasks/debug_*.png
+tasks/douyin_*
+tasks/fututek_*
+tasks/ic_lora_*
+tasks/photography_ltx_*
+/references/
 
 # Local/editor noise
 .DS_Store

@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT / "tools" / "camera_lab_web"
 RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
+SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 
 
@@ -50,10 +51,7 @@ def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
     if root_value:
         root = Path(root_value)
     else:
-        candidates = [
-            Path.home() / "Desktop" / "GEN-ART" / "ComfyUI",
-            Path(r"C:\ComfyUI"),
-        ]
+        candidates = [Path("ComfyUI")]
         root = next((candidate for candidate in candidates if candidate.exists()), candidates[-1])
     return {
         "url": env.get("COMFYUI_URL") or "http://127.0.0.1:8000",
@@ -80,41 +78,40 @@ COMFY_OUTPUT = COMFY_CONFIG["output"]
 COMFY_MODELS = COMFY_CONFIG["models"]
 WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
 TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
+YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
 LOCAL_LTX23_DISTILLED_LORA = "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"
-DOWNLOADED_WORKFLOW_ROOT = ROOT / "tasks" / "camera_lab_workflows" / "downloaded"
+DOWNLOADED_WORKFLOW_ROOT = ROOT / "workflows" / "downloaded"
 TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
 DIRECTOR_WORKFLOW_PATH = WORKFLOW_ROOT / "LTX Director Example Workflow (Fixed).json"
+PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
+PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
+PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
+REFERENCE_ROOT = ROOT / "assets" / "references"
 
 REFERENCE_IMAGES = [
-    {
-        "id": "xiaomei_i2v_street",
-        "label": "Xiaomei I2V street depth test",
-        "path": str(ROOT / "tasks" / "LTX_camera_prompt_suite_xiaomei" / "references" / "xiaomei_i2v_camera_test_street.png"),
-    },
-    {
-        "id": "xiaomei_front",
-        "label": "Xiaomei front portrait",
-        "path": str(ROOT / "tasks" / "LTX 去字幕" / "小美头像.png"),
-    },
-    {
-        "id": "truck_middle",
-        "label": "Xiaomei truck middle",
-        "path": str(ROOT / "tasks" / "LTX_camera_prompt_suite_xiaomei" / "references" / "truck_middle.png"),
-    },
-]
-REFERENCE_IMAGES = [image for image in REFERENCE_IMAGES if Path(image["path"]).exists()]
-BUNDLED_XIAOMEI_IMAGE = ROOT / "tasks" / "LTX 去字幕" / "小美头像.png"
-if BUNDLED_XIAOMEI_IMAGE.exists():
-    REFERENCE_IMAGES.append(
+    image
+    for image in [
+        {
+            "id": "xiaomei_i2v_street",
+            "label": "Xiaomei I2V street depth test",
+            "path": str(REFERENCE_ROOT / "xiaomei_i2v_camera_test_street.png"),
+        },
         {
             "id": "xiaomei_front",
             "label": "Xiaomei front portrait",
-            "path": str(BUNDLED_XIAOMEI_IMAGE),
-        }
-    )
+            "path": str(REFERENCE_ROOT / "xiaomei_front_portrait.png"),
+        },
+        {
+            "id": "truck_middle",
+            "label": "Xiaomei truck middle",
+            "path": str(REFERENCE_ROOT / "truck_middle.png"),
+        },
+    ]
+    if Path(image["path"]).exists()
+]
 
 WORKFLOWS = [
     {
@@ -147,14 +144,6 @@ WORKFLOWS = [
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
         "path": str(WORKFLOW_ROOT / "ltx23-nag-ia2v-extendcrop" / "ltx23_nag_ia2v_extendcrop_general.json"),
-    },
-    {
-        "id": "sulphur2_t2v_base",
-        "label": "Sulphur 2 T2V Base",
-        "mode": "t2v",
-        "path": str(DOWNLOADED_WORKFLOW_ROOT / "Sulphur_2_t2v_base.json"),
-        "disable_crop_guides": True,
-        "disable_prompt_enhance": True,
     },
     {
         "id": "ltx_director_reference_mvp",
@@ -349,6 +338,25 @@ def object_info() -> dict[str, Any]:
     if OBJECT_INFO is None:
         OBJECT_INFO = http_json("/object_info", timeout=30)
     return OBJECT_INFO
+
+
+def sync_photography_workflow(comfy_input_subdir: str, subject_image: str = "") -> Path:
+    if not PHOTOGRAPHY_WORKFLOW_TEMPLATE.exists():
+        raise FileNotFoundError(f"photography workflow template is missing: {PHOTOGRAPHY_WORKFLOW_TEMPLATE}")
+    workflow = json.loads(PHOTOGRAPHY_WORKFLOW_TEMPLATE.read_text(encoding="utf-8"))
+    dataset_node = next((node for node in workflow.get("nodes", []) if node.get("type") == "LoadImageDataSetFromFolder"), None)
+    if not dataset_node:
+        raise RuntimeError("photography workflow does not contain LoadImageDataSetFromFolder")
+    folder = str(comfy_input_subdir).replace("\\", "/")
+    dataset_node["widgets_values"] = [folder]
+    if subject_image:
+        subject_node = next((node for node in workflow.get("nodes", []) if node.get("id") == 2004 and node.get("type") == "LoadImage"), None)
+        if not subject_node:
+            raise RuntimeError("photography workflow does not contain subject LoadImage node 2004")
+        subject_node["widgets_values"] = [str(subject_image).replace("\\", "/"), "image"]
+    PHOTOGRAPHY_WORKFLOW_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PHOTOGRAPHY_WORKFLOW_PATH.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
+    return PHOTOGRAPHY_WORKFLOW_PATH
 
 
 def resize_cover(src: Path, dst: Path, width: int = 1280, height: int = 720) -> None:
@@ -1833,6 +1841,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_file(WEB_DIR / "index.html")
             if parsed.path.startswith("/static/"):
                 return self.serve_file(WEB_DIR / parsed.path.removeprefix("/static/"))
+            if parsed.path.startswith("/vendor/yedp/"):
+                name = Path(parsed.path.removeprefix("/vendor/yedp/")).name
+                if Path(name).suffix.lower() not in {".js", ".mjs", ".wasm"}:
+                    self.send_error(404)
+                    return
+                return self.serve_file(YEDP_WEB_JS / name)
             if parsed.path == "/api/config":
                 comfy_ok = True
                 try:
@@ -1871,6 +1885,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_audio()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
+            if self.path == "/api/photography-subject":
+                return self.handle_photography_subject()
+            if self.path == "/api/photography-frames":
+                return self.handle_photography_frames()
+            if self.path == "/api/shot-pack":
+                return self.handle_shot_pack()
             if self.path == "/api/history-state":
                 return self.handle_history_state()
             if self.path == "/api/last-frame":
@@ -2011,6 +2031,156 @@ class Handler(BaseHTTPRequestHandler):
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
         self.send_json({"path": str(path), "name": name})
+
+    def handle_photography_subject(self) -> None:
+        payload = self.read_json()
+        name = safe_filename(payload.get("name") or "subject.png")
+        data_url = payload.get("data") or ""
+        if "," in data_url:
+            header, data_url = data_url.split(",", 1)
+            if not header.startswith("data:image/"):
+                raise ValueError("subject must be an image data URL")
+        suffix = Path(name).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise ValueError("unsupported subject image file type")
+        raw = base64.b64decode(data_url)
+        if len(raw) > 32 * 1024 * 1024:
+            raise ValueError("subject image is too large")
+        folder = Path("camera_lab_photography_subjects")
+        filename = f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
+        comfy_path = COMFY_INPUT / folder / filename
+        upload_path = UPLOAD_ROOT / "photography_subjects" / filename
+        comfy_path.parent.mkdir(parents=True, exist_ok=True)
+        upload_path.parent.mkdir(parents=True, exist_ok=True)
+        comfy_path.write_bytes(raw)
+        upload_path.write_bytes(raw)
+        self.send_json(
+            {
+                "name": name,
+                "comfy_input_name": str((folder / filename)).replace("\\", "/"),
+                "path": str(upload_path),
+            }
+        )
+
+    def handle_photography_frames(self) -> None:
+        payload = self.read_json()
+        raw_frames = payload.get("frames") or []
+        if not isinstance(raw_frames, list) or not raw_frames:
+            raise ValueError("frames are required")
+        if len(raw_frames) > 120:
+            raise ValueError("too many frames; maximum is 120")
+        width, height = validate_size(payload.get("width"), payload.get("height"))
+        run_id = f"photo_{int(time.time())}_{random.randint(1000, 9999)}"
+        comfy_dir = COMFY_INPUT / "camera_lab_photography" / run_id
+        upload_dir = UPLOAD_ROOT / "photography_frames" / run_id
+        comfy_dir.mkdir(parents=True, exist_ok=True)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        saved = []
+        for index, data_url in enumerate(raw_frames, start=1):
+            value = str(data_url or "")
+            if "," in value:
+                header, encoded = value.split(",", 1)
+                if not header.startswith("data:image/"):
+                    raise ValueError("frames must be image data URLs")
+            else:
+                encoded = value
+            raw = base64.b64decode(encoded)
+            if len(raw) > 16 * 1024 * 1024:
+                raise ValueError("a frame is too large")
+            filename = f"frame_{index:04d}.png"
+            comfy_path = comfy_dir / filename
+            upload_path = upload_dir / filename
+            comfy_path.write_bytes(raw)
+            upload_path.write_bytes(raw)
+            saved.append(str(comfy_path.relative_to(COMFY_INPUT)))
+
+        manifest = {
+            "run_id": run_id,
+            "frame_count": len(saved),
+            "width": width,
+            "height": height,
+            "comfy_input_subdir": str((Path("camera_lab_photography") / run_id)),
+            "frames": saved,
+        }
+        (comfy_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        (upload_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        subject_image = str(payload.get("subject_image") or "").strip()
+        workflow_path = sync_photography_workflow(manifest["comfy_input_subdir"], subject_image)
+        self.send_json(
+            {
+                "run_id": run_id,
+                "frame_count": len(saved),
+                "width": width,
+                "height": height,
+                "comfy_input_subdir": manifest["comfy_input_subdir"],
+                "first_frame": saved[0],
+                "manifest": str(comfy_dir / "manifest.json"),
+                "workflow": str(workflow_path),
+                "subject_image": subject_image,
+            }
+        )
+
+    def handle_shot_pack(self) -> None:
+        payload = self.read_json()
+        raw_frames = payload.get("frames") or []
+        if not isinstance(raw_frames, list) or not raw_frames:
+            raise ValueError("frames are required")
+        if len(raw_frames) > 12:
+            raise ValueError("too many shot frames; maximum is 12")
+        width, height = validate_size(payload.get("width"), payload.get("height"))
+        shot_id = f"shot_{int(time.time())}_{random.randint(1000, 9999)}"
+        shot_dir = SHOT_PACK_ROOT / shot_id
+        shot_dir.mkdir(parents=True, exist_ok=True)
+
+        saved_frames = []
+        for index, frame in enumerate(raw_frames, start=1):
+            if not isinstance(frame, dict):
+                raise ValueError("shot frame entries must be objects")
+            label = safe_filename(str(frame.get("label") or f"frame_{index}")).lower()
+            if not label:
+                label = f"frame_{index}"
+            data_url = str(frame.get("data") or "")
+            if "," in data_url:
+                header, encoded = data_url.split(",", 1)
+                if not header.startswith("data:image/"):
+                    raise ValueError("shot frames must be image data URLs")
+            else:
+                encoded = data_url
+            raw = base64.b64decode(encoded)
+            if len(raw) > 16 * 1024 * 1024:
+                raise ValueError("a shot frame is too large")
+            filename = f"{index:02d}_{label}.png"
+            frame_path = shot_dir / filename
+            frame_path.write_bytes(raw)
+            saved_frames.append(
+                {
+                    "label": label,
+                    "frame": frame.get("frame"),
+                    "path": str(frame_path),
+                    "filename": filename,
+                }
+            )
+
+        plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+        plan.update(
+            {
+                "shot_id": shot_id,
+                "width": width,
+                "height": height,
+                "frames": saved_frames,
+            }
+        )
+        plan_path = shot_dir / "shot_plan.json"
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.send_json(
+            {
+                "shot_id": shot_id,
+                "path": str(shot_dir),
+                "plan": str(plan_path),
+                "frames": saved_frames,
+            }
+        )
 
     def handle_rate(self) -> None:
         payload = self.read_json()

@@ -1,3 +1,8 @@
+function initialWorkspace() {
+  if (window.location.hash === "#director") return "director";
+  return "camera";
+}
+
 const state = {
   config: null,
   activeBatch: null,
@@ -17,7 +22,7 @@ const state = {
   directorSegments: [],
   directorSelectedId: "",
   directorDrag: null,
-  workspace: "camera",
+  workspace: initialWorkspace(),
   cameraWorkflowId: "",
   directorWorkflowId: "",
 };
@@ -103,18 +108,25 @@ function rememberCurrentWorkflow() {
 function setWorkspace(workspace, { syncWorkflow = true } = {}) {
   rememberCurrentWorkflow();
   state.workspace = workspace;
+  const nextHash = workspace === "camera" ? "" : `#${workspace}`;
+  if (window.location.hash !== nextHash) {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+  }
   if (!state.config) return;
   if (syncWorkflow && state.config) {
     if (workspace === "director") {
       const option = workflowOptionById(state.directorWorkflowId, "director_ref") || directorWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
-    } else if (isDirectorWorkflow()) {
+    } else if (workspace === "camera" && isDirectorWorkflow()) {
       const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
     }
   }
   rememberCurrentWorkflow();
   updateWorkflowFields();
+  if (workspace === "photography") {
+    window.dispatchEvent(new CustomEvent("camera-lab:photography-visible"));
+  }
 }
 
 function currentSize() {
@@ -330,13 +342,17 @@ function updateWorkflowFields() {
   if (!wf) return;
   const isDirector = wf.mode === "director_ref";
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
+  const showPhotographyWorkspace = state.workspace === "photography";
   const showSourceImage = wf.mode !== "t2v" && !isDirector;
   const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
   const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native";
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
-  $("cameraWorkspaceTab").classList.toggle("active", !showDirectorWorkspace);
+  document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
+  $("cameraWorkspaceTab").classList.toggle("active", state.workspace === "camera");
   $("directorWorkspaceTab").classList.toggle("active", showDirectorWorkspace);
+  $("photographyWorkspaceTab").classList.toggle("active", showPhotographyWorkspace);
+  if (showPhotographyWorkspace) return;
   $("cameraMoveWrap").style.display = isDirector ? "none" : "block";
   $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
@@ -446,12 +462,17 @@ function addDirectorSegment(values = {}) {
 function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   const existing = normalizedDirectorSegments();
   const appendStart = existing.reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  let cursor = appendStart;
   const imported = images.map((image, index) => {
+    const promptSpec = segmentPromptSpec(prompts[index]);
+    const duration = promptSpec.duration || 4;
+    const start = cursor;
+    cursor += duration;
     return {
       id: `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-      start: appendStart + index * 4,
-      duration: 4,
-      prompt: prompts[index] || "",
+      start,
+      duration,
+      prompt: promptSpec.prompt,
       reference: "",
       imagePath: image.path,
       imageName: image.name,
@@ -462,6 +483,40 @@ function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   state.directorSegments = [...state.directorSegments, ...imported];
   state.directorSelectedId = imported[0]?.id || state.directorSelectedId;
   renderDirectorEditor();
+}
+
+function importShotPackToDirector(detail = {}) {
+  const frames = Array.isArray(detail.frames) ? detail.frames.filter((frame) => frame && frame.path) : [];
+  if (!frames.length) {
+    $("runHint").textContent = "Shot pack has no exported reference frames";
+    return;
+  }
+  const plan = detail.plan_payload && typeof detail.plan_payload === "object" ? detail.plan_payload : {};
+  const prompt = String(plan.camera_prompt || "Use the 3D reference frames as composition and camera movement guides. Redraw the scene with the intended subject, style, lighting, and production detail.").trim();
+  const totalFrames = Math.max(1, Number(plan.total_frames) || 49);
+  const totalSeconds = totalFrames / 24;
+  const segmentDuration = Math.max(0.5, Math.ceil((totalSeconds / frames.length) * 2) / 2);
+
+  setWorkspace("director");
+  $("directorGlobalPrompt").value = prompt;
+  $("promptText").value = prompt;
+  state.directorSegments = frames.map((frame, index) => {
+    const label = String(frame.label || `shot ${index + 1}`).trim();
+    return {
+      id: `shot_pack_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+      start: Math.round(index * segmentDuration * 2) / 2,
+      duration: segmentDuration,
+      prompt: `${label}: redraw this 3D camera reference as the same shot in the final visual style. Maintain framing, perspective, subject placement, and camera continuity.`,
+      reference: "",
+      imagePath: frame.path,
+      imageName: frame.filename || fileNameFromPath(frame.path),
+      imagePreviewUrl: mediaUrl(frame.path),
+      strength: index === 0 ? 1 : 0.85,
+    };
+  });
+  state.directorSelectedId = state.directorSegments[0]?.id || "";
+  renderDirectorEditor();
+  $("runHint").textContent = `Imported ${frames.length} shot-pack reference frames into Director`;
 }
 
 function openStoryboardImportModal() {
@@ -503,6 +558,10 @@ function parseBulkSegmentPrompts(raw) {
     .replace(/^\s*(global prompt|global_prompt|全局提示词|全局)\s*[:：].*$/gim, "")
     .trim();
   const normalized = withoutGlobal.replace(/\r\n/g, "\n");
+  const rawLines = normalized.split("\n").map((item) => item.trim()).filter(Boolean);
+  if (rawLines.length > 1 && rawLines.some(hasSegmentDurationPrefix)) {
+    return rawLines.map((item) => segmentPromptSpec(item)).filter((item) => item.prompt || item.duration);
+  }
   const markerPattern = /(?:^|\n)\s*(?:shot\s*\d+|s\d+|segment\s*\d+|clip\s*\d+|镜头\s*\d+|分镜\s*\d+|第\s*\d+\s*(?:段|镜|格)|\d+[\.\)、:：-])\s*/gi;
   const matches = [...normalized.matchAll(markerPattern)];
   if (matches.length >= 2) {
@@ -511,17 +570,44 @@ function parseBulkSegmentPrompts(raw) {
       const end = index + 1 < matches.length ? matches[index + 1].index : normalized.length;
       const marker = match[0].replace(/^\n/, "").trim();
       const body = normalized.slice(start, end).trim();
-      return marker && /^shot\s*\d+/i.test(marker) ? `${marker} ${body}`.trim() : body;
-    }).filter(Boolean);
+      return segmentPromptSpec(body, marker && /^shot\s*\d+/i.test(marker) ? marker : "");
+    }).filter((item) => item.prompt || item.duration);
   }
   if (normalized.includes("|")) {
-    const parts = normalized.split("|").map((item) => item.trim()).filter(Boolean);
+    const parts = normalized.split("|").map((item) => segmentPromptSpec(item)).filter((item) => item.prompt || item.duration);
     if (parts.length > 1) return parts;
   }
-  const paragraphs = normalized.split(/\n\s*\n+/).map((item) => item.trim()).filter(Boolean);
+  const paragraphs = normalized.split(/\n\s*\n+/).map((item) => segmentPromptSpec(item)).filter((item) => item.prompt || item.duration);
   if (paragraphs.length > 1) return paragraphs;
-  const lines = normalized.split("\n").map((item) => item.trim()).filter(Boolean);
-  return lines.length > 1 ? lines : [normalized];
+  const lines = normalized.split("\n").map((item) => segmentPromptSpec(item)).filter((item) => item.prompt || item.duration);
+  return lines.length > 1 ? lines : [segmentPromptSpec(normalized)];
+}
+
+function hasSegmentDurationPrefix(value) {
+  return /^\s*\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds)\b/i.test(String(value || ""));
+}
+
+function segmentPromptSpec(value, prefix = "") {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      prompt: String(value.prompt || "").trim(),
+      duration: clampSegmentDuration(value.duration),
+    };
+  }
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\s*(?:[,，:：;；\-]\s*)?(.*)$/i);
+  const duration = match ? clampSegmentDuration(match[1]) : 0;
+  const prompt = (match ? match[2] : raw).trim();
+  return {
+    prompt: prefix ? `${prefix} ${prompt}`.trim() : prompt,
+    duration,
+  };
+}
+
+function clampSegmentDuration(value) {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  return Math.max(0.5, Math.min(60, duration));
 }
 
 async function splitStoryboardImage(file, prompts = []) {
@@ -1533,6 +1619,8 @@ $("workflowSelect").addEventListener("change", () => {
 });
 $("cameraWorkspaceTab").addEventListener("click", () => setWorkspace("camera"));
 $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director"));
+$("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
+window.addEventListener("camera-lab:shot-pack-exported", (event) => importShotPackToDirector(event.detail || {}));
 $("moveSelect").addEventListener("change", resetPrompt);
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
   state.sourcePath = "";

@@ -1114,7 +1114,6 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            11002,
             13492
           ]
         },
@@ -1188,7 +1187,6 @@
           "name": "VIDEO",
           "type": "VIDEO",
           "links": [
-            13372,
             13415
           ]
         }
@@ -1238,52 +1236,6 @@
       ]
     },
     {
-      "id": 5061,
-      "type": "VideoDepthAnythingProcess",
-      "pos": [
-        -3255.616025429201,
-        4284.344264651017
-      ],
-      "size": [
-        301.80625,
-        126
-      ],
-      "flags": {},
-      "order": 26,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "vda_model",
-          "type": "VDAMODEL",
-          "link": 13533
-        },
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 13535
-        }
-      ],
-      "outputs": [
-        {
-          "name": "depths",
-          "type": "DEPTHS",
-          "links": [
-            13534
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "VideoDepthAnythingProcess",
-        "aux_id": "yuvraj108c/ComfyUI-Video-Depth-Anything",
-        "ver": "a0db08e63d1ea571601c45cde4aaee0acdd0544d"
-      },
-      "widgets_values": [
-        518,
-        960,
-        "fp32"
-      ]
-    },
-    {
       "id": 5026,
       "type": "ResizeImageMaskNode",
       "pos": [
@@ -1310,8 +1262,7 @@
           "type": "IMAGE",
           "links": [
             13473,
-            13474,
-            13535
+            13474
           ]
         }
       ],
@@ -1370,42 +1321,6 @@
       "widgets_values": [
         "ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
         1
-      ]
-    },
-    {
-      "id": 5060,
-      "type": "LoadVideoDepthAnythingModel",
-      "pos": [
-        -3253.692998465908,
-        4169.085677379663
-      ],
-      "size": [
-        266.4771484375,
-        58
-      ],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "vda_model",
-          "type": "VDAMODEL",
-          "slot_index": 0,
-          "links": [
-            13533
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoadVideoDepthAnythingModel",
-        "aux_id": "yuvraj108c/ComfyUI-Video-Depth-Anything",
-        "ver": "a0db08e63d1ea571601c45cde4aaee0acdd0544d"
-      },
-      "widgets_values": [
-        "video_depth_anything_vits.pth"
       ]
     },
     {
@@ -1494,43 +1409,6 @@
         "output",
         "auto",
         "auto"
-      ]
-    },
-    {
-      "id": 5062,
-      "type": "VideoDepthAnythingOutput",
-      "pos": [
-        -3255.220108277297,
-        4473.737278287875
-      ],
-      "size": [
-        310.13828125,
-        58
-      ],
-      "flags": {},
-      "order": 28,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "depths",
-          "type": "DEPTHS",
-          "link": 13534
-        }
-      ],
-      "outputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "links": []
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "VideoDepthAnythingOutput",
-        "aux_id": "yuvraj108c/ComfyUI-Video-Depth-Anything",
-        "ver": "a0db08e63d1ea571601c45cde4aaee0acdd0544d"
-      },
-      "widgets_values": [
-        "gray"
       ]
     },
     {
@@ -1649,7 +1527,7 @@
         "ver": "0.14.1"
       },
       "widgets_values": [
-        "ltxv/ltx2/ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+        "ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
         0.5
       ]
     },
@@ -1939,12 +1817,12 @@
       "id": 5067,
       "type": "YedpActionDirector",
       "pos": [
-        -3610,
-        4440
+        -4260,
+        4000
       ],
       "size": [
-        360,
-        360
+        1280,
+        820
       ],
       "flags": {},
       "order": 24,
@@ -2036,7 +1914,7 @@
       "widgets_values": [
         768,
         512,
-        121,
+        49,
         24,
         ""
       ]
@@ -2058,14 +1936,6 @@
       1241,
       1,
       "CONDITIONING"
-    ],
-    [
-      11002,
-      2004,
-      0,
-      2653,
-      0,
-      "IMAGE"
     ],
     [
       11401,
@@ -2170,14 +2040,6 @@
       4845,
       0,
       "LATENT"
-    ],
-    [
-      13372,
-      5001,
-      0,
-      4979,
-      0,
-      "VIDEO"
     ],
     [
       13400,
@@ -2460,30 +2322,6 @@
       "IMAGE"
     ],
     [
-      13533,
-      5060,
-      0,
-      5061,
-      0,
-      "VDAMODEL"
-    ],
-    [
-      13534,
-      5061,
-      0,
-      5062,
-      0,
-      "DEPTHS"
-    ],
-    [
-      13535,
-      5026,
-      0,
-      5061,
-      1,
-      "IMAGE"
-    ],
-    [
       13542,
       5013,
       2,
@@ -2693,11 +2531,8 @@
         5029,
         5034,
         5001,
-        5061,
         5026,
-        5060,
         5063,
-        5062,
         4991
       ]
     },
@@ -2731,11 +2566,7 @@
       "color": "#b06634",
       "font_size": 24,
       "flags": {},
-      "nodes": [
-        5061,
-        5060,
-        5062
-      ]
+      "nodes": []
     },
     {
       "id": 156,

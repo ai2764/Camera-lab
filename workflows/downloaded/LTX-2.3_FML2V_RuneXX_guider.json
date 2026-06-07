@@ -438,7 +438,7 @@
         "Node name for S&R": "VAELoaderKJ"
       },
       "widgets_values": [
-        "LTX23_audio_vae_bf16.safetensors",
+        "LTX23_audio_vae_bf16_KJ.safetensors",
         "main_device",
         "bf16"
       ],
@@ -517,7 +517,7 @@
         "Node name for S&R": "VAELoader"
       },
       "widgets_values": [
-        "LTX23_video_vae_bf16.safetensors"
+        "vae_approx\\taeltx2_3.safetensors"
       ],
       "color": "#1f1f48",
       "bgcolor": "rgba(24,24,27,.9)",
@@ -554,7 +554,7 @@
         "Node name for S&R": "VAELoader"
       },
       "widgets_values": [
-        "LTX23_video_vae_bf16.safetensors"
+        "LTX23_video_vae_bf16_KJ.safetensors"
       ],
       "color": "#1f1f48",
       "bgcolor": "rgba(24,24,27,.9)",
@@ -964,7 +964,7 @@
         "Node name for S&R": "DualCLIPLoader"
       },
       "widgets_values": [
-        "gemma_3_12B_it_fp4_mixed.safetensors",
+        "gemma_3_12B_it_fp8_scaled.safetensors",
         "ltx-2.3_text_projection_bf16.safetensors",
         "ltxv",
         "default"
@@ -1739,7 +1739,7 @@
         "Node name for S&R": "UNETLoader"
       },
       "widgets_values": [
-        "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+        "LTXVideo\\v2\\ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
         "default"
       ],
       "color": "#1f1f48",
@@ -6572,8 +6572,7 @@
             "type": "output",
             "format": "video/h264-mp4",
             "frame_rate": 24,
-            "workflow": "LTX-2_01647.png",
-            "fullpath": "E:\\AI\\ComfyUI\\output\\LTX-2_01647-audio.mp4"
+            "workflow": "LTX-2_01647.png"
           }
         }
       }

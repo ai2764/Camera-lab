@@ -22,7 +22,7 @@
     "required_env": {
       "COMFYUI_ROOT": {
         "description": "Root folder of the local ComfyUI install.",
-        "default": "C:\\ComfyUI"
+        "default": "<path-to-your-ComfyUI>"
       },
       "COMFYUI_URL": {
         "description": "Local ComfyUI server URL.",
@@ -60,8 +60,16 @@
   },
   "repo_assets": {
     "workflow_references": [
-      "tasks/camera_lab_workflows/downloaded/LTX-2.3_FML2V_RuneXX_guider.local.json",
-      "tasks/camera_lab_workflows/downloaded/Sulphur_2_t2v_base.json"
+      "workflows/downloaded/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "workflows/downloaded/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
+      "workflows/downloaded/LTX_2_3_Replace_Anyone_in_Video_260523-4.json",
+      "workflows/experimental/Yedp_3D_Director_Only.local.json",
+      "workflows/experimental/Yedp_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
+    ],
+    "reference_images": [
+      "assets/references/xiaomei_i2v_camera_test_street.png",
+      "assets/references/xiaomei_front_portrait.png",
+      "assets/references/truck_middle.png"
     ],
     "runtime_output_dirs": [
       "tasks/camera_lab_runs",

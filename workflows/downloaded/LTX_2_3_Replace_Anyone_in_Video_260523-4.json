@@ -4784,8 +4784,7 @@
             "type": "output",
             "format": "video/h264-mp4",
             "frame_rate": 24,
-            "workflow": "Video_00400.png",
-            "fullpath": "E:\\ComfyUI_Sell_Install\\ComfyUI\\output\\LTX2.3\\Video_00400-audio.mp4"
+            "workflow": "Video_00400.png"
           }
         }
       },
@@ -9420,8 +9419,7 @@
                   "type": "temp",
                   "format": "video/h264-mp4",
                   "frame_rate": 24,
-                  "workflow": "AnimateDiff_00002.png",
-                  "fullpath": "E:\\ComfyUI_Sell_Install\\ComfyUI\\temp\\AnimateDiff_00002.mp4"
+                  "workflow": "AnimateDiff_00002.png"
                 }
               }
             }
