@@ -85,7 +85,7 @@ TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = WORKFLOW_ROOT / "LTX Director Example Workflow (Fixed).json"
+DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_global_reference_mvp.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -118,7 +118,7 @@ WORKFLOWS = [
         "id": "i2v_official_local",
         "label": "LTX 2.3 NAG I2V Extendcrop",
         "mode": "i2v",
-        "path": str(WORKFLOW_ROOT / "ltx23-nag-i2v-extendcrop" / "ltx23_nag_i2v_extendcrop_general.json"),
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_i2v_extendcrop_general.json"),
     },
     {
         "id": "flf_ttp_control",
@@ -143,11 +143,11 @@ WORKFLOWS = [
         "id": "ia2v_extendcrop",
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
-        "path": str(WORKFLOW_ROOT / "ltx23-nag-ia2v-extendcrop" / "ltx23_nag_ia2v_extendcrop_general.json"),
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_ia2v_extendcrop_general.json"),
     },
     {
         "id": "ltx_director_reference_mvp",
-        "label": "LTX Director Reference MVP",
+        "label": "LTX Director Global Reference MVP",
         "mode": "director_ref",
         "path": str(DIRECTOR_WORKFLOW_PATH),
         "builder": "ltx_director_reference_mvp",
@@ -827,6 +827,7 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
     patch_ltx23_local_loras(api)
+    insert_director_global_reference_guides(api, reference_input_names, timeline)
     patch_director_custom_audio(api, run)
     bypass_sage_attention_patches(api)
 
@@ -886,7 +887,31 @@ def next_free_api_id(api: dict[str, dict], start: int) -> int:
     return value
 
 
-def insert_director_multi_guide(api: dict[str, dict], guide_roles: list[str], input_names: dict[str, str], timeline: dict[str, Any]) -> None:
+def insert_director_global_reference_guides(api: dict[str, dict], input_names: list[str], timeline: dict[str, Any]) -> None:
+    if not input_names:
+        return
+    guide_roles = [f"global_reference_{index}" for index in range(1, len(input_names) + 1)]
+    role_input_names = dict(zip(guide_roles, input_names))
+    guide_timeline = dict(timeline)
+    guide_timeline["guide_roles"] = guide_roles
+    guide_timeline["guide_frames"] = [0] * len(guide_roles)
+    guide_timeline["guide_strengths"] = [timeline["global_reference_strength"]] * len(guide_roles)
+    insert_director_multi_guide(
+        api,
+        guide_roles,
+        role_input_names,
+        guide_timeline,
+        title="Director global reference guides",
+    )
+
+
+def insert_director_multi_guide(
+    api: dict[str, dict],
+    guide_roles: list[str],
+    input_names: dict[str, str],
+    timeline: dict[str, Any],
+    title: str = "Director reference guides",
+) -> None:
     multi_id = "9001"
     next_id = 9002
     guide_inputs: dict[str, Any] = {
@@ -912,7 +937,7 @@ def insert_director_multi_guide(api: dict[str, dict], guide_roles: list[str], in
         guide_inputs[f"num_guides.image_{index}"] = [load_id, 0]
         guide_inputs[f"num_guides.frame_idx_{index}"] = frames_by_role.get(role, 0)
         guide_inputs[f"num_guides.strength_{index}"] = strengths_by_role.get(role, 0.7)
-    api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": "Director reference guides"}}
+    api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": title}}
 
     for node in api.values():
         for input_name, value in list(node["inputs"].items()):

@@ -45,7 +45,6 @@
         "output",
         "models",
         "user/default/workflows",
-        ".venv/Lib/site-packages/comfyui_workflow_templates_media_video/templates",
         "custom_nodes/Comfyui_TTP_Toolset"
       ],
       "required_custom_nodes": [
@@ -61,14 +60,10 @@
   },
   "repo_assets": {
     "app_workflows": [
-      "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json"
-    ],
-    "example_workflows": [
-      "workflows/examples/LTX-2-3-FML2V-Guider.nextdiffusion.json",
-      "workflows/examples/LTX-2.3_FML2V_RuneXX_custom_audio.json",
-      "workflows/examples/LTX-2.3_FML2V_RuneXX_guider.json",
-      "workflows/examples/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
-      "workflows/examples/LTX_2_3_Replace_Anyone_in_Video_260523-4.json"
+      "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "workflows/app/ltx23_nag_i2v_extendcrop_general.json",
+      "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
+      "workflows/app/ltx_director_global_reference_mvp.json"
     ],
     "experimental_workflows": [
       "workflows/experimental/Yedp_3D_Director_Only.local.json",

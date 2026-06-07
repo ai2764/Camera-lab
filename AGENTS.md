@@ -29,7 +29,6 @@ Do not commit `.env`.
 - `frontend/`: static browser UI
 - `scripts/`: Windows setup/start/stop helpers
 - `workflows/app/`: checked-in workflows used directly by Camera Lab
-- `workflows/examples/`: workflow examples used during development and smoke testing
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references
 - `assets/references/`: bundled reference images for examples
 - `prompts/`: reusable prompt templates
@@ -47,7 +46,6 @@ Expected ComfyUI layout under `COMFYUI_ROOT`:
 - `output`
 - `models`
 - `user\default\workflows`
-- `.venv\Lib\site-packages\comfyui_workflow_templates_media_video\templates`
 - `custom_nodes\Comfyui_TTP_Toolset`
 
 Required models:
@@ -83,6 +81,15 @@ Do not commit:
 - local ComfyUI install paths
 - generated videos, uploads, logs, preview renders, or prompt smoke-test output
 
-If a file is required by users or coding agents, move it out of `tasks/` before committing it. App-used workflow files belong in `workflows/app/`; reference workflows belong in `workflows/examples/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
+If a file is required by users or coding agents, move it out of `tasks/` before committing it. App workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
 
-Bundled workflows are not automatically visible inside ComfyUI. Use `scripts/install_workflows.ps1` to copy `workflows/app` and `workflows/examples` into `COMFYUI_ROOT\user\default\workflows\camera-lab`. Add `-IncludeExperimental` only when the experimental workflows should also be installed.
+Bundled workflows are not automatically visible inside ComfyUI. Use `scripts/install_workflows.ps1` to copy `workflows/app` into `COMFYUI_ROOT\user\default\workflows\camera-lab`. Add `-IncludeExperimental` only when the experimental workflows should also be installed.
+
+Frontend workflow dropdown mapping:
+
+- `LTX 2.3 NAG I2V Extendcrop`: `workflows/app/ltx23_nag_i2v_extendcrop_general.json`
+- `LTX 2.3 FLF TTP Control (2 images)`: built in `server/camera_lab_server.py`
+- `LTX 2.3 FML (3 images, 2-stage TTP FLF)`: built in `server/camera_lab_server.py`
+- `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
+- `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
+- `LTX Director Global Reference MVP`: `workflows/app/ltx_director_global_reference_mvp.json`

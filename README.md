@@ -48,7 +48,7 @@ python -m pip install -r requirements.txt
 
 Camera Lab stores workflow files in this repo, but ComfyUI only sees workflows that are inside your local ComfyUI workflow folder.
 
-Install app and example workflows into:
+Install bundled app workflows into:
 
 ```text
 <COMFYUI_ROOT>\user\default\workflows\camera-lab\
@@ -162,7 +162,6 @@ Camera Lab reads these paths from `COMFYUI_ROOT`:
 - `output`
 - `models`
 - `user\default\workflows`
-- `.venv\Lib\site-packages\comfyui_workflow_templates_media_video\templates`
 - `custom_nodes\Comfyui_TTP_Toolset`
 
 The setup checker verifies the important paths and files.
@@ -173,12 +172,19 @@ The frontend workflow dropdown is populated by `WORKFLOWS` in `server/camera_lab
 
 Current workflow sources are:
 
-- Official ComfyUI workflow templates under `COMFYUI_ROOT`.
 - Runtime builders in `server/camera_lab_server.py`.
 - App-owned workflow JSON files under `workflows/app/`.
-- A local Director workflow installed under the user's ComfyUI workflow folder.
 
-Files under `workflows/examples/` and `workflows/experimental/` are not automatically shown in the frontend workflow dropdown. Run `scripts/install_workflows.ps1` to copy them into ComfyUI for direct inspection, import, or manual queueing.
+Files under `workflows/app/` are the workflow files shipped with Camera Lab. Run `scripts/install_workflows.ps1` to copy them into ComfyUI for direct inspection, import, or manual queueing. Files under `workflows/experimental/` are optional research references and are only installed with `-IncludeExperimental`.
+
+Current dropdown mapping:
+
+- `LTX 2.3 NAG I2V Extendcrop`: `workflows/app/ltx23_nag_i2v_extendcrop_general.json`
+- `LTX 2.3 FLF TTP Control (2 images)`: built in `server/camera_lab_server.py`
+- `LTX 2.3 FML (3 images, 2-stage TTP FLF)`: built in `server/camera_lab_server.py`
+- `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
+- `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
+- `LTX Director Global Reference MVP`: `workflows/app/ltx_director_global_reference_mvp.json`
 
 ## Included
 
@@ -186,7 +192,6 @@ Files under `workflows/examples/` and `workflows/experimental/` are not automati
 - `frontend/`: static browser UI served by the Python backend.
 - `scripts/`: Windows setup, start, and stop helpers.
 - `workflows/app/`: checked-in ComfyUI workflows used by Camera Lab itself.
-- `workflows/examples/`: ComfyUI workflow examples used during development and smoke testing.
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references.
 - `assets/references/`: small bundled images used by built-in examples.
 - `prompts/`: reusable prompt templates and negative prompts.
@@ -201,7 +206,6 @@ The repository is organized so public, reusable files are separated from local r
 
 - Application code lives in `server/` and `frontend/`.
 - Camera Lab workflow files live in `workflows/app/`.
-- Example workflows live in `workflows/examples/`.
 - Small example assets live in `assets/`.
 - Temporary runs, uploads, preview renders, prompt smoke tests, generated videos, and logs belong in `tasks/`.
 

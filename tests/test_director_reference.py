@@ -86,8 +86,32 @@ class DirectorReferenceTests(unittest.TestCase):
         path = server.Path(workflow["path"])
 
         self.assertEqual(workflow["mode"], "i2v")
-        self.assertEqual(path.parent.name, "ltx23-nag-i2v-extendcrop")
+        self.assertEqual(path.parent.name, "app")
         self.assertEqual(path.name, "ltx23_nag_i2v_extendcrop_general.json")
+
+    def test_dropdown_json_workflows_are_checked_in_app_workflows(self):
+        expected_paths = {
+            "i2v_official_local": "ltx23_nag_i2v_extendcrop_general.json",
+            "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
+            "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
+            "ltx_director_reference_mvp": "ltx_director_global_reference_mvp.json",
+        }
+        expected_builders = {
+            "flf_ttp_control": "ltx23_ttp_flf",
+            "fml_two_segment_flf": "ltx23_ttp_flf",
+        }
+
+        for workflow in server.WORKFLOWS:
+            if workflow["id"] in expected_paths:
+                path = server.Path(workflow["path"])
+                self.assertEqual(path.parent, server.APP_WORKFLOW_ROOT)
+                self.assertEqual(path.name, expected_paths[workflow["id"]])
+                self.assertTrue(path.exists())
+            elif workflow["id"] in expected_builders:
+                self.assertEqual(workflow.get("builder"), expected_builders[workflow["id"]])
+                self.assertNotIn("path", workflow)
+            else:
+                self.fail(f"Unexpected workflow in dropdown: {workflow['id']}")
 
     def test_nag_i2v_keeps_fixed_anti_text_prompt_and_inplace_strengths(self):
         workflow = next(item for item in server.WORKFLOWS if item["id"] == "i2v_official_local")
@@ -182,7 +206,7 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(guide_segments[0]["start"], 24)
         self.assertEqual(guide_segments[0]["imageFile"], "keyframe.png")
 
-    def test_director_global_reference_images_are_not_encoded_as_timeline_guides(self):
+    def test_director_global_reference_images_are_encoded_as_global_guides(self):
         run = {
             "batch_id": "dry",
             "run_id": "01_director",
@@ -215,6 +239,7 @@ class DirectorReferenceTests(unittest.TestCase):
         ]
         server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
         server.workflow_to_api = lambda _workflow: {
+            "3": {"class_type": "VAELoader", "inputs": {}},
             "46": {
                 "class_type": "LTXDirector",
                 "inputs": {
@@ -229,7 +254,16 @@ class DirectorReferenceTests(unittest.TestCase):
                     "custom_width": 0,
                     "custom_height": 0,
                 },
-            }
+            },
+            "58": {"class_type": "LTXDirectorGuide", "inputs": {}},
+            "77": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["58", 0],
+                    "negative": ["58", 1],
+                    "latent_image": ["58", 2],
+                },
+            },
         }
         with tempfile.TemporaryDirectory() as tmp:
             server.DIRECTOR_WORKFLOW_PATH = Path(tmp) / "director.json"
@@ -244,12 +278,24 @@ class DirectorReferenceTests(unittest.TestCase):
 
         director_inputs = api["46"]["inputs"]
         timeline = json.loads(director_inputs["timeline_data"])
-        self.assertNotIn("9001", api)
         self.assertEqual(len(timeline["segments"]), 1)
         self.assertEqual(timeline["segments"][0]["id"], "camera-lab-segment-1")
         self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
         self.assertEqual(timeline["segments"][0]["strength"], 0.75)
         self.assertEqual(director_inputs["guide_strength"], "0.75")
+        self.assertEqual(api["9001"]["class_type"], "LTXVAddGuideMulti")
+        self.assertEqual(api["9001"]["inputs"]["num_guides"], "2")
+        self.assertEqual(api["9001"]["inputs"]["num_guides.image_1"], ["9002", 0])
+        self.assertEqual(api["9001"]["inputs"]["num_guides.image_2"], ["9003", 0])
+        self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_1"], 0)
+        self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_2"], 0)
+        self.assertEqual(api["9001"]["inputs"]["num_guides.strength_1"], 0.35)
+        self.assertEqual(api["9001"]["inputs"]["num_guides.strength_2"], 0.35)
+        self.assertEqual(api["9002"]["inputs"]["image"], "dry_reference_01.png")
+        self.assertEqual(api["9003"]["inputs"]["image"], "dry_reference_02.png")
+        self.assertEqual(api["77"]["inputs"]["positive"], ["9001", 0])
+        self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
+        self.assertEqual(api["77"]["inputs"]["latent_image"], ["9001", 2])
 
     def test_director_custom_audio_patches_concat_audio_latent(self):
         api = {

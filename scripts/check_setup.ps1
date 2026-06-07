@@ -91,9 +91,7 @@ $checks += Add-Check "TTP custom node" (Test-Path $ttpPath) $ttpPath
 
 $appWorkflowRoot = Join-Path $repoRoot "workflows\app"
 $installedAppWorkflowRoot = Join-Path $comfyRoot "user\default\workflows\camera-lab\app"
-$repoWorkflows = @(
-    "LTX-2.3_FML2V_RuneXX_guider.local.json"
-)
+$repoWorkflows = @(Get-ChildItem -Path $appWorkflowRoot -Filter "*.json" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
 
 foreach ($workflow in $repoWorkflows) {
     $checks += Add-Check "Repo workflow $workflow" (Test-Path (Join-Path $appWorkflowRoot $workflow)) (Join-Path $appWorkflowRoot $workflow)

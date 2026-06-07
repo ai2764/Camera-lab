@@ -44,8 +44,7 @@ if (!(Test-Path $comfyRoot)) {
 New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
 
 $sources = @(
-    @{ Name = "app"; Path = Join-Path $repoRoot "workflows\app" },
-    @{ Name = "examples"; Path = Join-Path $repoRoot "workflows\examples" }
+    @{ Name = "app"; Path = Join-Path $repoRoot "workflows\app" }
 )
 
 if ($IncludeExperimental) {

@@ -1,11 +1,10 @@
 # Workflow References
 
-This folder contains ComfyUI workflow files that are useful for Camera Lab setup, comparison, and experimentation.
+This folder contains ComfyUI workflow files that are useful for Camera Lab setup and experimentation.
 
 ## Folders
 
-- `app/`: Workflow files used directly by Camera Lab workflow options.
-- `examples/`: Workflow files used during development or smoke testing. These are useful references, but they are not automatically listed in the Camera Lab frontend.
+- `app/`: Workflow files shipped with Camera Lab and installed for app use.
 - `experimental/`: Experimental workflows for Director and IC-LoRA control research. These are not guaranteed to be one-click production workflows.
 
 ## Notes
@@ -14,11 +13,20 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 - Workflow files may still require local ComfyUI models and custom nodes listed in `AGENTS.md` or `dependency-manifest.json`.
 - Machine-specific output metadata and absolute local paths should not be committed.
 
+## App Workflow Map
+
+- `ltx23_nag_i2v_extendcrop_general.json`: `LTX 2.3 NAG I2V Extendcrop`
+- `LTX-2.3_FML2V_RuneXX_guider.local.json`: `LTX 2.3 FML RuneXX Guider Local (3 images)`
+- `ltx23_nag_ia2v_extendcrop_general.json`: `LTX 2.3 IA2V`
+- `ltx_director_global_reference_mvp.json`: `LTX Director Global Reference MVP`
+
+The `FLF TTP Control` and `FML 2-stage TTP FLF` dropdown options are built in `server/camera_lab_server.py`, so they do not have standalone workflow JSON files.
+
 ## Install into ComfyUI
 
 ComfyUI does not read workflow files directly from this repository.
 
-Copy app and example workflows into your local ComfyUI workflow folder with:
+Copy app workflows into your local ComfyUI workflow folder with:
 
 ```powershell
 .\scripts\install_workflows.ps1
