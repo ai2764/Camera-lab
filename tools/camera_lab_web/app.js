@@ -486,6 +486,40 @@ function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   renderDirectorEditor();
 }
 
+function importShotPackToDirector(detail = {}) {
+  const frames = Array.isArray(detail.frames) ? detail.frames.filter((frame) => frame && frame.path) : [];
+  if (!frames.length) {
+    $("runHint").textContent = "Shot pack has no exported reference frames";
+    return;
+  }
+  const plan = detail.plan_payload && typeof detail.plan_payload === "object" ? detail.plan_payload : {};
+  const prompt = String(plan.camera_prompt || "Use the 3D reference frames as composition and camera movement guides. Redraw the scene with the intended subject, style, lighting, and production detail.").trim();
+  const totalFrames = Math.max(1, Number(plan.total_frames) || 49);
+  const totalSeconds = totalFrames / 24;
+  const segmentDuration = Math.max(0.5, Math.ceil((totalSeconds / frames.length) * 2) / 2);
+
+  setWorkspace("director");
+  $("directorGlobalPrompt").value = prompt;
+  $("promptText").value = prompt;
+  state.directorSegments = frames.map((frame, index) => {
+    const label = String(frame.label || `shot ${index + 1}`).trim();
+    return {
+      id: `shot_pack_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+      start: Math.round(index * segmentDuration * 2) / 2,
+      duration: segmentDuration,
+      prompt: `${label}: redraw this 3D camera reference as the same shot in the final visual style. Maintain framing, perspective, subject placement, and camera continuity.`,
+      reference: "",
+      imagePath: frame.path,
+      imageName: frame.filename || fileNameFromPath(frame.path),
+      imagePreviewUrl: mediaUrl(frame.path),
+      strength: index === 0 ? 1 : 0.85,
+    };
+  });
+  state.directorSelectedId = state.directorSegments[0]?.id || "";
+  renderDirectorEditor();
+  $("runHint").textContent = `Imported ${frames.length} shot-pack reference frames into Director`;
+}
+
 function openStoryboardImportModal() {
   const modal = $("storyboardImportModal");
   modal.classList.add("open");
@@ -1587,6 +1621,7 @@ $("workflowSelect").addEventListener("change", () => {
 $("cameraWorkspaceTab").addEventListener("click", () => setWorkspace("camera"));
 $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director"));
 $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
+window.addEventListener("camera-lab:shot-pack-exported", (event) => importShotPackToDirector(event.detail || {}));
 $("moveSelect").addEventListener("change", resetPrompt);
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
   state.sourcePath = "";

@@ -623,6 +623,9 @@ async function exportShotPack() {
       output.appendChild(item);
     }
     el("photoStatus").textContent = `Exported shot pack ${result.shot_id}: ${result.path}`;
+    window.dispatchEvent(new CustomEvent("camera-lab:shot-pack-exported", {
+      detail: { ...result, plan_payload: plan },
+    }));
   } catch (error) {
     el("photoStatus").textContent = `Shot pack export failed: ${error.message}`;
   } finally {

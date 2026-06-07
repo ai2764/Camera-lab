@@ -104,4 +104,8 @@ test("photography workspace supports camera keyframes and canny preview", async 
   expect(shotPackPayload.frames).toHaveLength(3);
   expect(shotPackPayload.frames.map((frame) => frame.label)).toEqual(["start", "middle", "end"]);
   expect(shotPackPayload.plan.camera_prompt).toContain("Camera");
+  await expect(page.locator("body")).toHaveClass(/director-workspace-active/);
+  await expect(page.locator("#directorTrack .director-block")).toHaveCount(3);
+  await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/Camera/);
+  await expect(page.locator("#runHint")).toContainText("Imported 3 shot-pack reference frames into Director");
 });
