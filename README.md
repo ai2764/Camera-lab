@@ -155,6 +155,24 @@ The setup checker verifies the important paths and files.
 - `tasks/camera_lab_workflows/downloaded/`: workflow references used by Camera Lab
 - `docs/research/`: camera-control notes, testing plan, and results page
 
+## Repository Folders
+
+- `tools/`: Camera Lab server and web UI source.
+- `scripts/`: setup, start, and stop helpers for Windows users.
+- `tests/`: Python tests for workflow patching and Director reference behavior.
+- `docs/`: screenshots, research notes, and user-facing documentation.
+- `prompts/`: reusable prompt/reference text.
+- `tasks/`: mostly local experiments and workflow reference material.
+
+The `tasks` folder is not a general runtime dependency folder. Most generated test outputs under `tasks` are ignored by git and can be recreated. The important checked-in pieces are:
+
+- `tasks/camera_lab_workflows/downloaded/`: ComfyUI workflow references that Camera Lab or workflow experiments are based on.
+- `tasks/camera_lab_workflows/experimental/`: experimental Director / IC-LoRA workflow references.
+- `tasks/LTX_camera_prompt_suite_xiaomei/references/`: small reference images used by the built-in prompt examples.
+- `tasks/LTX 去字幕/`: a small checked-in reference asset from an earlier workflow test.
+
+Runtime/test leftovers such as `tasks/camera_lab_runs/`, `tasks/camera_lab_uploads/`, `tasks/fututek_*`, `tasks/ic_lora_*`, `tasks/photography_ltx_*`, generated previews, logs, uploaded media, and rendered videos should not be committed.
+
 ## Runtime Data
 
 Generated runs and uploaded files are written under:
