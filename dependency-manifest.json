@@ -60,9 +60,9 @@
   },
   "repo_assets": {
     "workflow_references": [
-      "workflows/downloaded/LTX-2.3_FML2V_RuneXX_guider.local.json",
-      "workflows/downloaded/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
-      "workflows/downloaded/LTX_2_3_Replace_Anyone_in_Video_260523-4.json",
+      "workflows/references/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "workflows/references/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
+      "workflows/references/LTX_2_3_Replace_Anyone_in_Video_260523-4.json",
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
       "workflows/experimental/Yedp_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
     ],

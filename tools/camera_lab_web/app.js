@@ -554,15 +554,13 @@ function parseNumberList(value) {
 function parseBulkSegmentPrompts(raw) {
   const text = String(raw || "").trim();
   if (!text) return [];
-  const withoutGlobal = text
-    .replace(/^\s*(global prompt|global_prompt|全局提示词|全局)\s*[:：].*$/gim, "")
-    .trim();
+  const withoutGlobal = text.replace(/^\s*(global prompt|global_prompt)\s*:.*$/gim, "").trim();
   const normalized = withoutGlobal.replace(/\r\n/g, "\n");
   const rawLines = normalized.split("\n").map((item) => item.trim()).filter(Boolean);
   if (rawLines.length > 1 && rawLines.some(hasSegmentDurationPrefix)) {
     return rawLines.map((item) => segmentPromptSpec(item)).filter((item) => item.prompt || item.duration);
   }
-  const markerPattern = /(?:^|\n)\s*(?:shot\s*\d+|s\d+|segment\s*\d+|clip\s*\d+|镜头\s*\d+|分镜\s*\d+|第\s*\d+\s*(?:段|镜|格)|\d+[\.\)、:：-])\s*/gi;
+  const markerPattern = /(?:^|\n)\s*(?:shot\s*\d+|s\d+|segment\s*\d+|clip\s*\d+|\d+[\.\):-])\s*/gi;
   const matches = [...normalized.matchAll(markerPattern)];
   if (matches.length >= 2) {
     return matches.map((match, index) => {

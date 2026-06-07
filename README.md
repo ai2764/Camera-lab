@@ -127,7 +127,7 @@ Run the E2E suite:
 npm run test:e2e
 ```
 
-Photography workspace experiments are currently hidden from the public UI. Photography E2E coverage is kept as a skipped local test until that workflow is ready to publish.
+The current E2E smoke test starts the local server and verifies that the public Camera Lab controls load.
 
 ## Expected ComfyUI Layout
 
@@ -152,10 +152,10 @@ The setup checker verifies the important paths and files.
 - `.env.example`: local config template
 - `AGENTS.md`: quick dependency and workflow notes for coding agents
 - `dependency-manifest.json`: machine-readable dependency manifest
-- `workflows/downloaded/`: workflow references used by Camera Lab
+- `workflows/references/`: workflow references used by Camera Lab
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references
 - `assets/references/`: small bundled reference images for built-in examples
-- `docs/research/`: camera-control notes, testing plan, and results page
+- `docs/research/`: camera-control notes and testing plans
 
 ## Repository Folders
 

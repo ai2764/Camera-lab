@@ -62,7 +62,7 @@ Expected ComfyUI layout under `COMFYUI_ROOT`:
 
 ## Repo Assets
 
-- `workflows\downloaded`: checked-in workflow references
+- `workflows\references`: checked-in workflow references
 - `workflows\experimental`: checked-in experimental Director / IC-LoRA references
 - `assets\references`: checked-in reference images used by built-in examples
 

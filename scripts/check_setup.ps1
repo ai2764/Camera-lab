@@ -89,13 +89,13 @@ foreach ($model in $requiredModels) {
 $ttpPath = Join-Path $comfyRoot "custom_nodes\Comfyui_TTP_Toolset\LTXVFirstLastFrameControl_TTP.py"
 $checks += Add-Check "TTP custom node" (Test-Path $ttpPath) $ttpPath
 
-$downloadedWorkflowRoot = Join-Path $repoRoot "workflows\downloaded"
+$workflowReferenceRoot = Join-Path $repoRoot "workflows\references"
 $repoWorkflows = @(
     "LTX-2.3_FML2V_RuneXX_guider.local.json"
 )
 
 foreach ($workflow in $repoWorkflows) {
-    $checks += Add-Check "Repo workflow $workflow" (Test-Path (Join-Path $downloadedWorkflowRoot $workflow)) (Join-Path $downloadedWorkflowRoot $workflow)
+    $checks += Add-Check "Repo workflow $workflow" (Test-Path (Join-Path $workflowReferenceRoot $workflow)) (Join-Path $workflowReferenceRoot $workflow)
 }
 
 $failed = @($checks | Where-Object { $_ -eq $false }).Count
