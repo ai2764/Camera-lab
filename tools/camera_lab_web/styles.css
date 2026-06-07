@@ -1471,6 +1471,10 @@ body.photography-workspace-active .layout {
   padding: 12px;
 }
 
+body.photography-workspace-active .topbar {
+  position: static;
+}
+
 body.photography-workspace-active .setup-panel,
 body.photography-workspace-active .prompt-panel,
 body.photography-workspace-active .results-shell {
