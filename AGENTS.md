@@ -60,6 +60,14 @@ Expected ComfyUI layout under `COMFYUI_ROOT`:
 
 - `custom_nodes\Comfyui_TTP_Toolset`
 
+## Repo Assets
+
+- `workflows\downloaded`: checked-in workflow references
+- `workflows\experimental`: checked-in experimental Director / IC-LoRA references
+- `assets\references`: checked-in reference images used by built-in examples
+
+`tasks\` is local-only scratch space for runs, uploads, logs, prompt smoke tests, generated media, and other experiments.
+
 ## Verification
 
 Run:
@@ -74,8 +82,6 @@ python -m pytest -p no:cacheprovider tests/test_director_reference.py
 ## Do Not Commit
 
 - `.env`
-- `tasks/camera_lab_runs/`
-- `tasks/camera_lab_uploads/`
+- `tasks/`
 - local ComfyUI install paths
 - generated videos and uploaded media
-

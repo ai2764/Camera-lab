@@ -32,7 +32,7 @@ Copy-Item .env.example .env
 Edit `.env` and set your own ComfyUI folder:
 
 ```text
-COMFYUI_ROOT=C:\ComfyUI
+COMFYUI_ROOT=<path-to-your-ComfyUI>
 COMFYUI_URL=http://127.0.0.1:8000
 ```
 
@@ -127,7 +127,7 @@ Run the E2E suite:
 npm run test:e2e
 ```
 
-The current E2E test opens the Photography workspace, verifies the 3D canvas, adds a camera keyframe, changes easing, bakes a Canny preview, and mocks the frame upload endpoint.
+Photography workspace experiments are currently hidden from the public UI. Photography E2E coverage is kept as a skipped local test until that workflow is ready to publish.
 
 ## Expected ComfyUI Layout
 
@@ -152,7 +152,9 @@ The setup checker verifies the important paths and files.
 - `.env.example`: local config template
 - `AGENTS.md`: quick dependency and workflow notes for coding agents
 - `dependency-manifest.json`: machine-readable dependency manifest
-- `tasks/camera_lab_workflows/downloaded/`: workflow references used by Camera Lab
+- `workflows/downloaded/`: workflow references used by Camera Lab
+- `workflows/experimental/`: experimental Director / IC-LoRA workflow references
+- `assets/references/`: small bundled reference images for built-in examples
 - `docs/research/`: camera-control notes, testing plan, and results page
 
 ## Repository Folders
@@ -162,16 +164,13 @@ The setup checker verifies the important paths and files.
 - `tests/`: Python tests for workflow patching and Director reference behavior.
 - `docs/`: screenshots, research notes, and user-facing documentation.
 - `prompts/`: reusable prompt/reference text.
-- `tasks/`: mostly local experiments and workflow reference material.
+- `workflows/`: checked-in ComfyUI workflow references.
+- `assets/references/`: checked-in reference images used by built-in examples.
+- `tasks/`: local experiments, generated runs, uploads, logs, and scratch output.
 
-The `tasks` folder is not a general runtime dependency folder. Most generated test outputs under `tasks` are ignored by git and can be recreated. The important checked-in pieces are:
+The `tasks` folder is local-only and ignored by git. Do not put required public assets there. If a workflow or reference image is needed by the app or by users, keep it under `workflows/` or `assets/references/`.
 
-- `tasks/camera_lab_workflows/downloaded/`: ComfyUI workflow references that Camera Lab or workflow experiments are based on.
-- `tasks/camera_lab_workflows/experimental/`: experimental Director / IC-LoRA workflow references.
-- `tasks/LTX_camera_prompt_suite_xiaomei/references/`: small reference images used by the built-in prompt examples.
-- `tasks/LTX 去字幕/`: a small checked-in reference asset from an earlier workflow test.
-
-Runtime/test leftovers such as `tasks/camera_lab_runs/`, `tasks/camera_lab_uploads/`, `tasks/fututek_*`, `tasks/ic_lora_*`, `tasks/photography_ltx_*`, generated previews, logs, uploaded media, and rendered videos should not be committed.
+Runtime/test leftovers such as generated previews, run histories, uploaded media, rendered videos, prompt smoke-test JSON, and logs should stay under `tasks/` and should not be committed. Photography workflow material is currently test-only and is not included as a public workflow reference.
 
 ## Runtime Data
 

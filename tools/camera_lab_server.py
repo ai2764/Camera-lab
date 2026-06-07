@@ -51,10 +51,7 @@ def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
     if root_value:
         root = Path(root_value)
     else:
-        candidates = [
-            Path.home() / "Desktop" / "GEN-ART" / "ComfyUI",
-            Path(r"C:\ComfyUI"),
-        ]
+        candidates = [Path("ComfyUI")]
         root = next((candidate for candidate in candidates if candidate.exists()), candidates[-1])
     return {
         "url": env.get("COMFYUI_URL") or "http://127.0.0.1:8000",
@@ -83,43 +80,38 @@ WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
 TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
 LOCAL_LTX23_DISTILLED_LORA = "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"
-DOWNLOADED_WORKFLOW_ROOT = ROOT / "tasks" / "camera_lab_workflows" / "downloaded"
+DOWNLOADED_WORKFLOW_ROOT = ROOT / "workflows" / "downloaded"
 TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
 DIRECTOR_WORKFLOW_PATH = WORKFLOW_ROOT / "LTX Director Example Workflow (Fixed).json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
-PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "tasks" / "camera_lab_workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
+PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
+REFERENCE_ROOT = ROOT / "assets" / "references"
 
 REFERENCE_IMAGES = [
-    {
-        "id": "xiaomei_i2v_street",
-        "label": "Xiaomei I2V street depth test",
-        "path": str(ROOT / "tasks" / "LTX_camera_prompt_suite_xiaomei" / "references" / "xiaomei_i2v_camera_test_street.png"),
-    },
-    {
-        "id": "xiaomei_front",
-        "label": "Xiaomei front portrait",
-        "path": str(ROOT / "tasks" / "LTX 去字幕" / "小美头像.png"),
-    },
-    {
-        "id": "truck_middle",
-        "label": "Xiaomei truck middle",
-        "path": str(ROOT / "tasks" / "LTX_camera_prompt_suite_xiaomei" / "references" / "truck_middle.png"),
-    },
-]
-REFERENCE_IMAGES = [image for image in REFERENCE_IMAGES if Path(image["path"]).exists()]
-BUNDLED_XIAOMEI_IMAGE = ROOT / "tasks" / "LTX 去字幕" / "小美头像.png"
-if BUNDLED_XIAOMEI_IMAGE.exists():
-    REFERENCE_IMAGES.append(
+    image
+    for image in [
+        {
+            "id": "xiaomei_i2v_street",
+            "label": "Xiaomei I2V street depth test",
+            "path": str(REFERENCE_ROOT / "xiaomei_i2v_camera_test_street.png"),
+        },
         {
             "id": "xiaomei_front",
             "label": "Xiaomei front portrait",
-            "path": str(BUNDLED_XIAOMEI_IMAGE),
-        }
-    )
+            "path": str(REFERENCE_ROOT / "xiaomei_front_portrait.png"),
+        },
+        {
+            "id": "truck_middle",
+            "label": "Xiaomei truck middle",
+            "path": str(REFERENCE_ROOT / "truck_middle.png"),
+        },
+    ]
+    if Path(image["path"]).exists()
+]
 
 WORKFLOWS = [
     {
@@ -152,14 +144,6 @@ WORKFLOWS = [
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
         "path": str(WORKFLOW_ROOT / "ltx23-nag-ia2v-extendcrop" / "ltx23_nag_ia2v_extendcrop_general.json"),
-    },
-    {
-        "id": "sulphur2_t2v_base",
-        "label": "Sulphur 2 T2V Base",
-        "mode": "t2v",
-        "path": str(DOWNLOADED_WORKFLOW_ROOT / "Sulphur_2_t2v_base.json"),
-        "disable_crop_guides": True,
-        "disable_prompt_enhance": True,
     },
     {
         "id": "ltx_director_reference_mvp",

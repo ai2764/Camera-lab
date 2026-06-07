@@ -1,5 +1,4 @@
 function initialWorkspace() {
-  if (window.location.hash === "#photography") return "photography";
   if (window.location.hash === "#director") return "director";
   return "camera";
 }

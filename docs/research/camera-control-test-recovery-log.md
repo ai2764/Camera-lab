@@ -153,7 +153,7 @@ This file is append-only. Use it to resume testing after terminal loss, browser 
 
 | image_id | path | depth | foreground | subject_size | line_structure | identity_risk |
 |---|---|---|---|---|---|---|
-| street_depth_night | `tasks/LTX_camera_prompt_suite_xiaomei/references/xiaomei_i2v_camera_test_street.png` | high | medium | medium | strong | medium |
+| street_depth_night | `assets/references/xiaomei_i2v_camera_test_street.png` | high | medium | medium | strong | medium |
 | front_portrait_flat | `tasks/LTX_camera_prompt_suite_xiaomei/references/avatar.png` | low | none | close | weak | low |
 | side_profile_flat | `tasks/LTX_camera_prompt_suite_xiaomei/references/xiaomei_side_profile_landscape.png` | low | none | close | weak | medium |
 | street_depth_day | `tasks/LTX_camera_prompt_suite_xiaomei_street/camera_prompt_suite_1779567985/camera_prompt_ref_1280x720.png` | high | weak | medium | strong | medium |
@@ -1474,7 +1474,7 @@ Run seed hunts only for `truck_right`, and optionally `pan_right` / `tilt_up` if
 - requested_size: `1280x720`
 - output_streams: all 10 runs have video + audio streams
 - seed: `1626970716`
-- start_frame: `tasks/LTX_camera_prompt_suite_xiaomei/references/xiaomei_i2v_camera_test_street.png`
+- start_frame: `assets/references/xiaomei_i2v_camera_test_street.png`
 - end_frame_policy: image2 generated move-specific final frames from the same avatar/street shot
 - prompt_policy: intentionally short; only the move name plus `Match the last frame.`
 
@@ -1534,7 +1534,7 @@ FLF with image2-generated tail frames is the first setup where `dolly_pull_back`
 - requested_size: `1280x720`
 - output_streams: all 10 runs have video + audio streams
 - seed: `1626970716`
-- source_frame: `tasks/LTX_camera_prompt_suite_xiaomei/references/xiaomei_i2v_camera_test_street.png`
+- source_frame: `assets/references/xiaomei_i2v_camera_test_street.png`
 - prompt_policy: Chinese short prompts only; no environment, no identity token, no verbose physical constraints
 
 ### Decision Record
@@ -1593,7 +1593,7 @@ Chinese prompts are accepted by the pipeline, but they do not improve I2V camera
 - segment_duration: `2s + 2s`
 - output_streams: all 3 stitched videos have video + audio streams
 - base_seed: `1626970716`; segment 2 uses `1626970717`
-- start_frame: `tasks/LTX_camera_prompt_suite_xiaomei/references/xiaomei_i2v_camera_test_street.png`
+- start_frame: `assets/references/xiaomei_i2v_camera_test_street.png`
 
 ### Decision Record
 

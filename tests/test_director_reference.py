@@ -14,7 +14,7 @@ class DirectorReferenceTests(unittest.TestCase):
 
         config = server.comfy_config_from_env(env)
 
-        self.assertTrue(config["root"].exists() or config["root"] == Path(r"C:\ComfyUI"))
+        self.assertTrue(config["root"].exists() or config["root"] == Path("ComfyUI"))
 
     def test_comfy_config_uses_comfyui_root_and_url_from_environment(self):
         root = Path(tempfile.gettempdir()) / "camera_lab_test_comfy"
@@ -47,17 +47,17 @@ class DirectorReferenceTests(unittest.TestCase):
             dotenv.write_text(
                 "\n".join(
                     [
-                        "COMFYUI_ROOT=C:\\ComfyUIFromFile",
+                        "COMFYUI_ROOT=ComfyUIFromFile",
                         "COMFYUI_URL=http://127.0.0.1:8188",
                     ]
                 ),
                 encoding="utf-8",
             )
-            env = {"COMFYUI_ROOT": r"C:\ExistingComfyUI"}
+            env = {"COMFYUI_ROOT": "ExistingComfyUI"}
 
             loaded = server.load_env_file(dotenv, env)
 
-            self.assertEqual(loaded["COMFYUI_ROOT"], r"C:\ExistingComfyUI")
+            self.assertEqual(loaded["COMFYUI_ROOT"], "ExistingComfyUI")
             self.assertEqual(loaded["COMFYUI_URL"], "http://127.0.0.1:8188")
 
     def test_runexx_length_primitive_stays_in_seconds(self):
@@ -141,8 +141,8 @@ class DirectorReferenceTests(unittest.TestCase):
                 },
             ],
             "reference_images": {
-                "character": "C:/tmp/character.png",
-                "prop": "C:/tmp/ship.png",
+                "character": "fixtures/character.png",
+                "prop": "fixtures/ship.png",
             },
         }
 
@@ -166,7 +166,7 @@ class DirectorReferenceTests(unittest.TestCase):
                 {
                     "prompt": "",
                     "duration": 1.5,
-                    "image_path": "C:/tmp/keyframe.png",
+                    "image_path": "fixtures/keyframe.png",
                     "guide_frame": 24,
                     "strength": 0.6,
                 },
@@ -176,7 +176,7 @@ class DirectorReferenceTests(unittest.TestCase):
         timeline = server.director_timeline_from_payload(payload, fps=24)
 
         self.assertEqual(timeline["local_prompts"], "visual guide")
-        self.assertEqual(timeline["segments"][0]["image_path"], "C:/tmp/keyframe.png")
+        self.assertEqual(timeline["segments"][0]["image_path"], "fixtures/keyframe.png")
         self.assertEqual(timeline["segments"][0]["start_frame"], 0)
         guide_segments = server.director_reference_timeline_segments(timeline, {}, {1: "keyframe.png"})
         self.assertEqual(guide_segments[0]["start"], 24)
@@ -193,12 +193,12 @@ class DirectorReferenceTests(unittest.TestCase):
                     "prompt": "walks",
                     "duration": 1.0,
                     "reference": "character",
-                    "image_path": "C:/tmp/timeline.png",
+                    "image_path": "fixtures/timeline.png",
                     "guide_frame": 0,
                     "strength": 0.75,
                 },
             ],
-            "reference_images": ["C:/tmp/character_front.png", "C:/tmp/character_side.png"],
+            "reference_images": ["fixtures/character_front.png", "fixtures/character_side.png"],
             "width": 512,
             "height": 512,
             "seed": "123",

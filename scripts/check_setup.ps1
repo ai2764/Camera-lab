@@ -41,7 +41,7 @@ function Add-Check {
 Load-CameraLabEnv $envPath
 
 $checks = @()
-$comfyRoot = if ($env:COMFYUI_ROOT) { $env:COMFYUI_ROOT } else { "C:\ComfyUI" }
+$comfyRoot = if ($env:COMFYUI_ROOT) { $env:COMFYUI_ROOT } else { "ComfyUI" }
 $comfyUrl = if ($env:COMFYUI_URL) { $env:COMFYUI_URL } else { "http://127.0.0.1:8000" }
 
 $checks += Add-Check ".env" (Test-Path $envPath) "copy .env.example to .env and edit COMFYUI_ROOT if this is missing"
@@ -89,10 +89,9 @@ foreach ($model in $requiredModels) {
 $ttpPath = Join-Path $comfyRoot "custom_nodes\Comfyui_TTP_Toolset\LTXVFirstLastFrameControl_TTP.py"
 $checks += Add-Check "TTP custom node" (Test-Path $ttpPath) $ttpPath
 
-$downloadedWorkflowRoot = Join-Path $repoRoot "tasks\camera_lab_workflows\downloaded"
+$downloadedWorkflowRoot = Join-Path $repoRoot "workflows\downloaded"
 $repoWorkflows = @(
-    "LTX-2.3_FML2V_RuneXX_guider.local.json",
-    "Sulphur_2_t2v_base.json"
+    "LTX-2.3_FML2V_RuneXX_guider.local.json"
 )
 
 foreach ($workflow in $repoWorkflows) {

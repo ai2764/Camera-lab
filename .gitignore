@@ -6,6 +6,7 @@ test-results/
 
 # Runtime outputs
 .env
+tasks/
 tasks/camera_lab_runs/
 tasks/camera_lab_uploads/
 tasks/camera_lab_server.log
@@ -28,7 +29,7 @@ tasks/douyin_*
 tasks/fututek_*
 tasks/ic_lora_*
 tasks/photography_ltx_*
-references/
+/references/
 
 # Local/editor noise
 .DS_Store
