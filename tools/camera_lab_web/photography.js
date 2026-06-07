@@ -269,6 +269,7 @@ function bindControls() {
   el("photoSubjectInput").addEventListener("change", handleSubjectUpload);
   el("photoBakeBtn").addEventListener("click", bakeCannyPreview);
   el("photoSendComfyBtn").addEventListener("click", sendFramesToComfy);
+  el("photoExportShotPackBtn").addEventListener("click", exportShotPack);
   el("photoDownloadSheetBtn").addEventListener("click", () => {
     if (!app.cannySheetUrl) return;
     const a = document.createElement("a");
@@ -463,6 +464,31 @@ function parseSize() {
   return { width: w || 768, height: h || 512 };
 }
 
+function drawReferenceFrame(targetCanvas, frame) {
+  const { width, height } = parseSize();
+  targetCanvas.width = width;
+  targetCanvas.height = height;
+  const previousAspect = app.camera.aspect;
+  const previousSize = new THREE.Vector2();
+  app.renderer.getSize(previousSize);
+  const transformVisible = app.transform?.visible ?? false;
+
+  if (app.transform) app.transform.visible = false;
+  app.camera.aspect = width / height;
+  app.camera.updateProjectionMatrix();
+  applyInterpolatedFrame(frame);
+  app.renderer.setSize(width, height, false);
+  app.renderer.render(app.scene, app.camera);
+
+  const ctx = targetCanvas.getContext("2d");
+  ctx.drawImage(app.renderer.domElement, 0, 0, width, height);
+
+  if (app.transform) app.transform.visible = transformVisible;
+  app.camera.aspect = previousAspect;
+  app.camera.updateProjectionMatrix();
+  app.renderer.setSize(previousSize.x, previousSize.y, false);
+}
+
 function drawCannyFrame(targetCanvas, frame) {
   const { width, height } = parseSize();
   targetCanvas.width = width;
@@ -504,6 +530,107 @@ function drawCannyFrame(targetCanvas, frame) {
   app.camera.aspect = previousAspect;
   app.camera.updateProjectionMatrix();
   app.renderer.setSize(previousSize.x, previousSize.y, false);
+}
+
+function roundNumber(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function serializeShotState(state) {
+  return {
+    cameraPosition: state.cameraPosition.map(roundNumber),
+    cameraRotation: state.cameraRotation.map(roundNumber),
+    target: state.target.map(roundNumber),
+    fov: roundNumber(state.fov),
+  };
+}
+
+function sampleShotFrames() {
+  const frames = totalFrames();
+  const samples = [
+    { label: "start", frame: 0 },
+    { label: "middle", frame: Math.floor((frames - 1) / 2) },
+    { label: "end", frame: frames - 1 },
+  ];
+  const seen = new Set();
+  return samples.filter((sample) => {
+    if (seen.has(sample.frame)) return false;
+    seen.add(sample.frame);
+    return true;
+  });
+}
+
+function cameraPromptFor(samples) {
+  if (samples.length < 2) return "Static camera reference shot.";
+  const first = samples[0].state.cameraPosition;
+  const last = samples[samples.length - 1].state.cameraPosition;
+  const dx = last[0] - first[0];
+  const dy = last[1] - first[1];
+  const dz = last[2] - first[2];
+  const moves = [];
+  if (Math.abs(dx) > 0.4) moves.push(dx > 0 ? "orbits toward camera right" : "orbits toward camera left");
+  if (Math.abs(dy) > 0.25) moves.push(dy > 0 ? "cranes upward" : "cranes downward");
+  if (Math.abs(dz) > 0.4) moves.push(dz < 0 ? "dollies in" : "dollies out");
+  const moveText = moves.length ? moves.join(", ") : "holds a steady composition";
+  return `Camera ${moveText} from the start reference to the end reference. Keep the subject placement, room perspective, lens feel, and framing consistent with the 3D references.`;
+}
+
+async function exportShotPack() {
+  const button = el("photoExportShotPackBtn");
+  const { width, height } = parseSize();
+  const previousFrame = Number(el("photoFrameSlider").value);
+  try {
+    button.disabled = true;
+    el("photoStatus").textContent = "Exporting director shot pack...";
+    const frames = [];
+    const samples = [];
+    for (const sample of sampleShotFrames()) {
+      const canvas = document.createElement("canvas");
+      drawReferenceFrame(canvas, sample.frame);
+      const state = serializeShotState(copyShotState());
+      samples.push({ ...sample, state });
+      frames.push({
+        label: sample.label,
+        frame: sample.frame,
+        data: canvas.toDataURL("image/png"),
+      });
+    }
+    const plan = {
+      mode: "photography_shot_pack",
+      total_frames: totalFrames(),
+      output_size: { width, height },
+      camera_prompt: cameraPromptFor(samples),
+      keyframes: sortedKeyframes().map((keyframe) => ({
+        id: keyframe.id,
+        frame: keyframe.frame,
+        easing: keyframe.easing,
+        state: serializeShotState(keyframe.state),
+      })),
+      samples,
+      subject_reference: app.subjectReference?.comfy_input_name || "",
+    };
+    const result = await postJson("/api/shot-pack", { width, height, frames, plan });
+    const output = el("photoCannyFrames");
+    output.innerHTML = "";
+    for (const frame of frames) {
+      const item = document.createElement("figure");
+      item.className = "photo-canny-frame";
+      const img = document.createElement("img");
+      img.src = frame.data;
+      const cap = document.createElement("figcaption");
+      cap.textContent = `${frame.label} F${frame.frame + 1}`;
+      item.append(img, cap);
+      output.appendChild(item);
+    }
+    el("photoStatus").textContent = `Exported shot pack ${result.shot_id}: ${result.path}`;
+  } catch (error) {
+    el("photoStatus").textContent = `Shot pack export failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    el("photoFrameSlider").value = String(previousFrame);
+    applyInterpolatedFrame(previousFrame);
+    resize();
+  }
 }
 
 async function bakeCannyPreview() {

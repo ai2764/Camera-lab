@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT / "tools" / "camera_lab_web"
 RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
+SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 
 
@@ -1904,6 +1905,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_photography_subject()
             if self.path == "/api/photography-frames":
                 return self.handle_photography_frames()
+            if self.path == "/api/shot-pack":
+                return self.handle_shot_pack()
             if self.path == "/api/history-state":
                 return self.handle_history_state()
             if self.path == "/api/last-frame":
@@ -2131,6 +2134,67 @@ class Handler(BaseHTTPRequestHandler):
                 "manifest": str(comfy_dir / "manifest.json"),
                 "workflow": str(workflow_path),
                 "subject_image": subject_image,
+            }
+        )
+
+    def handle_shot_pack(self) -> None:
+        payload = self.read_json()
+        raw_frames = payload.get("frames") or []
+        if not isinstance(raw_frames, list) or not raw_frames:
+            raise ValueError("frames are required")
+        if len(raw_frames) > 12:
+            raise ValueError("too many shot frames; maximum is 12")
+        width, height = validate_size(payload.get("width"), payload.get("height"))
+        shot_id = f"shot_{int(time.time())}_{random.randint(1000, 9999)}"
+        shot_dir = SHOT_PACK_ROOT / shot_id
+        shot_dir.mkdir(parents=True, exist_ok=True)
+
+        saved_frames = []
+        for index, frame in enumerate(raw_frames, start=1):
+            if not isinstance(frame, dict):
+                raise ValueError("shot frame entries must be objects")
+            label = safe_filename(str(frame.get("label") or f"frame_{index}")).lower()
+            if not label:
+                label = f"frame_{index}"
+            data_url = str(frame.get("data") or "")
+            if "," in data_url:
+                header, encoded = data_url.split(",", 1)
+                if not header.startswith("data:image/"):
+                    raise ValueError("shot frames must be image data URLs")
+            else:
+                encoded = data_url
+            raw = base64.b64decode(encoded)
+            if len(raw) > 16 * 1024 * 1024:
+                raise ValueError("a shot frame is too large")
+            filename = f"{index:02d}_{label}.png"
+            frame_path = shot_dir / filename
+            frame_path.write_bytes(raw)
+            saved_frames.append(
+                {
+                    "label": label,
+                    "frame": frame.get("frame"),
+                    "path": str(frame_path),
+                    "filename": filename,
+                }
+            )
+
+        plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+        plan.update(
+            {
+                "shot_id": shot_id,
+                "width": width,
+                "height": height,
+                "frames": saved_frames,
+            }
+        )
+        plan_path = shot_dir / "shot_plan.json"
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.send_json(
+            {
+                "shot_id": shot_id,
+                "path": str(shot_dir),
+                "plan": str(plan_path),
+                "frames": saved_frames,
             }
         )
 
