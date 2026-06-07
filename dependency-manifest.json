@@ -7,7 +7,7 @@
   "runtime": {
     "os": ["windows"],
     "python": ">=3.10",
-    "entrypoint": "tools/camera_lab_server.py"
+    "entrypoint": "server/camera_lab_server.py"
   },
   "commands": {
     "install_python_dependencies": "python -m pip install -r requirements.txt",
@@ -59,10 +59,10 @@
     }
   },
   "repo_assets": {
-    "workflow_references": [
-      "workflows/references/LTX-2.3_FML2V_RuneXX_guider.local.json",
-      "workflows/references/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
-      "workflows/references/LTX_2_3_Replace_Anyone_in_Video_260523-4.json",
+    "app_workflows": [
+      "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json"
+    ],
+    "experimental_workflows": [
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
       "workflows/experimental/Yedp_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
     ],

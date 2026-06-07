@@ -13,7 +13,7 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "python tools/camera_lab_server.py --port 1234",
+    command: "python server/camera_lab_server.py --port 1234",
     url: "http://127.0.0.1:1234/api/config",
     reuseExistingServer: true,
     timeout: 15000,

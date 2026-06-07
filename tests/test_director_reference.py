@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from tools import camera_lab_server as server
+from server import camera_lab_server as server
 
 
 class DirectorReferenceTests(unittest.TestCase):

@@ -101,7 +101,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 You can also start the server directly:
 
 ```powershell
-python tools\camera_lab_server.py --port 1234
+python server\camera_lab_server.py --port 1234
 ```
 
 Then open:
@@ -142,35 +142,45 @@ Camera Lab reads these paths from `COMFYUI_ROOT`:
 
 The setup checker verifies the important paths and files.
 
+## Workflow Sources
+
+The frontend workflow dropdown is populated by `WORKFLOWS` in `server/camera_lab_server.py`.
+
+Current workflow sources are:
+
+- Official ComfyUI workflow templates under `COMFYUI_ROOT`.
+- Runtime builders in `server/camera_lab_server.py`.
+- App-owned workflow JSON files under `workflows/app/`.
+- A local Director workflow installed under the user's ComfyUI workflow folder.
+
+Files under `workflows/experimental/` are research references and are not automatically shown in the frontend workflow dropdown.
+
 ## Included
 
-- `tools/camera_lab_server.py`: local backend and ComfyUI bridge
-- `tools/camera_lab_web/`: frontend
-- `scripts/start_camera_lab.ps1`: Windows startup script
-- `scripts/stop_camera_lab.ps1`: Windows stop script
-- `scripts/check_setup.ps1`: setup checker for new users
-- `.env.example`: local config template
-- `AGENTS.md`: quick dependency and workflow notes for coding agents
-- `dependency-manifest.json`: machine-readable dependency manifest
-- `workflows/references/`: workflow references used by Camera Lab
-- `workflows/experimental/`: experimental Director / IC-LoRA workflow references
-- `assets/references/`: small bundled reference images for built-in examples
-- `docs/research/`: camera-control notes and testing plans
+- `server/`: Python backend, local HTTP server, and ComfyUI bridge.
+- `frontend/`: static browser UI served by the Python backend.
+- `scripts/`: Windows setup, start, and stop helpers.
+- `workflows/app/`: checked-in ComfyUI workflows used by Camera Lab itself.
+- `workflows/experimental/`: experimental Director / IC-LoRA workflow references.
+- `assets/references/`: small bundled images used by built-in examples.
+- `prompts/`: reusable prompt templates and negative prompts.
+- `docs/`: screenshots and research notes.
+- `tests/`: Python unit tests and Playwright smoke tests.
+- `dependency-manifest.json`: machine-readable setup summary for coding agents.
+- `AGENTS.md`: concise implementation notes for coding agents.
 
 ## Repository Folders
 
-- `tools/`: Camera Lab server and web UI source.
-- `scripts/`: setup, start, and stop helpers for Windows users.
-- `tests/`: Python tests for workflow patching and Director reference behavior.
-- `docs/`: screenshots, research notes, and user-facing documentation.
-- `prompts/`: reusable prompt/reference text.
-- `workflows/`: checked-in ComfyUI workflow references.
-- `assets/references/`: checked-in reference images used by built-in examples.
-- `tasks/`: local experiments, generated runs, uploads, logs, and scratch output.
+The repository is organized so public, reusable files are separated from local run output:
 
-The `tasks` folder is local-only and ignored by git. Do not put required public assets there. If a workflow or reference image is needed by the app or by users, keep it under `workflows/` or `assets/references/`.
+- Application code lives in `server/` and `frontend/`.
+- Camera Lab workflow files live in `workflows/app/`.
+- Small example assets live in `assets/`.
+- Temporary runs, uploads, preview renders, prompt smoke tests, generated videos, and logs belong in `tasks/`.
 
-Runtime/test leftovers such as generated previews, run histories, uploaded media, rendered videos, prompt smoke-test JSON, and logs should stay under `tasks/` and should not be committed. Photography workflow material is currently test-only and is not included as a public workflow reference.
+`tasks/` is local-only and ignored by git. Do not put required public assets there. If a workflow or reference image is needed by the app or by users, keep it under `workflows/` or `assets/references/`.
+
+Photography workflow material is currently test-only and is not included as a public workflow reference.
 
 ## Runtime Data
 

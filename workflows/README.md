@@ -4,7 +4,7 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 
 ## Folders
 
-- `references/`: External or adapted workflow references used by Camera Lab or cited in development notes.
+- `app/`: Workflow files used directly by Camera Lab workflow options.
 - `experimental/`: Experimental workflows for Director and IC-LoRA control research. These are not guaranteed to be one-click production workflows.
 
 ## Notes

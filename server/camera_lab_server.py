@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WEB_DIR = ROOT / "tools" / "camera_lab_web"
+WEB_DIR = ROOT / "frontend"
 RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
@@ -80,7 +80,7 @@ WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
 TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
 LOCAL_LTX23_DISTILLED_LORA = "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"
-WORKFLOW_REFERENCE_ROOT = ROOT / "workflows" / "references"
+APP_WORKFLOW_ROOT = ROOT / "workflows" / "app"
 TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
@@ -136,7 +136,7 @@ WORKFLOWS = [
         "id": "fml_runexx_guider_local",
         "label": "LTX 2.3 FML RuneXX Guider Local (3 images)",
         "mode": "fml_native",
-        "path": str(WORKFLOW_REFERENCE_ROOT / "LTX-2.3_FML2V_RuneXX_guider.local.json"),
+        "path": str(APP_WORKFLOW_ROOT / "LTX-2.3_FML2V_RuneXX_guider.local.json"),
         "disable_prompt_enhance": True,
     },
     {

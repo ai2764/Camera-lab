@@ -1,19 +1,18 @@
 # Agent Notes
 
-## Project
+## Project Summary
 
-Camera Lab is a local Python HTTP server plus a static web UI for driving ComfyUI video workflows.
+Camera Lab is a Windows-first local web UI for driving ComfyUI video workflows. The app is a Python HTTP server that serves a static frontend and submits patched workflow prompts to a local ComfyUI instance.
 
-## Runtime
+## Entry Points
 
-- OS: Windows
-- Python: 3.10+
-- Main entry: `tools/camera_lab_server.py`
-- Start script: `scripts/start_camera_lab.ps1`
-- Stop script: `scripts/stop_camera_lab.ps1`
+- Backend: `server/camera_lab_server.py`
+- Frontend: `frontend/`
+- Start: `scripts/start_camera_lab.ps1`
+- Stop: `scripts/stop_camera_lab.ps1`
 - Setup check: `scripts/check_setup.ps1`
 
-## Required Local Config
+## Local Configuration
 
 Copy `.env.example` to `.env`.
 
@@ -24,17 +23,18 @@ Required environment variables:
 
 Do not commit `.env`.
 
-## Python Dependencies
+## Repository Layout
 
-Install with:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-Current direct dependency:
-
-- Pillow
+- `server/`: Python backend and ComfyUI bridge
+- `frontend/`: static browser UI
+- `scripts/`: Windows setup/start/stop helpers
+- `workflows/app/`: checked-in workflows used directly by Camera Lab
+- `workflows/experimental/`: experimental Director / IC-LoRA workflow references
+- `assets/references/`: bundled reference images for examples
+- `prompts/`: reusable prompt templates
+- `docs/`: screenshots and research notes
+- `tests/`: Python and browser smoke tests
+- `tasks/`: local-only scratch space ignored by git
 
 ## External Dependencies
 
@@ -49,24 +49,16 @@ Expected ComfyUI layout under `COMFYUI_ROOT`:
 - `.venv\Lib\site-packages\comfyui_workflow_templates_media_video\templates`
 - `custom_nodes\Comfyui_TTP_Toolset`
 
-## Required Models
+Required models:
 
 - `models\checkpoints\ltx-2.3-22b-dev-fp8.safetensors`
 - `models\text_encoders\gemma_3_12B_it_fp4_mixed.safetensors`
 - `models\loras\ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors`
 - `models\latent_upscale_models\ltx-2.3-spatial-upscaler-x2-1.1.safetensors`
 
-## Required Custom Nodes
+Required custom node:
 
 - `custom_nodes\Comfyui_TTP_Toolset`
-
-## Repo Assets
-
-- `workflows\references`: checked-in workflow references
-- `workflows\experimental`: checked-in experimental Director / IC-LoRA references
-- `assets\references`: checked-in reference images used by built-in examples
-
-`tasks\` is local-only scratch space for runs, uploads, logs, prompt smoke tests, generated media, and other experiments.
 
 ## Verification
 
@@ -75,13 +67,18 @@ Run:
 ```powershell
 .\scripts\check_setup.ps1
 python -m pytest -p no:cacheprovider tests/test_director_reference.py
+npm run test:e2e
 ```
 
 `check_setup.ps1` may fail on a fresh machine until `.env`, ComfyUI, models, and custom nodes are installed.
 
-## Do Not Commit
+## Commit Hygiene
+
+Do not commit:
 
 - `.env`
 - `tasks/`
 - local ComfyUI install paths
-- generated videos and uploaded media
+- generated videos, uploads, logs, preview renders, or prompt smoke-test output
+
+If a file is required by users or coding agents, move it out of `tasks/` before committing it. App-used workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
