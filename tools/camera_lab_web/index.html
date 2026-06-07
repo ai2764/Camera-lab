@@ -15,6 +15,7 @@
     <nav class="workspace-tabs" aria-label="Workspace">
       <button id="cameraWorkspaceTab" class="workspace-tab active" type="button">Camera Lab</button>
       <button id="directorWorkspaceTab" class="workspace-tab" type="button">Director</button>
+      <button id="photographyWorkspaceTab" class="workspace-tab" type="button">Photography</button>
     </nav>
     <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
   </header>
@@ -249,7 +250,7 @@
           </label>
           <label>
             Batch prompts
-            <textarea id="storyboardPromptText" rows="8" placeholder="Optional. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
+            <textarea id="storyboardPromptText" rows="8" placeholder="Optional. Each line can start with a duration, like 3s, close-up portrait. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
           </label>
           <div class="director-modal-actions">
             <button id="cancelStoryboardImportBtn" type="button">Cancel</button>
@@ -293,6 +294,88 @@
         <div class="queue-text" id="queueText">No active batch</div>
       </div>
       <div id="resultsGrid" class="results-grid"></div>
+    </section>
+
+    <section id="photographyWorkspace" class="photography-workspace">
+      <div class="photo-stage-head">
+        <div>
+          <div class="eyebrow">Photography</div>
+          <h2>3D Canny Bench</h2>
+        </div>
+        <div class="photo-stage-actions">
+          <button id="photoSelectCameraBtn" type="button">Camera</button>
+          <button id="photoResetBtn" type="button">Reset</button>
+        </div>
+      </div>
+      <div class="photo-grid">
+        <section class="photo-viewport-panel">
+          <div id="photoViewport" class="photo-viewport"></div>
+          <div class="photo-timeline">
+            <button id="photoPlayBtn" type="button">Play</button>
+            <div class="photo-timeline-track">
+              <div id="photoKeyframeMarkers" class="photo-keyframe-markers"></div>
+              <input id="photoFrameSlider" type="range" min="0" max="48" value="0">
+            </div>
+            <span id="photoFrameReadout">Frame 1 / 49</span>
+          </div>
+        </section>
+        <aside class="photo-control-panel">
+          <section>
+            <div class="photo-panel-title">Keyframes</div>
+            <div class="photo-button-row">
+              <button id="photoSetStartBtn" type="button">Set Camera Start</button>
+              <button id="photoSetEndBtn" type="button">Set Camera End</button>
+            </div>
+            <button id="photoAddKeyframeBtn" class="wide-button" type="button">Add / Update Current Frame</button>
+            <label>
+              Segment easing
+              <select id="photoEaseSelect">
+                <option value="easeInOut" selected>Ease in/out</option>
+                <option value="linear">Linear</option>
+                <option value="easeIn">Ease in</option>
+                <option value="easeOut">Ease out</option>
+                <option value="hold">Hold</option>
+              </select>
+            </label>
+            <div id="photoKeyframeList" class="photo-keyframe-list"></div>
+            <button id="photoDeleteKeyframeBtn" class="wide-button danger" type="button">Delete Selected Keyframe</button>
+            <p class="hint">Put keyframes closer together for faster camera moves. Easing applies from the selected keyframe to the next one.</p>
+          </section>
+          <section>
+            <div class="photo-panel-title">Shot</div>
+            <label>
+              Subject reference
+              <input id="photoSubjectInput" type="file" accept="image/*">
+            </label>
+            <div id="photoSubjectPreview" class="photo-subject-preview"></div>
+            <p id="photoSubjectStatus" class="hint">No subject reference. Workflow will keep its current LoadImage setting.</p>
+            <label>
+              Frames
+              <input id="photoFramesInput" type="number" min="2" max="96" step="1" value="49">
+            </label>
+            <label>
+              Output size
+              <select id="photoSizeSelect">
+                <option value="512x512">512x512</option>
+                <option value="768x512" selected>768x512</option>
+                <option value="1280x720">1280x720</option>
+                <option value="720x1280">720x1280</option>
+              </select>
+            </label>
+          </section>
+          <section>
+            <div class="photo-panel-title">Canny Control</div>
+            <button id="photoBakeBtn" class="primary" type="button">Bake Canny Preview</button>
+            <button id="photoSendComfyBtn" type="button">Send Frames to ComfyUI</button>
+            <button id="photoDownloadSheetBtn" type="button" disabled>Download Sheet</button>
+            <p id="photoStatus" class="hint">Ready. First test: static subject, animated camera, black background with white Canny-style edges.</p>
+          </section>
+        </aside>
+      </div>
+      <section class="photo-output">
+        <div class="photo-panel-title">Baked Frames</div>
+        <div id="photoCannyFrames" class="photo-canny-frames"></div>
+      </section>
     </section>
   </main>
 
@@ -343,6 +426,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=result-toolbar-icons-1"></script>
+  <script src="/static/app.js?v=storyboard-duration-prompts-1"></script>
+  <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

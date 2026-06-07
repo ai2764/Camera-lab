@@ -1,8 +1,8 @@
 {
   "id": "394ed254-7306-42a2-9ae6-aa880ce4456d",
   "revision": 0,
-  "last_node_id": 5067,
-  "last_link_id": 13548,
+  "last_node_id": 5069,
+  "last_link_id": 13550,
   "nodes": [
     {
       "id": 1241,
@@ -144,7 +144,7 @@
       },
       "widgets_values": [
         0,
-        1,
+        0.25,
         1,
         "disabled",
         false,
@@ -880,7 +880,7 @@
         {
           "name": "input",
           "type": "IMAGE,MASK",
-          "link": 13548
+          "link": 13550
         },
         {
           "name": "resize_type.multiple",
@@ -1814,110 +1814,72 @@
       ]
     },
     {
-      "id": 5067,
-      "type": "YedpActionDirector",
+      "id": 5068,
+      "type": "LoadImageDataSetFromFolder",
       "pos": [
-        -4260,
-        4000
+        -4300,
+        4100
       ],
       "size": [
-        1280,
-        820
+        300,
+        80
       ],
       "flags": {},
-      "order": 24,
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            13549
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImageDataSetFromFolder"
+      },
+      "widgets_values": [
+        "camera_lab_photography/photo_1780787417_6082"
+      ]
+    },
+    {
+      "id": 5069,
+      "type": "ImageListToImageBatch",
+      "pos": [
+        -3920,
+        4100
+      ],
+      "size": [
+        260,
+        60
+      ],
+      "flags": {},
+      "order": 1,
       "mode": 0,
       "inputs": [
         {
-          "name": "width",
-          "type": "INT",
-          "widget": {
-            "name": "width"
-          },
-          "link": null
-        },
-        {
-          "name": "height",
-          "type": "INT",
-          "widget": {
-            "name": "height"
-          },
-          "link": null
-        },
-        {
-          "name": "frame_count",
-          "type": "INT",
-          "widget": {
-            "name": "frame_count"
-          },
-          "link": null
-        },
-        {
-          "name": "fps",
-          "type": "INT",
-          "widget": {
-            "name": "fps"
-          },
-          "link": null
-        },
-        {
-          "name": "client_data",
-          "type": "STRING",
-          "widget": {
-            "name": "client_data"
-          },
-          "link": null
+          "name": "images",
+          "type": "IMAGE",
+          "link": 13549
         }
       ],
       "outputs": [
         {
-          "name": "POSE_BATCH",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "DEPTH_BATCH",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "CANNY_BATCH",
+          "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            13548
-          ]
-        },
-        {
-          "name": "NORMAL_BATCH",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "SHADED_BATCH",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "ALPHA_BATCH",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "TEXTURED_BATCH",
-          "type": "IMAGE",
-          "links": []
+            13550
+          ],
+          "slot_index": 0
         }
       ],
       "properties": {
-        "Node name for S&R": "YedpActionDirector"
+        "Node name for S&R": "ImageListToImageBatch"
       },
-      "widgets_values": [
-        768,
-        512,
-        49,
-        24,
-        ""
-      ]
+      "widgets_values": []
     }
   ],
   "links": [
@@ -2370,9 +2332,17 @@
       "IMAGE"
     ],
     [
-      13548,
-      5067,
-      2,
+      13549,
+      5068,
+      0,
+      5069,
+      0,
+      "IMAGE"
+    ],
+    [
+      13550,
+      5069,
+      0,
       5028,
       0,
       "IMAGE"
@@ -2604,10 +2574,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.620921323059155,
+      "scale": 0.55,
       "offset": [
-        4845.606614557338,
-        -2908.00904512447
+        -2300,
+        -2300
       ]
     },
     "frontendVersion": "1.42.8",

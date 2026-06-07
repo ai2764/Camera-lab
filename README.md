@@ -110,6 +110,25 @@ Then open:
 http://127.0.0.1:1234
 ```
 
+## Browser E2E Tests
+
+Camera Lab uses Playwright for browser-level smoke tests of the web UI.
+
+Install Node dependencies and the Chromium test browser:
+
+```powershell
+npm install
+npx playwright install chromium
+```
+
+Run the E2E suite:
+
+```powershell
+npm run test:e2e
+```
+
+The current E2E test opens the Photography workspace, verifies the 3D canvas, adds a camera keyframe, changes easing, bakes a Canny preview, and mocks the frame upload endpoint.
+
 ## Expected ComfyUI Layout
 
 Camera Lab reads these paths from `COMFYUI_ROOT`:

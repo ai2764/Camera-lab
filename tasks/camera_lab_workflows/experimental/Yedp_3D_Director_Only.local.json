@@ -1,0 +1,207 @@
+{
+  "id": "yedp-action-director-only",
+  "revision": 0,
+  "last_node_id": 2,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "YedpActionDirector",
+      "pos": [
+        120,
+        80
+      ],
+      "size": [
+        1280,
+        820
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "widget": {
+            "name": "frame_count"
+          },
+          "link": null
+        },
+        {
+          "name": "fps",
+          "type": "INT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": null
+        },
+        {
+          "name": "client_data",
+          "type": "STRING",
+          "widget": {
+            "name": "client_data"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "POSE_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "DEPTH_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "CANNY_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "NORMAL_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "SHADED_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "ALPHA_BATCH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "TEXTURED_BATCH",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "YedpActionDirector"
+      },
+      "widgets_values": [
+        768,
+        512,
+        49,
+        24,
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "YedpBlockout",
+      "pos": [
+        1450,
+        80
+      ],
+      "size": [
+        1020,
+        760
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "widget": {
+            "name": "info"
+          },
+          "link": null
+        },
+        {
+          "name": "client_data",
+          "type": "STRING",
+          "widget": {
+            "name": "client_data"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SHADED",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "TEXTURED",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "DEPTH",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "NORMAL",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "YedpBlockout"
+      },
+      "widgets_values": [
+        768,
+        512,
+        "Optional: use this to build/export simple GLB blockouts.",
+        ""
+      ]
+    }
+  ],
+  "links": [],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.75,
+      "offset": [
+        0,
+        0
+      ]
+    }
+  },
+  "version": 0.4
+}
