@@ -27,6 +27,7 @@
   "agent_quickstart": [
     "Read AGENTS.md and dependency-manifest.json first.",
     "Run .\\scripts\\agent_setup.ps1 for repo-side dependencies.",
+    "If ComfyUI is not installed, install it from the official ComfyUI docs before continuing.",
     "Edit .env so COMFYUI_ROOT points to a local ComfyUI install and COMFYUI_URL points to the running ComfyUI server.",
     "Run .\\scripts\\install_workflows.ps1 after COMFYUI_ROOT is valid.",
     "Run .\\scripts\\check_setup.ps1 and fix any MISSING item before starting the app.",
@@ -61,6 +62,11 @@
       "vendored": false,
       "root_env": "COMFYUI_ROOT",
       "url_env": "COMFYUI_URL",
+      "install_docs": [
+        "https://docs.comfy.org/installation/desktop/overview",
+        "https://docs.comfy.org/installation/manual_install",
+        "https://github.com/comfy-org/comfyui"
+      ],
       "required_paths": [
         "input",
         "output",
@@ -78,6 +84,21 @@
         "models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
       ]
     }
+  },
+  "without_comfyui": {
+    "status": "limited_repo_only_mode",
+    "can_do": [
+      "install Camera Lab repo dependencies",
+      "inspect and edit source files",
+      "run Python unit tests that do not require live generation",
+      "run frontend syntax checks"
+    ],
+    "cannot_do": [
+      "install bundled workflows into ComfyUI",
+      "pass .\\scripts\\check_setup.ps1",
+      "submit workflows for video generation",
+      "verify model or custom-node availability"
+    ]
   },
   "repo_assets": {
     "app_workflows": [

@@ -25,6 +25,14 @@ Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder v
 - PowerShell
 - A working local ComfyUI install
 
+If you do not have ComfyUI yet, install it first:
+
+- Comfy Desktop: <https://docs.comfy.org/installation/desktop/overview>
+- Manual local install: <https://docs.comfy.org/installation/manual_install>
+- Source repository: <https://github.com/comfy-org/comfyui>
+
+Camera Lab can install its own Python and Node dependencies, but it does not install ComfyUI, ComfyUI models, or custom nodes. Without ComfyUI, you can inspect the repo and run repo-only tests, but video generation and full setup checks will fail.
+
 Start ComfyUI first. Camera Lab expects ComfyUI to be reachable at:
 
 ```text

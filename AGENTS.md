@@ -62,6 +62,14 @@ Do not commit `.env`.
 
 This repo does not vendor ComfyUI, models, or custom nodes.
 
+If ComfyUI is not installed, stop at repo-side setup and point the user to the official install docs:
+
+- Comfy Desktop: <https://docs.comfy.org/installation/desktop/overview>
+- Manual local install: <https://docs.comfy.org/installation/manual_install>
+- Source repository: <https://github.com/comfy-org/comfyui>
+
+Do not invent local ComfyUI paths, do not vendor ComfyUI into this repo, and do not mark setup complete while `check_setup.ps1` reports missing ComfyUI, models, or custom nodes. Without ComfyUI, coding agents can still inspect the repo, install repo dependencies, and run repo-only checks, but they cannot generate videos or pass the full setup check.
+
 Expected ComfyUI layout under `COMFYUI_ROOT`:
 
 - `input`
