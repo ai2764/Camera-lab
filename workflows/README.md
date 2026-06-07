@@ -28,18 +28,18 @@ ComfyUI does not read workflow files directly from this repository.
 
 Copy app workflows into your local ComfyUI workflow folder with:
 
-```powershell
-.\scripts\install_workflows.ps1
+```bash
+python scripts/install_workflows.py
 ```
 
 This installs JSON files under:
 
 ```text
-<COMFYUI_ROOT>\user\default\workflows\camera-lab\
+<COMFYUI_ROOT>/user/default/workflows/camera-lab/
 ```
 
 To include experimental workflows too:
 
-```powershell
-.\scripts\install_workflows.ps1 -IncludeExperimental
+```bash
+python scripts/install_workflows.py --include-experimental
 ```
