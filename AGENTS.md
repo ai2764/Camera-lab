@@ -29,6 +29,7 @@ Do not commit `.env`.
 - `frontend/`: static browser UI
 - `scripts/`: Windows setup/start/stop helpers
 - `workflows/app/`: checked-in workflows used directly by Camera Lab
+- `workflows/examples/`: workflow examples used during development and smoke testing
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references
 - `assets/references/`: bundled reference images for examples
 - `prompts/`: reusable prompt templates
@@ -65,6 +66,7 @@ Required custom node:
 Run:
 
 ```powershell
+.\scripts\install_workflows.ps1
 .\scripts\check_setup.ps1
 python -m pytest -p no:cacheprovider tests/test_director_reference.py
 npm run test:e2e
@@ -81,4 +83,6 @@ Do not commit:
 - local ComfyUI install paths
 - generated videos, uploads, logs, preview renders, or prompt smoke-test output
 
-If a file is required by users or coding agents, move it out of `tasks/` before committing it. App-used workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
+If a file is required by users or coding agents, move it out of `tasks/` before committing it. App-used workflow files belong in `workflows/app/`; reference workflows belong in `workflows/examples/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
+
+Bundled workflows are not automatically visible inside ComfyUI. Use `scripts/install_workflows.ps1` to copy `workflows/app` and `workflows/examples` into `COMFYUI_ROOT\user\default\workflows\camera-lab`. Add `-IncludeExperimental` only when the experimental workflows should also be installed.

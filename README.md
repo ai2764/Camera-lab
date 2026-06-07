@@ -44,7 +44,31 @@ Do not commit `.env`. It is ignored by git because it is machine-specific.
 python -m pip install -r requirements.txt
 ```
 
-### 4. Check Setup
+### 4. Install Bundled Workflows into ComfyUI
+
+Camera Lab stores workflow files in this repo, but ComfyUI only sees workflows that are inside your local ComfyUI workflow folder.
+
+Install app and example workflows into:
+
+```text
+<COMFYUI_ROOT>\user\default\workflows\camera-lab\
+```
+
+Run:
+
+```powershell
+.\scripts\install_workflows.ps1
+```
+
+To also install experimental Director / IC-LoRA workflows:
+
+```powershell
+.\scripts\install_workflows.ps1 -IncludeExperimental
+```
+
+Restart or refresh ComfyUI if its workflow browser does not show the new files.
+
+### 5. Check Setup
 
 Run:
 
@@ -59,8 +83,9 @@ If a check says `MISSING`, fix that item before starting Camera Lab. The most co
 - ComfyUI is not running
 - Required LTX models are missing
 - Required custom nodes or workflow files are missing
+- Bundled workflows were not installed into ComfyUI
 
-### 5. Start Camera Lab
+### 6. Start Camera Lab
 
 ```powershell
 .\scripts\start_camera_lab.ps1 -Open
@@ -78,7 +103,7 @@ Use another port if needed:
 .\scripts\start_camera_lab.ps1 -p 9000 -Open
 ```
 
-### 6. Stop Camera Lab
+### 7. Stop Camera Lab
 
 ```powershell
 .\scripts\stop_camera_lab.ps1
@@ -153,7 +178,7 @@ Current workflow sources are:
 - App-owned workflow JSON files under `workflows/app/`.
 - A local Director workflow installed under the user's ComfyUI workflow folder.
 
-Files under `workflows/experimental/` are research references and are not automatically shown in the frontend workflow dropdown.
+Files under `workflows/examples/` and `workflows/experimental/` are not automatically shown in the frontend workflow dropdown. Run `scripts/install_workflows.ps1` to copy them into ComfyUI for direct inspection, import, or manual queueing.
 
 ## Included
 
@@ -161,6 +186,7 @@ Files under `workflows/experimental/` are research references and are not automa
 - `frontend/`: static browser UI served by the Python backend.
 - `scripts/`: Windows setup, start, and stop helpers.
 - `workflows/app/`: checked-in ComfyUI workflows used by Camera Lab itself.
+- `workflows/examples/`: ComfyUI workflow examples used during development and smoke testing.
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references.
 - `assets/references/`: small bundled images used by built-in examples.
 - `prompts/`: reusable prompt templates and negative prompts.
@@ -175,12 +201,11 @@ The repository is organized so public, reusable files are separated from local r
 
 - Application code lives in `server/` and `frontend/`.
 - Camera Lab workflow files live in `workflows/app/`.
+- Example workflows live in `workflows/examples/`.
 - Small example assets live in `assets/`.
 - Temporary runs, uploads, preview renders, prompt smoke tests, generated videos, and logs belong in `tasks/`.
 
 `tasks/` is local-only and ignored by git. Do not put required public assets there. If a workflow or reference image is needed by the app or by users, keep it under `workflows/` or `assets/references/`.
-
-Photography workflow material is currently test-only and is not included as a public workflow reference.
 
 ## Runtime Data
 

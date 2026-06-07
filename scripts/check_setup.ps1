@@ -90,12 +90,14 @@ $ttpPath = Join-Path $comfyRoot "custom_nodes\Comfyui_TTP_Toolset\LTXVFirstLastF
 $checks += Add-Check "TTP custom node" (Test-Path $ttpPath) $ttpPath
 
 $appWorkflowRoot = Join-Path $repoRoot "workflows\app"
+$installedAppWorkflowRoot = Join-Path $comfyRoot "user\default\workflows\camera-lab\app"
 $repoWorkflows = @(
     "LTX-2.3_FML2V_RuneXX_guider.local.json"
 )
 
 foreach ($workflow in $repoWorkflows) {
     $checks += Add-Check "Repo workflow $workflow" (Test-Path (Join-Path $appWorkflowRoot $workflow)) (Join-Path $appWorkflowRoot $workflow)
+    $checks += Add-Check "Installed ComfyUI workflow $workflow" (Test-Path (Join-Path $installedAppWorkflowRoot $workflow)) (Join-Path $installedAppWorkflowRoot $workflow)
 }
 
 $failed = @($checks | Where-Object { $_ -eq $false }).Count

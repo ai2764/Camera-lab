@@ -12,6 +12,7 @@
   "commands": {
     "install_python_dependencies": "python -m pip install -r requirements.txt",
     "check_setup": ".\\scripts\\check_setup.ps1",
+    "install_workflows": ".\\scripts\\install_workflows.ps1",
     "start": ".\\scripts\\start_camera_lab.ps1 -Open",
     "stop": ".\\scripts\\stop_camera_lab.ps1",
     "test": "python -m pytest -p no:cacheprovider tests/test_director_reference.py"
@@ -62,6 +63,13 @@
     "app_workflows": [
       "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json"
     ],
+    "example_workflows": [
+      "workflows/examples/LTX-2-3-FML2V-Guider.nextdiffusion.json",
+      "workflows/examples/LTX-2.3_FML2V_RuneXX_custom_audio.json",
+      "workflows/examples/LTX-2.3_FML2V_RuneXX_guider.json",
+      "workflows/examples/LTX-2.3_ICLoRA_Motion_Track_Distilled.local.json",
+      "workflows/examples/LTX_2_3_Replace_Anyone_in_Video_260523-4.json"
+    ],
     "experimental_workflows": [
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
       "workflows/experimental/Yedp_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
@@ -78,8 +86,7 @@
   },
   "do_not_commit": [
     ".env",
-    "tasks/camera_lab_runs/",
-    "tasks/camera_lab_uploads/",
+    "tasks/",
     "local ComfyUI install paths",
     "generated videos and uploaded media"
   ]
