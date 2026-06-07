@@ -5,32 +5,37 @@
     "summary": "Local Python HTTP server and static web UI for driving ComfyUI video workflows."
   },
   "runtime": {
-    "os": ["windows"],
+    "os": ["windows", "macos", "linux"],
     "python": ">=3.10",
     "entrypoint": "server/camera_lab_server.py"
   },
   "commands": {
-    "agent_setup": ".\\scripts\\agent_setup.ps1",
+    "agent_setup": "python scripts/agent_setup.py",
     "install_python_dependencies": "python -m pip install -r requirements.txt",
     "install_node_dependencies": "npm install",
     "install_playwright_chromium": "npx playwright install chromium",
-    "check_setup": ".\\scripts\\check_setup.ps1",
-    "install_workflows": ".\\scripts\\install_workflows.ps1",
-    "start": ".\\scripts\\start_camera_lab.ps1 -Open",
-    "stop": ".\\scripts\\stop_camera_lab.ps1",
+    "check_setup": "python scripts/check_setup.py",
+    "install_workflows": "python scripts/install_workflows.py",
+    "start": "python scripts/start_camera_lab.py --open",
+    "stop": "python scripts/stop_camera_lab.py",
     "test": "python -m pytest -p no:cacheprovider tests/test_director_reference.py",
     "test_e2e": "npm run test:e2e",
     "python_syntax_check": "python -m py_compile server\\camera_lab_server.py",
     "frontend_app_syntax_check": "node --check frontend\\app.js",
-    "frontend_photography_syntax_check": "node --check frontend\\photography.js"
+    "frontend_photography_syntax_check": "node --check frontend\\photography.js",
+    "windows_agent_setup": ".\\scripts\\agent_setup.ps1",
+    "windows_check_setup": ".\\scripts\\check_setup.ps1",
+    "windows_install_workflows": ".\\scripts\\install_workflows.ps1",
+    "windows_start": ".\\scripts\\start_camera_lab.ps1 -Open",
+    "windows_stop": ".\\scripts\\stop_camera_lab.ps1"
   },
   "agent_quickstart": [
     "Read AGENTS.md and dependency-manifest.json first.",
-    "Run .\\scripts\\agent_setup.ps1 for repo-side dependencies.",
+    "Run python scripts/agent_setup.py for repo-side dependencies.",
     "If ComfyUI is not installed, install it from the official ComfyUI docs before continuing.",
     "Edit .env so COMFYUI_ROOT points to a local ComfyUI install and COMFYUI_URL points to the running ComfyUI server.",
-    "Run .\\scripts\\install_workflows.ps1 after COMFYUI_ROOT is valid.",
-    "Run .\\scripts\\check_setup.ps1 and fix any MISSING item before starting the app.",
+    "Run python scripts/install_workflows.py after COMFYUI_ROOT is valid.",
+    "Run python scripts/check_setup.py and fix any MISSING item before starting the app.",
     "Run python -m pytest -p no:cacheprovider tests/test_director_reference.py before committing backend or workflow changes."
   ],
   "local_config": {
@@ -95,7 +100,7 @@
     ],
     "cannot_do": [
       "install bundled workflows into ComfyUI",
-      "pass .\\scripts\\check_setup.ps1",
+      "pass python scripts/check_setup.py",
       "submit workflows for video generation",
       "verify model or custom-node availability"
     ]

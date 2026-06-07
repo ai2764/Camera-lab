@@ -128,6 +128,27 @@ class DirectorReferenceTests(unittest.TestCase):
             else:
                 self.assertEqual(item["source"], f"server builder: {workflow['builder']}")
 
+    def test_dependency_manifest_setup_scripts_exist(self):
+        manifest = json.loads((server.ROOT / "dependency-manifest.json").read_text(encoding="utf-8"))
+        script_commands = [
+            "agent_setup",
+            "check_setup",
+            "install_workflows",
+            "start",
+            "stop",
+            "windows_agent_setup",
+            "windows_check_setup",
+            "windows_install_workflows",
+            "windows_start",
+            "windows_stop",
+        ]
+
+        for key in script_commands:
+            command = manifest["commands"][key]
+            script = next(part for part in command.split() if part.startswith("scripts/") or part.startswith(".\\scripts\\"))
+            normalized = script.removeprefix(".\\").replace("\\", "/")
+            self.assertTrue((server.ROOT / normalized).exists(), f"{key} points to missing script {script}")
+
     def test_nag_i2v_keeps_fixed_anti_text_prompt_and_inplace_strengths(self):
         workflow = next(item for item in server.WORKFLOWS if item["id"] == "i2v_official_local")
         api = server.workflow_to_api(json.loads(server.Path(workflow["path"]).read_text(encoding="utf-8")))

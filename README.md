@@ -11,19 +11,20 @@ It runs as a Python HTTP server and talks to a local ComfyUI instance.
 For coding agents or fresh clones, the fastest repo-side bootstrap is:
 
 ```powershell
-.\scripts\agent_setup.ps1
-.\scripts\install_workflows.ps1
-.\scripts\check_setup.ps1
+python scripts/agent_setup.py
+python scripts/install_workflows.py
+python scripts/check_setup.py
 ```
 
-Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.ps1` installs repo dependencies and installs bundled workflows when `COMFYUI_ROOT` is valid. It does not install ComfyUI, models, or custom nodes.
+Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.py` installs repo dependencies and installs bundled workflows when `COMFYUI_ROOT` is valid. It does not install ComfyUI, models, or custom nodes.
 
 ### 1. Requirements
 
-- Windows
+- Windows, macOS, or Linux
 - Python 3.10 or newer
-- PowerShell
 - A working local ComfyUI install
+
+Use `python3` instead of `python` on systems where the `python` command is not available.
 
 If you do not have ComfyUI yet, install it first:
 
@@ -69,19 +70,19 @@ Camera Lab stores workflow files in this repo, but ComfyUI only sees workflows t
 Install bundled app workflows into:
 
 ```text
-<COMFYUI_ROOT>\user\default\workflows\camera-lab\
+<COMFYUI_ROOT>/user/default/workflows/camera-lab/
 ```
 
 Run:
 
 ```powershell
-.\scripts\install_workflows.ps1
+python scripts/install_workflows.py
 ```
 
 To also install experimental Director / IC-LoRA workflows:
 
 ```powershell
-.\scripts\install_workflows.ps1 -IncludeExperimental
+python scripts/install_workflows.py --include-experimental
 ```
 
 Restart or refresh ComfyUI if its workflow browser does not show the new files.
@@ -91,7 +92,7 @@ Restart or refresh ComfyUI if its workflow browser does not show the new files.
 Run:
 
 ```powershell
-.\scripts\check_setup.ps1
+python scripts/check_setup.py
 ```
 
 If a check says `MISSING`, fix that item before starting Camera Lab. The most common issues are:
@@ -105,8 +106,8 @@ If a check says `MISSING`, fix that item before starting Camera Lab. The most co
 
 ### 6. Start Camera Lab
 
-```powershell
-.\scripts\start_camera_lab.ps1 -Open
+```bash
+python scripts/start_camera_lab.py --open
 ```
 
 Default URL:
@@ -117,20 +118,29 @@ http://127.0.0.1:1234
 
 Use another port if needed:
 
-```powershell
-.\scripts\start_camera_lab.ps1 -p 9000 -Open
+```bash
+python scripts/start_camera_lab.py -p 9000 --open
 ```
 
 ### 7. Stop Camera Lab
 
-```powershell
-.\scripts\stop_camera_lab.ps1
+```bash
+python scripts/stop_camera_lab.py
 ```
 
 Use a custom port if you started one:
 
+```bash
+python scripts/stop_camera_lab.py -p 9000
+```
+
+Windows PowerShell wrappers are also available:
+
 ```powershell
-.\scripts\stop_camera_lab.ps1 -p 9000
+.\scripts\agent_setup.ps1
+.\scripts\install_workflows.ps1
+.\scripts\check_setup.ps1
+.\scripts\start_camera_lab.ps1 -Open
 ```
 
 ## If PowerShell Blocks Scripts
@@ -179,8 +189,8 @@ Camera Lab reads these paths from `COMFYUI_ROOT`:
 - `input`
 - `output`
 - `models`
-- `user\default\workflows`
-- `custom_nodes\Comfyui_TTP_Toolset`
+- `user/default/workflows`
+- `custom_nodes/Comfyui_TTP_Toolset`
 
 The setup checker verifies the important paths and files.
 
@@ -193,7 +203,7 @@ Current workflow sources are:
 - Runtime builders in `server/camera_lab_server.py`.
 - App-owned workflow JSON files under `workflows/app/`.
 
-Files under `workflows/app/` are the workflow files shipped with Camera Lab. Run `scripts/install_workflows.ps1` to copy them into ComfyUI for direct inspection, import, or manual queueing. Files under `workflows/experimental/` are optional research references and are only installed with `-IncludeExperimental`.
+Files under `workflows/app/` are the workflow files shipped with Camera Lab. Run `python scripts/install_workflows.py` to copy them into ComfyUI for direct inspection, import, or manual queueing. Files under `workflows/experimental/` are optional research references and are only installed with `--include-experimental`.
 
 Current dropdown mapping:
 
@@ -208,7 +218,7 @@ Current dropdown mapping:
 
 - `server/`: Python backend, local HTTP server, and ComfyUI bridge.
 - `frontend/`: static browser UI served by the Python backend.
-- `scripts/`: Windows setup, start, and stop helpers.
+- `scripts/`: cross-platform Python helpers plus Windows PowerShell wrappers.
 - `workflows/app/`: checked-in ComfyUI workflows used by Camera Lab itself.
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references.
 - `assets/references/`: small bundled images used by built-in examples.

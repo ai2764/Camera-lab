@@ -2,29 +2,33 @@
 
 ## Project Summary
 
-Camera Lab is a Windows-first local web UI for driving ComfyUI video workflows. The app is a Python HTTP server that serves a static frontend and submits patched workflow prompts to a local ComfyUI instance.
+Camera Lab is a cross-platform local web UI for driving ComfyUI video workflows. The app is a Python HTTP server that serves a static frontend and submits patched workflow prompts to a local ComfyUI instance.
 
 ## Entry Points
 
 - Backend: `server/camera_lab_server.py`
 - Frontend: `frontend/`
-- Agent bootstrap: `scripts/agent_setup.ps1`
-- Start: `scripts/start_camera_lab.ps1`
-- Stop: `scripts/stop_camera_lab.ps1`
-- Setup check: `scripts/check_setup.ps1`
+- Agent bootstrap: `scripts/agent_setup.py`
+- Workflow install: `scripts/install_workflows.py`
+- Setup check: `scripts/check_setup.py`
+- Start: `scripts/start_camera_lab.py`
+- Stop: `scripts/stop_camera_lab.py`
+- Windows PowerShell wrappers: `scripts/*.ps1`
 
 ## Fast Agent Setup
 
 Use this order on a fresh clone:
 
 ```powershell
-.\scripts\agent_setup.ps1
-.\scripts\install_workflows.ps1
-.\scripts\check_setup.ps1
+python scripts/agent_setup.py
+python scripts/install_workflows.py
+python scripts/check_setup.py
 python -m pytest -p no:cacheprovider tests/test_director_reference.py
 ```
 
-Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.ps1` installs repo dependencies, creates `.env` from `.env.example` if it is missing, and installs bundled workflows when `COMFYUI_ROOT` points to a real ComfyUI folder. It does not install ComfyUI, models, or custom nodes.
+Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.py` installs repo dependencies, creates `.env` from `.env.example` if it is missing, and installs bundled workflows when `COMFYUI_ROOT` points to a real ComfyUI folder. It does not install ComfyUI, models, or custom nodes.
+
+Use `python3` instead of `python` on systems where the `python` command is not available.
 
 For browser smoke tests, run:
 
@@ -49,7 +53,7 @@ Do not commit `.env`.
 
 - `server/`: Python backend and ComfyUI bridge
 - `frontend/`: static browser UI
-- `scripts/`: Windows setup/start/stop helpers
+- `scripts/`: cross-platform Python helpers plus Windows PowerShell wrappers
 - `workflows/app/`: checked-in workflows used directly by Camera Lab
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references
 - `assets/references/`: bundled reference images for examples
@@ -68,40 +72,40 @@ If ComfyUI is not installed, stop at repo-side setup and point the user to the o
 - Manual local install: <https://docs.comfy.org/installation/manual_install>
 - Source repository: <https://github.com/comfy-org/comfyui>
 
-Do not invent local ComfyUI paths, do not vendor ComfyUI into this repo, and do not mark setup complete while `check_setup.ps1` reports missing ComfyUI, models, or custom nodes. Without ComfyUI, coding agents can still inspect the repo, install repo dependencies, and run repo-only checks, but they cannot generate videos or pass the full setup check.
+Do not invent local ComfyUI paths, do not vendor ComfyUI into this repo, and do not mark setup complete while `python scripts/check_setup.py` reports missing ComfyUI, models, or custom nodes. Without ComfyUI, coding agents can still inspect the repo, install repo dependencies, and run repo-only checks, but they cannot generate videos or pass the full setup check.
 
 Expected ComfyUI layout under `COMFYUI_ROOT`:
 
 - `input`
 - `output`
 - `models`
-- `user\default\workflows`
-- `custom_nodes\Comfyui_TTP_Toolset`
+- `user/default/workflows`
+- `custom_nodes/Comfyui_TTP_Toolset`
 
 Required models:
 
-- `models\checkpoints\ltx-2.3-22b-dev-fp8.safetensors`
-- `models\text_encoders\gemma_3_12B_it_fp4_mixed.safetensors`
-- `models\loras\ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors`
-- `models\latent_upscale_models\ltx-2.3-spatial-upscaler-x2-1.1.safetensors`
+- `models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors`
+- `models/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors`
+- `models/loras/ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors`
+- `models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors`
 
 Required custom node:
 
-- `custom_nodes\Comfyui_TTP_Toolset`
+- `custom_nodes/Comfyui_TTP_Toolset`
 
 ## Verification
 
 Run:
 
 ```powershell
-.\scripts\agent_setup.ps1
-.\scripts\install_workflows.ps1
-.\scripts\check_setup.ps1
+python scripts/agent_setup.py
+python scripts/install_workflows.py
+python scripts/check_setup.py
 python -m pytest -p no:cacheprovider tests/test_director_reference.py
 npm run test:e2e
 ```
 
-`check_setup.ps1` may fail on a fresh machine until `.env`, ComfyUI, models, and custom nodes are installed.
+`check_setup.py` may fail on a fresh machine until `.env`, ComfyUI, models, and custom nodes are installed.
 
 ## Commit Hygiene
 
@@ -114,7 +118,7 @@ Do not commit:
 
 If a file is required by users or coding agents, move it out of `tasks/` before committing it. App workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
 
-Bundled workflows are not automatically visible inside ComfyUI. Use `scripts/install_workflows.ps1` to copy `workflows/app` into `COMFYUI_ROOT\user\default\workflows\camera-lab`. Add `-IncludeExperimental` only when the experimental workflows should also be installed.
+Bundled workflows are not automatically visible inside ComfyUI. Use `python scripts/install_workflows.py` to copy `workflows/app` into `COMFYUI_ROOT/user/default/workflows/camera-lab`. Add `--include-experimental` only when the experimental workflows should also be installed.
 
 Frontend workflow dropdown mapping:
 
