@@ -20,6 +20,7 @@ tasks/youtube_thumbnails/
 tasks/3d/
 tasks/camera_lab_previews/
 tasks/camera_lab_shots/
+tasks/generated_keyframes/
 tasks/keyframes/
 tasks/video_review/
 tasks/debug_*.png
