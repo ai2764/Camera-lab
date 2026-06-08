@@ -320,7 +320,7 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(timeline["segments"][0]["strength"], 0.75)
         self.assertEqual(director_inputs["guide_strength"], "0.75")
         self.assertEqual(api["9001"]["class_type"], "LTXVAddGuideMulti")
-        self.assertEqual(api["9001"]["inputs"]["num_guides"], "2")
+        self.assertNotIn("num_guides", api["9001"]["inputs"])
         self.assertEqual(api["9001"]["inputs"]["num_guides.image_1"], ["9002", 0])
         self.assertEqual(api["9001"]["inputs"]["num_guides.image_2"], ["9003", 0])
         self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_1"], 0)

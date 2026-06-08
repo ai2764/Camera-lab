@@ -898,7 +898,6 @@ def insert_director_multi_guide(
         "negative": ["58", 1],
         "vae": ["3", 0],
         "latent": ["58", 2],
-        "num_guides": str(len(guide_roles)),
     }
     frames_by_role: dict[str, int] = {}
     strengths_by_role: dict[str, float] = {}
