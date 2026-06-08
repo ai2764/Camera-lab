@@ -214,6 +214,59 @@ Current dropdown mapping:
 - `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
 - `LTX Director Global Reference MVP`: `workflows/app/ltx_director_global_reference_mvp.json`
 
+## Global Reference Injection Path (Director)
+
+`LTX Director Global Reference MVP` uses a special server-side patch step to support global references from the UI.
+
+### Default path used by Camera Lab
+
+When a run selects director mode, `build_ltx_director_reference_api(...)` will:
+
+1. Parse timeline payload from the request.
+2. Copy global reference files (e.g. `reference_images`) to the ComfyUI input folder.
+3. Copy per-segment timeline reference images to ComfyUI input.
+4. Populate `LTXDirector` inputs:
+   - `global_prompt`
+   - `duration_frames`
+   - `duration_seconds`
+   - `timeline_data`
+   - `local_prompts`
+   - `segment_lengths`
+   - `guide_strength`
+   - `frame_rate`
+   - `custom_width`
+   - `custom_height`
+
+### Native vs. injected compatibility mode
+
+If the loaded ComfyUI node schema exposes both:
+
+- `global_reference_images`
+- `global_reference_strength`
+
+on `LTXDirector`, Camera Lab sets those fields directly and skips manual graph rewriting.
+
+If those fields are not present, Camera Lab falls back to a backward-compatible dynamic injection path:
+
+- It creates an `LTXVAddGuideMulti` node at runtime.
+- It creates one `LoadImage` node per global reference.
+- It connects each reference to:
+  - `global reference image`
+  - `frame index` (set to `0`, global references apply from start)
+  - `strength` (`global_reference_strength` from run payload)
+- It rewires downstream guide-consuming sockets so the generated guide data is injected through the newly inserted node.
+
+This fallback behavior is intentional and allows current runs to work without custom-node upgrades.
+
+### Practical implication
+
+- If you only want “director with global refs”, you can use the provided Camera Lab flow and this dynamic injection will work on supported workflows.
+- If your custom `LTXDirector` has been updated upstream with native global-reference inputs, the behavior is cleaner and uses the native socket path automatically.
+- If your run appears to have no global reference effect, check:
+  - `check_setup.py` status
+  - workflow installed in `<COMFYUI_ROOT>/user/default/workflows/camera-lab`
+  - whether your ComfyUI `LTXDirector` has been patched with native inputs
+
 ## Included
 
 - `server/`: Python backend, local HTTP server, and ComfyUI bridge.
