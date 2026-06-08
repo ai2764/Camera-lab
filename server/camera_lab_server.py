@@ -798,23 +798,33 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["frame_rate"] = timeline["fps"]
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
+    director["inputs"]["resize_method"] = "maintain aspect ratio"
+    director["inputs"]["divisible_by"] = 32
+    director["inputs"]["img_compression"] = 18
 
-    director_input_keys = set(director.get("inputs", {}).keys())
     node_info = object_info().get("LTXDirector", {})
     declared_inputs = node_info.get("input", {}) or {}
     declared_keys = set(declared_inputs.get("required", {})) | set(declared_inputs.get("optional", {}))
-    supports_native_global_reference = (
-        "global_reference_images" in director_input_keys
-        and "global_reference_strength" in director_input_keys
-    ) or (
-        "global_reference_images" in declared_keys
-        and "global_reference_strength" in declared_keys
-    )
-    if supports_native_global_reference:
-        director["inputs"]["global_reference_images"] = reference_input_names
-        director["inputs"]["global_reference_strength"] = timeline["global_reference_strength"]
-    else:
-        insert_director_global_reference_guides(api, reference_input_names, timeline)
+    # If the running ComfyUI ships a LTXDirector with native global_reference_*
+    # inputs (e.g. the ai2764 fork branch), widget-position drift can leak a
+    # neighbouring `0` into global_reference_images — the node would then parse
+    # it as filename "0", fall back to a black 512×512 placeholder, and that
+    # placeholder becomes the first guide image, collapsing derived_w/h to a
+    # square output. Clear those fields so camera-lab keeps using the
+    # LTXVAddGuideMulti fallback regardless of which node version is installed.
+    if "global_reference_images" in declared_keys:
+        director["inputs"]["global_reference_images"] = ""
+    if "global_reference_strength" in declared_keys:
+        director["inputs"]["global_reference_strength"] = 0.0
+
+    # The standalone-ComfyUI workflow wires a MultiReferenceImageLoader + 4
+    # LoadImage nodes into LTXDirector.global_reference_image_batch. Camera-lab
+    # doesn't use that path — it injects references via LTXVAddGuideMulti. Strip
+    # the loader chain so empty-filename LoadImages don't fail ComfyUI validation.
+    strip_director_image_loader_chain(api)
+    # Always take the fallback path (LTXVAddGuideMulti) so camera-lab runs the
+    # same way it did before LTXDirector grew native global-reference inputs.
+    insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -882,6 +892,36 @@ def next_free_api_id(api: dict[str, dict], start: int) -> int:
     return value
 
 
+def strip_director_image_loader_chain(api: dict[str, dict]) -> None:
+    """Remove MultiReferenceImageLoader nodes and their LoadImage feeders from the API.
+
+    The director workflow JSON wires these for standalone-ComfyUI use of the IMAGE
+    batch path on LTXDirector. Camera-lab uses LTXVAddGuideMulti instead, so the
+    loader chain is dead weight; leaving it in causes ComfyUI to validate the empty
+    LoadImage filenames and fail.
+    """
+    loader_ids = [nid for nid, n in api.items() if n.get("class_type") == "MultiReferenceImageLoader"]
+    if not loader_ids:
+        return
+    feeder_ids: set[str] = set()
+    for loader_id in loader_ids:
+        for value in api[loader_id]["inputs"].values():
+            if isinstance(value, list) and len(value) == 2:
+                source_id = str(value[0])
+                if api.get(source_id, {}).get("class_type") == "LoadImage":
+                    feeder_ids.add(source_id)
+    drop_ids = set(loader_ids) | feeder_ids
+    for node_id, node in api.items():
+        if node_id in drop_ids:
+            continue
+        for input_name in list(node.get("inputs", {}).keys()):
+            value = node["inputs"][input_name]
+            if isinstance(value, list) and len(value) == 2 and str(value[0]) in drop_ids:
+                del node["inputs"][input_name]
+    for node_id in drop_ids:
+        del api[node_id]
+
+
 def insert_director_global_reference_guides(api: dict[str, dict], input_names: list[str], timeline: dict[str, Any]) -> None:
     if not input_names:
         return
@@ -909,11 +949,56 @@ def insert_director_multi_guide(
 ) -> None:
     multi_id = str(next_free_api_id(api, 9001))
     next_id = int(multi_id) + 1
+    guide_source = None
+    candidates: list[tuple[float, str]] = []
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or node.get("class_type") != "CFGGuider":
+            continue
+        inputs = node.get("inputs", {})
+        positive = inputs.get("positive")
+        negative = inputs.get("negative")
+        if (
+            isinstance(positive, list)
+            and isinstance(negative, list)
+            and len(positive) == 2
+            and len(negative) == 2
+            and positive[0] == negative[0]
+            and positive[1] == 0
+            and negative[1] == 1
+        ):
+            source_id = str(positive[0])
+            source_node = api.get(source_id, {})
+            scale_by = 0.0
+            if source_node.get("class_type") == "LTXDirectorGuide":
+                scale_by = float(source_node.get("inputs", {}).get("scale_by", 0.0) or 0.0)
+            candidates.append((scale_by, node_id))
+            if guide_source is None and scale_by == 0.0:
+                guide_source = source_id
+
+    if candidates:
+        candidates.sort(reverse=True)
+        _, guide_cfg_id = candidates[0]
+        guide_cfg = api[guide_cfg_id]
+        guide_inputs = guide_cfg.get("inputs", {})
+        guide_source = str(guide_inputs["positive"][0])
+
+    if guide_source is None:
+        for node_id, node in api.items():
+            if node.get("class_type") == "LTXDirectorGuide":
+                guide_source = str(node_id)
+                break
+    if guide_source is None:
+        guide_source = "58"
+    guide_node = api.get(guide_source, {})
+    guide_node_inputs = guide_node.get("inputs", {})
+    default_vae = ["3", 0]
+    default_latent = [guide_source, 2]
     guide_inputs: dict[str, Any] = {
-        "positive": ["58", 0],
-        "negative": ["58", 1],
-        "vae": ["3", 0],
-        "latent": ["58", 2],
+        "positive": [guide_source, 0],
+        "negative": [guide_source, 1],
+        "vae": (guide_node_inputs.get("vae") if len(guide_node_inputs.get("vae", [])) == 2 else default_vae),
+        "latent": (guide_node_inputs.get("latent") if len(guide_node_inputs.get("latent", [])) == 2 else default_latent),
+        "num_guides": str(len(guide_roles)),
     }
     frames_by_role: dict[str, int] = {}
     strengths_by_role: dict[str, float] = {}
@@ -933,16 +1018,18 @@ def insert_director_multi_guide(
         guide_inputs[f"num_guides.strength_{index}"] = strengths_by_role.get(role, 0.7)
     api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": title}}
 
-    for node in api.values():
-        if node.get("class_type") == "CFGGuider":
-            for input_name, value in list(node["inputs"].items()):
-                if input_name in {"positive", "negative"} and value == ["58", 0]:
-                    node["inputs"][input_name] = [multi_id, 0]
-                elif input_name in {"positive", "negative"} and value == ["58", 1]:
-                    node["inputs"][input_name] = [multi_id, 1]
-    api[multi_id]["inputs"]["positive"] = ["58", 0]
-    api[multi_id]["inputs"]["negative"] = ["58", 1]
-    api[multi_id]["inputs"]["latent"] = ["58", 2]
+    for node_id, node in api.items():
+        if str(node_id) == multi_id:
+            continue
+        if not isinstance(node, dict):
+            continue
+        for input_name, slot, expected in (
+            ("positive", 0, [guide_source, 0]),
+            ("negative", 1, [guide_source, 1]),
+            ("conditioning", 0, [guide_source, 0]),
+        ):
+            if node.get("inputs", {}).get(input_name) == expected:
+                node["inputs"][input_name] = [multi_id, slot]
 
 
 def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str]) -> None:
