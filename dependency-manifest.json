@@ -116,11 +116,6 @@
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
       "workflows/experimental/Yedp_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
     ],
-    "reference_images": [
-      "assets/references/xiaomei_i2v_camera_test_street.png",
-      "assets/references/xiaomei_front_portrait.png",
-      "assets/references/truck_middle.png"
-    ],
     "runtime_output_dirs": [
       "tasks/camera_lab_runs",
       "tasks/camera_lab_uploads"

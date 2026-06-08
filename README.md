@@ -221,8 +221,6 @@ Current dropdown mapping:
 - `scripts/`: cross-platform Python helpers plus Windows PowerShell wrappers.
 - `workflows/app/`: checked-in ComfyUI workflows used by Camera Lab itself.
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references.
-- `assets/references/`: small bundled images used by built-in examples.
-- `prompts/`: reusable prompt templates and negative prompts.
 - `docs/`: screenshots and research notes.
 - `tests/`: Python unit tests and Playwright smoke tests.
 - `dependency-manifest.json`: machine-readable setup summary for coding agents.
@@ -234,10 +232,9 @@ The repository is organized so public, reusable files are separated from local r
 
 - Application code lives in `server/` and `frontend/`.
 - Camera Lab workflow files live in `workflows/app/`.
-- Small example assets live in `assets/`.
 - Temporary runs, uploads, preview renders, prompt smoke tests, generated videos, and logs belong in `tasks/`.
 
-`tasks/` is local-only and ignored by git. Do not put required public assets there. If a workflow or reference image is needed by the app or by users, keep it under `workflows/` or `assets/references/`.
+`tasks/` is local-only and ignored by git. Do not put required public files there. If a workflow is needed by the app or by users, keep it under `workflows/`.
 
 ## Runtime Data
 

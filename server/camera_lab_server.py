@@ -89,29 +89,8 @@ DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_global_reference_mvp.
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
-REFERENCE_ROOT = ROOT / "assets" / "references"
 
-REFERENCE_IMAGES = [
-    image
-    for image in [
-        {
-            "id": "xiaomei_i2v_street",
-            "label": "Xiaomei I2V street depth test",
-            "path": str(REFERENCE_ROOT / "xiaomei_i2v_camera_test_street.png"),
-        },
-        {
-            "id": "xiaomei_front",
-            "label": "Xiaomei front portrait",
-            "path": str(REFERENCE_ROOT / "xiaomei_front_portrait.png"),
-        },
-        {
-            "id": "truck_middle",
-            "label": "Xiaomei truck middle",
-            "path": str(REFERENCE_ROOT / "truck_middle.png"),
-        },
-    ]
-    if Path(image["path"]).exists()
-]
+REFERENCE_IMAGES: list[dict[str, str]] = []
 
 WORKFLOWS = [
     {

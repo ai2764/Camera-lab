@@ -56,8 +56,6 @@ Do not commit `.env`.
 - `scripts/`: cross-platform Python helpers plus Windows PowerShell wrappers
 - `workflows/app/`: checked-in workflows used directly by Camera Lab
 - `workflows/experimental/`: experimental Director / IC-LoRA workflow references
-- `assets/references/`: bundled reference images for examples
-- `prompts/`: reusable prompt templates
 - `docs/`: screenshots and research notes
 - `tests/`: Python and browser smoke tests
 - `tasks/`: local-only scratch space ignored by git
@@ -116,7 +114,7 @@ Do not commit:
 - local ComfyUI install paths
 - generated videos, uploads, logs, preview renders, or prompt smoke-test output
 
-If a file is required by users or coding agents, move it out of `tasks/` before committing it. App workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`; small bundled images belong in `assets/references/`.
+If a file is required by users or coding agents, move it out of `tasks/` before committing it. App workflow files belong in `workflows/app/`; experimental workflow files belong in `workflows/experimental/`.
 
 Bundled workflows are not automatically visible inside ComfyUI. Use `python scripts/install_workflows.py` to copy `workflows/app` into `COMFYUI_ROOT/user/default/workflows/camera-lab`. Add `--include-experimental` only when the experimental workflows should also be installed.
 
