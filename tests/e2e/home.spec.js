@@ -19,3 +19,13 @@ test("director workspace starts without generated empty prompt segments", async 
   await expect(page.locator("#directorSegmentInspector")).toContainText("Add a segment");
   await expect(page.locator("#directorTrack")).not.toContainText("empty prompt");
 });
+
+test("director segment inspector has a single remove control", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#addDirectorSegmentBtn").click();
+
+  await expect(page.locator("#removeDirectorSegmentBtn")).toBeVisible();
+  await expect(page.locator("#removeDirectorSegmentIconBtn")).toHaveCount(0);
+});

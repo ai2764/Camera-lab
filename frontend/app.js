@@ -768,7 +768,6 @@ function renderDirectorInspector() {
       <span>Selected segment</span>
       <button id="removeDirectorSegmentBtn" type="button">Remove</button>
     </div>
-    <button id="removeDirectorSegmentIconBtn" class="director-segment-remove" type="button" title="Remove segment" aria-label="Remove segment">x</button>
     <label>
       Local prompt
       <textarea id="directorSegmentPrompt" rows="5"></textarea>
@@ -823,7 +822,6 @@ function renderDirectorInspector() {
     renderDirectorEditor();
   };
   $("removeDirectorSegmentBtn").addEventListener("click", removeSegment);
-  $("removeDirectorSegmentIconBtn").addEventListener("click", removeSegment);
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {

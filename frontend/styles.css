@@ -1142,7 +1142,6 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
-  padding-right: 34px;
   color: var(--accent-2);
   font-size: 12px;
 }
@@ -1150,22 +1149,6 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 .director-inspector-head button {
   padding: 5px 7px;
   font-size: 11px;
-}
-
-.director-segment-remove {
-  position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-  color: var(--danger);
-  background: rgba(11,11,9,.88);
-  border-color: rgba(215,106,106,.42);
-  font-size: 16px;
-  line-height: 1;
 }
 
 .selected-segment-upload {
