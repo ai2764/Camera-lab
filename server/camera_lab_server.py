@@ -799,6 +799,23 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
 
+    director_input_keys = set(director.get("inputs", {}).keys())
+    node_info = object_info().get("LTXDirector", {})
+    declared_inputs = node_info.get("input", {}) or {}
+    declared_keys = set(declared_inputs.get("required", {})) | set(declared_inputs.get("optional", {}))
+    supports_native_global_reference = (
+        "global_reference_images" in director_input_keys
+        and "global_reference_strength" in director_input_keys
+    ) or (
+        "global_reference_images" in declared_keys
+        and "global_reference_strength" in declared_keys
+    )
+    if supports_native_global_reference:
+        director["inputs"]["global_reference_images"] = reference_input_names
+        director["inputs"]["global_reference_strength"] = timeline["global_reference_strength"]
+    else:
+        insert_director_global_reference_guides(api, reference_input_names, timeline)
+
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
             node["inputs"]["filename_prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}"
@@ -806,7 +823,6 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
     patch_ltx23_local_loras(api)
-    insert_director_global_reference_guides(api, reference_input_names, timeline)
     patch_director_custom_audio(api, run)
     bypass_sage_attention_patches(api)
 

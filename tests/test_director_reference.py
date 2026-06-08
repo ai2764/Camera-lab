@@ -333,6 +333,93 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
         self.assertEqual(api["77"]["inputs"]["latent_image"], ["9001", 2])
 
+    def test_director_global_reference_images_use_native_node_inputs_when_available(self):
+        run = {
+            "batch_id": "dry",
+            "run_id": "01_director_native",
+            "workflow_id": "ltx_director_reference_mvp",
+            "global_prompt": "same character",
+            "segments": [
+                {
+                    "prompt": "walks",
+                    "duration": 1.0,
+                    "reference": "character",
+                    "image_path": "fixtures/timeline.png",
+                    "guide_frame": 0,
+                    "strength": 0.75,
+                },
+            ],
+            "reference_images": ["fixtures/character_front.png", "fixtures/character_side.png"],
+            "width": 512,
+            "height": 512,
+            "seed": "123",
+            "prompt": "same character | walks",
+            "negative_prompt": "",
+            "global_reference_strength": 0.47,
+        }
+
+        original_refs = server.copy_director_reference_images
+        original_timeline = server.copy_director_timeline_images
+        original_workflow_to_api = server.workflow_to_api
+        original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
+        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: [
+            "dry_reference_01.png",
+            "dry_reference_02.png",
+        ]
+        server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
+        server.workflow_to_api = lambda _workflow: {
+            "3": {"class_type": "VAELoader", "inputs": {}},
+            "46": {
+                "class_type": "LTXDirector",
+                "inputs": {
+                    "global_prompt": "",
+                    "duration_frames": 0,
+                    "duration_seconds": 0,
+                    "timeline_data": "",
+                    "local_prompts": "",
+                    "segment_lengths": "",
+                    "guide_strength": "",
+                    "frame_rate": 0,
+                    "custom_width": 0,
+                    "custom_height": 0,
+                    "global_reference_images": [],
+                    "global_reference_strength": 0.0,
+                },
+            },
+            "77": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["46", 0],
+                    "negative": ["46", 1],
+                    "latent_image": ["46", 2],
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            server.DIRECTOR_WORKFLOW_PATH = Path(tmp) / "director.json"
+            server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            try:
+                api = server.build_ltx_director_reference_api(run)
+            finally:
+                server.copy_director_reference_images = original_refs
+                server.copy_director_timeline_images = original_timeline
+                server.workflow_to_api = original_workflow_to_api
+                server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
+
+        director_inputs = api["46"]["inputs"]
+        self.assertEqual(
+            director_inputs["global_reference_images"],
+            ["dry_reference_01.png", "dry_reference_02.png"],
+        )
+        self.assertEqual(director_inputs["global_reference_strength"], 0.47)
+        timeline = json.loads(director_inputs["timeline_data"])
+        self.assertEqual(len(timeline["segments"]), 1)
+        self.assertEqual(timeline["segments"][0]["id"], "camera-lab-segment-1")
+        self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
+        self.assertEqual(timeline["segments"][0]["strength"], 0.75)
+        self.assertEqual(director_inputs["guide_strength"], "0.75")
+        self.assertNotIn("9001", api)
+
     def test_director_custom_audio_patches_concat_audio_latent(self):
         api = {
             "4": {"class_type": "VAELoaderKJ", "inputs": {"vae_name": "audio_vae.safetensors"}},
