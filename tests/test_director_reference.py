@@ -293,11 +293,12 @@ class DirectorReferenceTests(unittest.TestCase):
             },
             "58": {"class_type": "LTXDirectorGuide", "inputs": {}},
             "77": {
-                "class_type": "KSampler",
+                "class_type": "CFGGuider",
                 "inputs": {
+                    "model": ["46", 0],
                     "positive": ["58", 0],
                     "negative": ["58", 1],
-                    "latent_image": ["58", 2],
+                    "cfg": 1.0,
                 },
             },
         }
@@ -331,7 +332,6 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["9003"]["inputs"]["image"], "dry_reference_02.png")
         self.assertEqual(api["77"]["inputs"]["positive"], ["9001", 0])
         self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
-        self.assertEqual(api["77"]["inputs"]["latent_image"], ["9001", 2])
 
     def test_director_global_reference_images_use_native_node_inputs_when_available(self):
         run = {
@@ -449,6 +449,7 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(load["inputs"]["audio"], "dialogue.wav")
         self.assertEqual(trim["class_type"], "TrimAudioDuration")
         self.assertEqual(trim["inputs"]["audio"], ["9001", 0])
+        self.assertEqual(trim["inputs"]["start_index"], 0)
         self.assertEqual(trim["inputs"]["duration"], 5.0)
         self.assertEqual(encode["class_type"], "LTXVAudioVAEEncode")
         self.assertEqual(encode["inputs"]["audio"], ["9002", 0])

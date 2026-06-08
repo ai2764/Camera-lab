@@ -853,7 +853,7 @@ def patch_director_custom_audio(api: dict[str, dict], run: dict[str, Any]) -> No
     }
     api[str(trim_id)] = {
         "class_type": "TrimAudioDuration",
-        "inputs": {"audio": [str(load_id), 0], "duration": duration},
+        "inputs": {"audio": [str(load_id), 0], "start_index": 0, "duration": duration},
         "_meta": {"title": "Trim director custom audio"},
     }
     api[str(encode_id)] = {
@@ -907,8 +907,8 @@ def insert_director_multi_guide(
     timeline: dict[str, Any],
     title: str = "Director reference guides",
 ) -> None:
-    multi_id = "9001"
-    next_id = 9002
+    multi_id = str(next_free_api_id(api, 9001))
+    next_id = int(multi_id) + 1
     guide_inputs: dict[str, Any] = {
         "positive": ["58", 0],
         "negative": ["58", 1],
@@ -934,13 +934,12 @@ def insert_director_multi_guide(
     api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": title}}
 
     for node in api.values():
-        for input_name, value in list(node["inputs"].items()):
-            if value == ["58", 0]:
-                node["inputs"][input_name] = [multi_id, 0]
-            elif value == ["58", 1]:
-                node["inputs"][input_name] = [multi_id, 1]
-            elif value == ["58", 2]:
-                node["inputs"][input_name] = [multi_id, 2]
+        if node.get("class_type") == "CFGGuider":
+            for input_name, value in list(node["inputs"].items()):
+                if input_name in {"positive", "negative"} and value == ["58", 0]:
+                    node["inputs"][input_name] = [multi_id, 0]
+                elif input_name in {"positive", "negative"} and value == ["58", 1]:
+                    node["inputs"][input_name] = [multi_id, 1]
     api[multi_id]["inputs"]["positive"] = ["58", 0]
     api[multi_id]["inputs"]["negative"] = ["58", 1]
     api[multi_id]["inputs"]["latent"] = ["58", 2]
