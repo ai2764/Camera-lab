@@ -375,7 +375,7 @@ function updateWorkflowFields() {
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
   $("promptTag").textContent = wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : "Prompt";
-  if (showDirectorWorkspace) ensureDefaultDirectorSegments();
+  if (showDirectorWorkspace) renderDirectorEditor();
 }
 
 function collectPayload() {
@@ -671,16 +671,6 @@ function blobToDataUrl(blob) {
 }
 
 function renumberDirectorSegments() {
-  renderDirectorEditor();
-}
-
-function ensureDefaultDirectorSegments() {
-  if (state.directorSegments.length) return;
-  $("directorGlobalPrompt").value = $("directorGlobalPrompt").value || "consistent subject identity, environment continuity, lighting, color, and visual style";
-  addDirectorSegment({ duration: 2, strength: 0.75 });
-  addDirectorSegment({ start: 2, duration: 2, strength: 0.65 });
-  addDirectorSegment({ start: 4, duration: 2, strength: 0.55 });
-  state.directorSelectedId = state.directorSegments[0]?.id || "";
   renderDirectorEditor();
 }
 
