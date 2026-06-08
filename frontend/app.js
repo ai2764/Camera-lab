@@ -690,6 +690,56 @@ function directorTotalSeconds() {
   return Math.max(6, Math.ceil(end * 2) / 2);
 }
 
+function selectDirectorSegment(id) {
+  state.directorSelectedId = id;
+  renderDirectorEditor();
+}
+
+function removeDirectorSegment(id) {
+  state.directorSegments = state.directorSegments.filter((item) => item.id !== id);
+  if (!state.directorSegments.some((item) => item.id === state.directorSelectedId)) {
+    state.directorSelectedId = state.directorSegments[0]?.id || "";
+  }
+  renderDirectorEditor();
+}
+
+function createDirectorBlock(segment, index, total) {
+  const block = document.createElement("div");
+  block.className = "director-block ref-none";
+  block.classList.toggle("selected", segment.id === state.directorSelectedId);
+  block.classList.toggle("has-image-guide", Boolean(segment.imagePath));
+  block.dataset.id = segment.id;
+  block.setAttribute("role", "group");
+  block.setAttribute("aria-label", `Segment S${index + 1}`);
+  block.style.left = `${(segment.start / total) * 100}%`;
+  block.style.width = `${(segment.duration / total) * 100}%`;
+  const preview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
+  block.innerHTML = `
+    ${preview ? `<img class="director-block-image" src="${escapeHtml(preview)}" alt="timeline image guide">` : ""}
+    <button class="director-block-remove" type="button" aria-label="Remove segment S${index + 1}">x</button>
+    <span class="director-block-index">S${index + 1}</span>
+    <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
+    <span class="director-block-ref">${segment.imagePath ? "timeline image" : "text only"}</span>
+    <i class="resize-handle left" data-edge="left"></i>
+    <i class="resize-handle right" data-edge="right"></i>
+  `;
+  block.addEventListener("click", () => selectDirectorSegment(segment.id));
+  const removeButton = block.querySelector(".director-block-remove");
+  removeButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeDirectorSegment(segment.id);
+  });
+  removeButton.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  block.addEventListener("mousemove", (event) => updateDirectorBlockCursor(event, block));
+  block.addEventListener("mouseleave", () => {
+    block.style.cursor = "";
+  });
+  block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id));
+  return block;
+}
+
 function renderDirectorEditor() {
   const track = $("directorTrack");
   const ruler = $("directorRuler");
@@ -707,33 +757,7 @@ function renderDirectorEditor() {
 
   track.innerHTML = "";
   for (const [index, segment] of segments.entries()) {
-    const block = document.createElement("button");
-    block.type = "button";
-    block.className = "director-block ref-none";
-    block.classList.toggle("selected", segment.id === state.directorSelectedId);
-    block.classList.toggle("has-image-guide", Boolean(segment.imagePath));
-    block.dataset.id = segment.id;
-    block.style.left = `${(segment.start / total) * 100}%`;
-    block.style.width = `${(segment.duration / total) * 100}%`;
-    const preview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
-    block.innerHTML = `
-      ${preview ? `<img class="director-block-image" src="${escapeHtml(preview)}" alt="timeline image guide">` : ""}
-      <span class="director-block-index">S${index + 1}</span>
-      <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
-      <span class="director-block-ref">${segment.imagePath ? "timeline image" : "text only"}</span>
-      <i class="resize-handle left" data-edge="left"></i>
-      <i class="resize-handle right" data-edge="right"></i>
-    `;
-    block.addEventListener("click", () => {
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    block.addEventListener("mousemove", (event) => updateDirectorBlockCursor(event, block));
-    block.addEventListener("mouseleave", () => {
-      block.style.cursor = "";
-    });
-    block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id));
-    track.appendChild(block);
+    track.appendChild(createDirectorBlock(segment, index, total));
   }
   track.ondragover = null;
   track.ondrop = null;
@@ -816,12 +840,7 @@ function renderDirectorInspector() {
     $("directorSegmentImageStatus").textContent = err.message;
     $("runHint").textContent = `Timeline image upload failed: ${err.message}`;
   }));
-  const removeSegment = () => {
-    state.directorSegments = state.directorSegments.filter((item) => item.id !== segment.id);
-    state.directorSelectedId = state.directorSegments[0]?.id || "";
-    renderDirectorEditor();
-  };
-  $("removeDirectorSegmentBtn").addEventListener("click", removeSegment);
+  $("removeDirectorSegmentBtn").addEventListener("click", () => removeDirectorSegment(segment.id));
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {
@@ -851,33 +870,7 @@ function renderDirectorTimelineOnly() {
   }
   track.innerHTML = "";
   for (const [index, segment] of segments.entries()) {
-    const block = document.createElement("button");
-    block.type = "button";
-    block.className = "director-block ref-none";
-    block.classList.toggle("selected", segment.id === state.directorSelectedId);
-    block.classList.toggle("has-image-guide", Boolean(segment.imagePath));
-    block.dataset.id = segment.id;
-    block.style.left = `${(segment.start / total) * 100}%`;
-    block.style.width = `${(segment.duration / total) * 100}%`;
-    const preview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
-    block.innerHTML = `
-      ${preview ? `<img class="director-block-image" src="${escapeHtml(preview)}" alt="timeline image guide">` : ""}
-      <span class="director-block-index">S${index + 1}</span>
-      <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
-      <span class="director-block-ref">${segment.imagePath ? "timeline image" : "text only"}</span>
-      <i class="resize-handle left" data-edge="left"></i>
-      <i class="resize-handle right" data-edge="right"></i>
-    `;
-    block.addEventListener("click", () => {
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    block.addEventListener("mousemove", (event) => updateDirectorBlockCursor(event, block));
-    block.addEventListener("mouseleave", () => {
-      block.style.cursor = "";
-    });
-    block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id));
-    track.appendChild(block);
+    track.appendChild(createDirectorBlock(segment, index, total));
   }
   track.ondragover = null;
   track.ondrop = null;

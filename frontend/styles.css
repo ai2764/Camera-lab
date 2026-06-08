@@ -1042,7 +1042,7 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   border: 1px solid rgba(143,199,192,.42);
   background: rgba(143,199,192,.14);
   color: var(--text);
-  padding: 8px 11px;
+  padding: 8px 30px 8px 11px;
   text-align: left;
   overflow: hidden;
   cursor: grab;
@@ -1078,6 +1078,28 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 .director-block > i {
   position: relative;
   z-index: 1;
+}
+
+.director-block-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(143,199,192,.45);
+  background: rgba(16,16,13,.78);
+  color: var(--accent-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.director-block-remove:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .director-block.selected {
