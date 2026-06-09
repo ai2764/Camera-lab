@@ -87,14 +87,14 @@ class DirectorReferenceTests(unittest.TestCase):
 
         self.assertEqual(workflow["mode"], "i2v")
         self.assertEqual(path.parent.name, "app")
-        self.assertEqual(path.name, "ltx23_nag_i2v_extendcrop_general.json")
+        self.assertEqual(path.name, "ltx23_i2v_subtitle_cleaner_nag_extend.json")
 
     def test_dropdown_json_workflows_are_checked_in_app_workflows(self):
         expected_paths = {
-            "i2v_official_local": "ltx23_nag_i2v_extendcrop_general.json",
+            "i2v_official_local": "ltx23_i2v_subtitle_cleaner_nag_extend.json",
             "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
-            "ltx_director_reference_mvp": "ltx_director_global_reference_mvp.json",
+            "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
         }
         expected_builders = {
             "flf_ttp_control": "ltx23_ttp_flf",

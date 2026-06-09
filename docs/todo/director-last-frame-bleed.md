@@ -87,7 +87,7 @@ references.
 
 - ComfyUI version when the regression appeared: 0.24.1, frontend 1.44.19,
   upgraded from 0.22.3 on Jun 7 21:47 PT via Desktop auto-update.
-- Affected workflow: `workflows/app/ltx_director_global_reference_mvp.json`.
+- Affected workflow: `workflows/app/ltx_director_reference_mvp.json`.
 - Workaround proven to work: Jun 6 pre-upgrade runs with the same seed and
   parameters produced clean 16 s output. The issue is purely the upgrade.
 

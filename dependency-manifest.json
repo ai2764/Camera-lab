@@ -108,9 +108,9 @@
   "repo_assets": {
     "app_workflows": [
       "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json",
-      "workflows/app/ltx23_nag_i2v_extendcrop_general.json",
+      "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
-      "workflows/app/ltx_director_global_reference_mvp.json"
+      "workflows/app/ltx_director_reference_mvp.json"
     ],
     "experimental_workflows": [
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
@@ -124,9 +124,9 @@
   "workflow_dropdown": [
     {
       "id": "i2v_official_local",
-      "label": "LTX 2.3 NAG I2V Extendcrop",
+      "label": "LTX 2.3 I2V Subtitle Cleaner",
       "mode": "i2v",
-      "source": "workflows/app/ltx23_nag_i2v_extendcrop_general.json"
+      "source": "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json"
     },
     {
       "id": "flf_ttp_control",
@@ -154,9 +154,9 @@
     },
     {
       "id": "ltx_director_reference_mvp",
-      "label": "LTX Director Global Reference MVP",
+      "label": "LTX Director Reference MVP",
       "mode": "director_ref",
-      "source": "workflows/app/ltx_director_global_reference_mvp.json"
+      "source": "workflows/app/ltx_director_reference_mvp.json"
     }
   ],
   "do_not_commit": [

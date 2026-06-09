@@ -125,4 +125,4 @@ Frontend workflow dropdown mapping:
 - `LTX 2.3 FML (3 images, 2-stage TTP FLF)`: built in `server/camera_lab_server.py`
 - `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
 - `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
-- `LTX Director Global Reference MVP`: `workflows/app/ltx_director_global_reference_mvp.json`
+- `LTX Director Reference MVP`: `workflows/app/ltx_director_reference_mvp.json`

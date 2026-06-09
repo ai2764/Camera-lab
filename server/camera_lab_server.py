@@ -85,7 +85,7 @@ TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_global_reference_mvp.json"
+DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -95,9 +95,9 @@ REFERENCE_IMAGES: list[dict[str, str]] = []
 WORKFLOWS = [
     {
         "id": "i2v_official_local",
-        "label": "LTX 2.3 NAG I2V Extendcrop",
+        "label": "LTX 2.3 I2V Subtitle Cleaner",
         "mode": "i2v",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_i2v_extendcrop_general.json"),
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_i2v_subtitle_cleaner_nag_extend.json"),
     },
     {
         "id": "flf_ttp_control",
@@ -123,10 +123,13 @@ WORKFLOWS = [
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
         "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_ia2v_extendcrop_general.json"),
+        # Same as i2v — turn off the 307px bottom matte add/crop pair.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "ltx_director_reference_mvp",
-        "label": "LTX Director Global Reference MVP",
+        "label": "LTX Director Reference MVP",
         "mode": "director_ref",
         "path": str(DIRECTOR_WORKFLOW_PATH),
         "builder": "ltx_director_reference_mvp",
@@ -949,55 +952,17 @@ def insert_director_multi_guide(
 ) -> None:
     multi_id = str(next_free_api_id(api, 9001))
     next_id = int(multi_id) + 1
-    guide_source = None
-    candidates: list[tuple[float, str]] = []
-    for node_id, node in api.items():
-        if not isinstance(node, dict) or node.get("class_type") != "CFGGuider":
-            continue
-        inputs = node.get("inputs", {})
-        positive = inputs.get("positive")
-        negative = inputs.get("negative")
-        if (
-            isinstance(positive, list)
-            and isinstance(negative, list)
-            and len(positive) == 2
-            and len(negative) == 2
-            and positive[0] == negative[0]
-            and positive[1] == 0
-            and negative[1] == 1
-        ):
-            source_id = str(positive[0])
-            source_node = api.get(source_id, {})
-            scale_by = 0.0
-            if source_node.get("class_type") == "LTXDirectorGuide":
-                scale_by = float(source_node.get("inputs", {}).get("scale_by", 0.0) or 0.0)
-            candidates.append((scale_by, node_id))
-            if guide_source is None and scale_by == 0.0:
-                guide_source = source_id
-
-    if candidates:
-        candidates.sort(reverse=True)
-        _, guide_cfg_id = candidates[0]
-        guide_cfg = api[guide_cfg_id]
-        guide_inputs = guide_cfg.get("inputs", {})
-        guide_source = str(guide_inputs["positive"][0])
-
-    if guide_source is None:
-        for node_id, node in api.items():
-            if node.get("class_type") == "LTXDirectorGuide":
-                guide_source = str(node_id)
-                break
-    if guide_source is None:
-        guide_source = "58"
-    guide_node = api.get(guide_source, {})
-    guide_node_inputs = guide_node.get("inputs", {})
-    default_vae = ["3", 0]
-    default_latent = [guide_source, 2]
+    # Restore commit 339355f's behaviour: anchor on LTXDirectorGuide id 58
+    # (the Stage 2 post-upscale guide) using its OUTPUT latent (slot 2). This
+    # matched what worked end-to-end yesterday; the WIP auto-detect path put
+    # the multi-guide on either a raw or upsampler latent and produced visibly
+    # different results.
+    guide_source = "58"
     guide_inputs: dict[str, Any] = {
         "positive": [guide_source, 0],
         "negative": [guide_source, 1],
-        "vae": (guide_node_inputs.get("vae") if len(guide_node_inputs.get("vae", [])) == 2 else default_vae),
-        "latent": (guide_node_inputs.get("latent") if len(guide_node_inputs.get("latent", [])) == 2 else default_latent),
+        "vae": ["3", 0],
+        "latent": [guide_source, 2],
         "num_guides": str(len(guide_roles)),
     }
     frames_by_role: dict[str, int] = {}
@@ -2559,6 +2524,63 @@ def validate_director_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]
     return segments
 
 
+def verify_dropdown_workflows() -> list[str]:
+    """Confirm every WORKFLOWS entry with a path actually exists in the repo.
+    Returns a list of human-readable issue strings."""
+    issues: list[str] = []
+    for workflow in WORKFLOWS:
+        path_str = workflow.get("path")
+        if not path_str:
+            continue
+        path = Path(path_str)
+        if not path.exists():
+            issues.append(
+                f"  - dropdown '{workflow['label']}' references missing file {path}"
+            )
+    return issues
+
+
+def sync_workflows_to_comfyui() -> None:
+    """Mirror repo workflows/app/*.json into ComfyUI's installed workflow folder
+    so the ComfyUI workflow browser reflects what the dropdown is configured to
+    use. Stale files (renamed or removed in the repo) are deleted from the
+    ComfyUI side. Silently no-ops if COMFYUI_ROOT is unset/missing."""
+    comfy_root_env = os.environ.get("COMFYUI_ROOT", "").strip()
+    if not comfy_root_env:
+        print("Camera Lab: COMFYUI_ROOT unset; skipping ComfyUI workflow sync.", flush=True)
+        return
+    comfy_root = Path(comfy_root_env)
+    if not comfy_root.exists():
+        print(f"Camera Lab: COMFYUI_ROOT does not exist ({comfy_root}); skipping sync.", flush=True)
+        return
+
+    target = comfy_root / "user" / "default" / "workflows" / "camera-lab" / "app"
+    target.mkdir(parents=True, exist_ok=True)
+
+    repo_files = {p.name: p for p in APP_WORKFLOW_ROOT.glob("*.json")}
+    installed_files = {p.name: p for p in target.glob("*.json")}
+
+    copied = 0
+    for name, src in repo_files.items():
+        dst = target / name
+        if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
+            shutil.copy2(src, dst)
+            copied += 1
+
+    removed = 0
+    for name, installed in installed_files.items():
+        if name not in repo_files:
+            installed.unlink()
+            removed += 1
+
+    if copied or removed:
+        print(
+            f"Camera Lab: synced {copied} workflow file(s), removed {removed} stale, "
+            f"into {target}",
+            flush=True,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Camera Lab local server.")
     parser.add_argument("--port", "-p", type=int, default=1234, help="Port to listen on.")
@@ -2567,6 +2589,16 @@ def main() -> None:
 
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+    # Make sure the workflow files the dropdown points at exist on disk, and
+    # mirror them into ComfyUI so its workflow browser stays in sync.
+    issues = verify_dropdown_workflows()
+    if issues:
+        print("Camera Lab: dropdown workflow files missing in repo:", flush=True)
+        for line in issues:
+            print(line, flush=True)
+    sync_workflows_to_comfyui()
+
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     shown_host = "127.0.0.1" if args.host in {"0.0.0.0", ""} else args.host
     print(f"Camera Lab: http://{shown_host}:{args.port}", flush=True)
