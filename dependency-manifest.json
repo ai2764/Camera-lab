@@ -105,6 +105,7 @@
   "repo_assets": {
     "app_workflows": [
       "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "workflows/app/ltx23_flf_ia2v_nag_extend.json",
       "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
@@ -149,6 +150,12 @@
       "label": "LTX 2.3 IA2V",
       "mode": "ia2v",
       "source": "workflows/app/ltx23_nag_ia2v_extendcrop_general.json"
+    },
+    {
+      "id": "flf_ia2v",
+      "label": "LTX 2.3 FLF IA2V (2 images + audio)",
+      "mode": "flf_ia2v",
+      "source": "workflows/app/ltx23_flf_ia2v_nag_extend.json"
     },
     {
       "id": "ltx_director_reference_mvp",

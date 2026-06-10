@@ -134,6 +134,15 @@ WORKFLOWS = [
         "disable_image_crop": True,
     },
     {
+        "id": "flf_ia2v",
+        "label": "LTX 2.3 FLF IA2V (2 images + audio)",
+        "mode": "flf_ia2v",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_ia2v_nag_extend.json"),
+        # First+last keyframes driven by uploaded audio; skip the bottom matte.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
+    },
+    {
         "id": "ltx_director_reference_mvp",
         "label": "LTX Director Reference MVP",
         "mode": "director_ref",
@@ -1087,7 +1096,7 @@ def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str])
         if "noise_seed" in node["inputs"]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_load_images(api, mode, input_names)
-    if mode == "ia2v":
+    if mode in {"ia2v", "flf_ia2v"}:
         if not input_names.get("audio"):
             raise ValueError("IA2V requires uploaded audio")
         for node in api.values():
@@ -1277,7 +1286,7 @@ def patch_load_images(api: dict, mode: str, input_names: dict[str, str]) -> None
 
     if "900" in api:
         api["900"]["inputs"]["image"] = input_names["source"]
-        if mode in {"flf", "fml"} and input_names.get("end"):
+        if mode in {"flf", "fml", "flf_ia2v"} and input_names.get("end"):
             injected = False
             for node in api.values():
                 if node["class_type"] != "LoadImage":
@@ -1293,7 +1302,7 @@ def patch_load_images(api: dict, mode: str, input_names: dict[str, str]) -> None
     if not load_images:
         return
     load_images[0]["inputs"]["image"] = input_names["source"]
-    if mode in {"flf", "fml"} and input_names.get("end") and len(load_images) > 1:
+    if mode in {"flf", "fml", "flf_ia2v"} and input_names.get("end") and len(load_images) > 1:
         load_images[1]["inputs"]["image"] = input_names["end"]
 
 
@@ -1824,13 +1833,13 @@ def run_batch_worker(batch_id: str) -> None:
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
                 input_names["middle"] = middle_name
                 input_names["end"] = end_name
-            if workflow["mode"] == "flf":
+            if workflow["mode"] in {"flf", "flf_ia2v"}:
                 end_frame = run_dir / f"end_{width}x{height}.png"
                 resize_cover(end, end_frame, width=width, height=height)
                 end_name = f"{run['run_id']}_end.png"
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
                 input_names["end"] = end_name
-            if workflow["mode"] == "ia2v" or (workflow["mode"] == "director_ref" and run.get("audio_path")):
+            if workflow["mode"] in {"ia2v", "flf_ia2v"} or (workflow["mode"] == "director_ref" and run.get("audio_path")):
                 audio = Path(run.get("audio_path") or "")
                 if not audio.exists():
                     raise FileNotFoundError(f"{workflow['label']} audio file is missing")
@@ -2059,7 +2068,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("source image is required")
         source = {"path": str(safe_media_path(source_path)) if source_path else ""}
         end_path = payload.get("end_path") or source["path"]
-        if workflow["mode"] in {"flf", "fml", "fml_native"} and not payload.get("end_path"):
+        if workflow["mode"] in {"flf", "fml", "fml_native", "flf_ia2v"} and not payload.get("end_path"):
             raise ValueError("FLF/FML requires an uploaded end image")
         end = {"path": str(safe_media_path(end_path)) if end_path else ""}
         middle = {"path": ""}
@@ -2077,7 +2086,7 @@ class Handler(BaseHTTPRequestHandler):
             variants = payload.get("variants") or [{"name": "prompt", "prompt": prompt}]
         if not any((variant.get("prompt") or "").strip() for variant in variants):
             raise ValueError("prompt is required")
-        if workflow["mode"] == "ia2v" and not payload.get("audio_path"):
+        if workflow["mode"] in {"ia2v", "flf_ia2v"} and not payload.get("audio_path"):
             raise ValueError("IA2V requires an uploaded audio file")
         reference_images = {}
         director_segments = payload.get("segments") or []

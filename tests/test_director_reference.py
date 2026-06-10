@@ -96,6 +96,7 @@ class DirectorReferenceTests(unittest.TestCase):
             "fml_two_segment_flf": "ltx23_flf_subtitle_cleaner_nag_extend.json",
             "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
+            "flf_ia2v": "ltx23_flf_ia2v_nag_extend.json",
             "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
         }
         expected_builders: dict[str, str] = {}
@@ -532,6 +533,57 @@ class FlfAudioTemplateTests(unittest.TestCase):
         }
         self.assertEqual(loaders.get("upload image"), "src.png")
         self.assertEqual(loaders.get("upload end image"), "end.png")
+
+
+class FlfIa2vTemplateTests(unittest.TestCase):
+    def _workflow(self):
+        return next(w for w in server.WORKFLOWS if w["id"] == "flf_ia2v")
+
+    def test_workflow_uses_path_and_combined_mode(self):
+        workflow = self._workflow()
+        self.assertEqual(workflow["mode"], "flf_ia2v")
+        self.assertTrue(workflow["path"].endswith("ltx23_flf_ia2v_nag_extend.json"))
+        self.assertTrue(Path(workflow["path"]).exists())
+
+    def test_template_has_last_frame_guides_and_uploaded_audio(self):
+        workflow = self._workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png", "audio": "voice.wav"})
+
+        # first+last keyframes
+        self.assertEqual(len([n for n in api.values() if n["class_type"] == "LTXVAddGuide"]), 2)
+        # uploaded audio drives the chain, not generated SFX
+        self.assertEqual([n for n in api.values() if n["class_type"] == "LTXVEmptyLatentAudio"], [])
+        load_audio = next(n for n in api.values() if n["class_type"] == "LoadAudio")
+        self.assertEqual(load_audio["inputs"]["audio"], "voice.wav")
+        # both images injected
+        loaders = {
+            str(n.get("_meta", {}).get("title") or "").lower(): n["inputs"].get("image")
+            for n in api.values()
+            if n["class_type"] == "LoadImage"
+        }
+        self.assertEqual(loaders.get("upload image"), "src.png")
+        self.assertEqual(loaders.get("upload end image"), "end.png")
+
+    def test_missing_audio_is_rejected(self):
+        workflow = self._workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280, "height": 720, "duration": 4, "seed": 1,
+            "prompt": "p", "negative_prompt": "n", "batch_id": "B", "run_id": "R",
+        }
+        with self.assertRaises(ValueError):
+            server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
 
 
 class ByteRangeServeFileTests(unittest.TestCase):

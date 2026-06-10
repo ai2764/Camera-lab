@@ -345,7 +345,7 @@ function updateWorkflowFields() {
   const showPhotographyWorkspace = state.workspace === "photography";
   const showSourceImage = wf.mode !== "t2v" && !isDirector;
   const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
-  const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native";
+  const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v";
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
   document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
@@ -363,13 +363,13 @@ function updateWorkflowFields() {
   $("middlePreviewWrap").style.display = showMiddleImage ? "block" : "none";
   $("endImageWrap").style.display = showEndImage ? "block" : "none";
   $("endPreviewWrap").style.display = showEndImage ? "block" : "none";
-  $("swapSourceEndWrap").style.display = wf.mode === "flf" ? "block" : "none";
+  $("swapSourceEndWrap").style.display = wf.mode === "flf" || wf.mode === "flf_ia2v" ? "block" : "none";
   $("swapSourceMiddleWrap").style.display = showMiddleImage ? "block" : "none";
   $("swapMiddleEndWrap").style.display = showMiddleImage ? "block" : "none";
   const audioWrap = $("audioUploadWrap");
   const audioTarget = showDirectorWorkspace ? $("directorAudioSlot") : $("audioUploadHome");
   if (audioWrap.parentElement !== audioTarget) audioTarget.appendChild(audioWrap);
-  $("audioUploadWrap").style.display = wf.mode === "ia2v" || showDirectorWorkspace ? "block" : "none";
+  $("audioUploadWrap").style.display = wf.mode === "ia2v" || wf.mode === "flf_ia2v" || showDirectorWorkspace ? "block" : "none";
   const runStrip = $("directorRunStrip");
   const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);

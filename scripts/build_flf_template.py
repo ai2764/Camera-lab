@@ -16,13 +16,27 @@ last-frame LTXVAddGuide output.
 """
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-I2V = ROOT / "workflows" / "app" / "ltx23_i2v_subtitle_cleaner_nag_extend.json"
-OUT = ROOT / "workflows" / "app" / "ltx23_flf_subtitle_cleaner_nag_extend.json"
+APP = ROOT / "workflows" / "app"
+I2V = APP / "ltx23_i2v_subtitle_cleaner_nag_extend.json"
+OUT = APP / "ltx23_flf_subtitle_cleaner_nag_extend.json"
+
+# Each preset adds the last-frame keyframe to a base template that already
+# carries an LTX-2 audio chain. The i2v base generates SFX from an empty audio
+# latent; the ia2v base instead encodes an uploaded audio track. The last-frame
+# graph surgery is identical because both share the same node ids/structure.
+PRESETS = {
+    "flf": (I2V, OUT),
+    "flf_ia2v": (
+        APP / "ltx23_nag_ia2v_extendcrop_general.json",
+        APP / "ltx23_flf_ia2v_nag_extend.json",
+    ),
+}
 
 # Official ltx2.3 flf2v template ships with ComfyUI; used purely as the
 # structural prototype for the core `LTXVAddGuide` node object.
@@ -128,8 +142,8 @@ class Graph:
         self.g["nodes"].append(node)
 
 
-def main() -> None:
-    g_raw = load(I2V)
+def build(source: Path, out_path: Path, workflow_id: str) -> None:
+    g_raw = load(source)
     flf2v = load(FLF2V)
 
     # --- AddGuide prototype from the official flf2v template ---
@@ -223,12 +237,22 @@ def main() -> None:
 
     g_raw["last_node_id"] = max(int(n["id"]) for n in g_raw["nodes"] if isinstance(n["id"], int))
     g_raw["last_link_id"] = max(int(l[0]) for l in g_raw["links"])
-    g_raw["id"] = "ltx23-flf-subtitle-cleaner-nag-extend"
+    g_raw["id"] = workflow_id
     if isinstance(g_raw.get("extra"), dict):
-        g_raw["extra"]["workflow_name"] = "LTX 2.3 FLF Subtitle Cleaner - NAG + Audio"
+        g_raw["extra"]["workflow_name"] = workflow_id
 
-    OUT.write_text(json.dumps(g_raw, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"wrote {OUT}")
+    out_path.write_text(json.dumps(g_raw, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"wrote {out_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate an FLF (last-frame) app template from an audio-enabled base.")
+    parser.add_argument("preset", nargs="?", default="all", choices=["all", *PRESETS], help="Which template(s) to build.")
+    args = parser.parse_args()
+    names = list(PRESETS) if args.preset == "all" else [args.preset]
+    for name in names:
+        source, out = PRESETS[name]
+        build(source, out, workflow_id=out.stem.replace("_", "-"))
 
 
 if __name__ == "__main__":
