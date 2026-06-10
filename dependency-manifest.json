@@ -76,12 +76,9 @@
         "input",
         "output",
         "models",
-        "user/default/workflows",
-        "custom_nodes/Comfyui_TTP_Toolset"
+        "user/default/workflows"
       ],
-      "required_custom_nodes": [
-        "custom_nodes/Comfyui_TTP_Toolset"
-      ],
+      "required_custom_nodes": [],
       "required_models": [
         "models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors",
         "models/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors",
@@ -108,6 +105,7 @@
   "repo_assets": {
     "app_workflows": [
       "workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json",
+      "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
       "workflows/app/ltx_director_reference_mvp.json"
@@ -130,15 +128,15 @@
     },
     {
       "id": "flf_ttp_control",
-      "label": "LTX 2.3 FLF TTP Control (2 images)",
+      "label": "LTX 2.3 FLF (2 images, audio)",
       "mode": "flf",
-      "source": "server builder: ltx23_ttp_flf"
+      "source": "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json"
     },
     {
       "id": "fml_two_segment_flf",
-      "label": "LTX 2.3 FML (3 images, 2-stage TTP FLF)",
+      "label": "LTX 2.3 FML (3 images, 2-stage, audio)",
       "mode": "fml",
-      "source": "server builder: ltx23_ttp_flf"
+      "source": "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json"
     },
     {
       "id": "fml_runexx_guider_local",

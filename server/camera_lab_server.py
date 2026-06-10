@@ -101,15 +101,21 @@ WORKFLOWS = [
     },
     {
         "id": "flf_ttp_control",
-        "label": "LTX 2.3 FLF TTP Control (2 images)",
+        "label": "LTX 2.3 FLF (2 images, audio)",
         "mode": "flf",
-        "builder": "ltx23_ttp_flf",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        # FLF pins both keyframes; skip the subtitle bottom-matte extend/crop so
+        # the source and end frames get identical spatial treatment.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "fml_two_segment_flf",
-        "label": "LTX 2.3 FML (3 images, 2-stage TTP FLF)",
+        "label": "LTX 2.3 FML (3 images, 2-stage, audio)",
         "mode": "fml",
-        "builder": "ltx23_ttp_flf",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "fml_runexx_guider_local",
@@ -1267,8 +1273,16 @@ def patch_load_images(api: dict, mode: str, input_names: dict[str, str]) -> None
 
     if "900" in api:
         api["900"]["inputs"]["image"] = input_names["source"]
-        if mode == "flf" and "930" in api:
-            api["930"]["inputs"]["image"] = input_names["end"]
+        if mode in {"flf", "fml"} and input_names.get("end"):
+            injected = False
+            for node in api.values():
+                if node["class_type"] != "LoadImage":
+                    continue
+                if "end" in str(node.get("_meta", {}).get("title") or "").lower():
+                    node["inputs"]["image"] = input_names["end"]
+                    injected = True
+            if not injected and "930" in api:
+                api["930"]["inputs"]["image"] = input_names["end"]
         return
 
     load_images = [node for node in api.values() if node["class_type"] == "LoadImage"]
@@ -1880,6 +1894,35 @@ def write_batch(batch: dict) -> None:
     (batch_dir / "batch.json").write_text(json.dumps(batch, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def parse_byte_range(range_header: str | None, total: int) -> tuple[int | None, int | None]:
+    """Parse an HTTP Range header into inclusive (start, end) byte offsets.
+
+    Returns (None, None) when there is no range, it is malformed, or it cannot
+    be satisfied for a file of ``total`` bytes (caller falls back to a 200).
+    """
+    if not range_header or total <= 0 or not range_header.startswith("bytes="):
+        return None, None
+    spec = range_header[len("bytes="):].split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None, None
+    start_text, _, end_text = spec.partition("-")
+    try:
+        if not start_text:
+            length = int(end_text)
+            if length <= 0:
+                return None, None
+            start = max(0, total - length)
+            end = total - 1
+        else:
+            start = int(start_text)
+            end = int(end_text) if end_text else total - 1
+    except ValueError:
+        return None, None
+    if start > end or start >= total:
+        return None, None
+    return start, min(end, total - 1)
+
+
 def safe_media_path(raw: str) -> Path:
     path = Path(raw).resolve()
     allowed_roots = [ROOT.resolve(), COMFY_OUTPUT.resolve()]
@@ -1976,11 +2019,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         body = path.read_bytes()
+        total = len(body)
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        is_web = path.resolve() == WEB_DIR.resolve() or WEB_DIR.resolve() in path.resolve().parents
+        start, end = parse_byte_range(self.headers.get("Range"), total)
+        if start is not None:
+            chunk = body[start:end + 1]
+            self.send_response(206)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+            if is_web:
+                self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(chunk)))
+            self.end_headers()
+            self.wfile.write(chunk)
+            return
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
-        if path.resolve() == WEB_DIR.resolve() or WEB_DIR.resolve() in path.resolve().parents:
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        if is_web:
             self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(total))
         self.end_headers()
         self.wfile.write(body)
 

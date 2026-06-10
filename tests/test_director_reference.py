@@ -92,14 +92,13 @@ class DirectorReferenceTests(unittest.TestCase):
     def test_dropdown_json_workflows_are_checked_in_app_workflows(self):
         expected_paths = {
             "i2v_official_local": "ltx23_i2v_subtitle_cleaner_nag_extend.json",
+            "flf_ttp_control": "ltx23_flf_subtitle_cleaner_nag_extend.json",
+            "fml_two_segment_flf": "ltx23_flf_subtitle_cleaner_nag_extend.json",
             "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
             "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
         }
-        expected_builders = {
-            "flf_ttp_control": "ltx23_ttp_flf",
-            "fml_two_segment_flf": "ltx23_ttp_flf",
-        }
+        expected_builders: dict[str, str] = {}
 
         for workflow in server.WORKFLOWS:
             if workflow["id"] in expected_paths:
@@ -413,6 +412,121 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertGreater(out.getpixel((5, 50))[0], 150)
             self.assertGreater(out.getpixel((50, 50))[1], 120)
             self.assertGreater(out.getpixel((95, 50))[2], 150)
+
+
+class FlfAudioTemplateTests(unittest.TestCase):
+    def _flf_workflow(self):
+        return next(w for w in server.WORKFLOWS if w["id"] == "flf_ttp_control")
+
+    def test_flf_workflow_uses_audio_template_path(self):
+        workflow = self._flf_workflow()
+        self.assertNotIn("builder", workflow)
+        self.assertTrue(workflow["path"].endswith("ltx23_flf_subtitle_cleaner_nag_extend.json"))
+        self.assertTrue(Path(workflow["path"]).exists())
+
+    def test_flf_template_adds_last_frame_guides_and_keeps_audio(self):
+        workflow = self._flf_workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 123,
+            "prompt": "a cat",
+            "negative_prompt": "bad",
+            "batch_id": "B1",
+            "run_id": "R1",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
+
+        add_guides = [n for n in api.values() if n["class_type"] == "LTXVAddGuide"]
+        self.assertEqual(len(add_guides), 2)
+        # last-frame keyframes
+        self.assertTrue(all(n["inputs"].get("frame_idx") == -1 for n in add_guides))
+        # both ConcatAVLatent stages now consume an AddGuide latent output
+        concat = [n for n in api.values() if n["class_type"] == "LTXVConcatAVLatent"]
+        self.assertEqual(len(concat), 2)
+        for node in concat:
+            origin = node["inputs"]["video_latent"][0]
+            self.assertEqual(api[origin]["class_type"], "LTXVAddGuide")
+        # audio chain preserved end-to-end
+        create_video = next(n for n in api.values() if n["class_type"] == "CreateVideo")
+        audio_origin = create_video["inputs"]["audio"][0]
+        self.assertEqual(api[audio_origin]["class_type"], "LTXVAudioVAEDecode")
+
+    def test_flf_end_image_is_injected_into_end_loader(self):
+        workflow = self._flf_workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
+
+        loaders = {
+            str(n.get("_meta", {}).get("title") or "").lower(): n["inputs"].get("image")
+            for n in api.values()
+            if n["class_type"] == "LoadImage"
+        }
+        self.assertEqual(loaders.get("upload image"), "src.png")
+        self.assertEqual(loaders.get("upload end image"), "end.png")
+
+
+class ByteRangeServeFileTests(unittest.TestCase):
+    def _make_handler(self, range_header=None):
+        handler = server.Handler.__new__(server.Handler)
+        handler.headers = {} if range_header is None else {"Range": range_header}
+        captured = {"status": None, "headers": {}, "body": b""}
+
+        class FakeWFile:
+            def write(self, data):
+                captured["body"] += data
+
+        handler.send_response = lambda status: captured.__setitem__("status", status)
+        handler.send_header = lambda key, value: captured["headers"].__setitem__(key, value)
+        handler.end_headers = lambda: None
+        handler.send_error = lambda status: captured.__setitem__("status", status)
+        handler.wfile = FakeWFile()
+        return handler, captured
+
+    def test_parse_byte_range_handles_common_specs(self):
+        self.assertEqual(server.parse_byte_range("bytes=2-5", 10), (2, 5))
+        self.assertEqual(server.parse_byte_range("bytes=4-", 10), (4, 9))
+        self.assertEqual(server.parse_byte_range("bytes=-3", 10), (7, 9))
+        self.assertEqual(server.parse_byte_range(None, 10), (None, None))
+        self.assertEqual(server.parse_byte_range("bytes=20-30", 10), (None, None))
+
+    def test_serve_file_advertises_byte_range_support(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "clip.mp4"
+            clip.write_bytes(b"0123456789")
+            handler, captured = self._make_handler()
+
+            handler.serve_file(clip)
+
+            self.assertEqual(captured["status"], 200)
+            self.assertEqual(captured["headers"].get("Accept-Ranges"), "bytes")
+            self.assertEqual(captured["body"], b"0123456789")
+
+    def test_serve_file_returns_partial_content_for_range_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "clip.mp4"
+            clip.write_bytes(b"0123456789")
+            handler, captured = self._make_handler("bytes=2-5")
+
+            handler.serve_file(clip)
+
+            self.assertEqual(captured["status"], 206)
+            self.assertEqual(captured["headers"].get("Accept-Ranges"), "bytes")
+            self.assertEqual(captured["headers"].get("Content-Range"), "bytes 2-5/10")
+            self.assertEqual(captured["headers"].get("Content-Length"), "4")
+            self.assertEqual(captured["body"], b"2345")
 
 
 if __name__ == "__main__":
