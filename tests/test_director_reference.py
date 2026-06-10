@@ -414,6 +414,62 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertGreater(out.getpixel((95, 50))[2], 150)
 
 
+def _resolve_latent_dims(api):
+    """Evaluate the EmptyLTXVLatentVideo width/height through the SimpleMath graph."""
+    node = next(n for n in api.values() if n["class_type"] == "EmptyLTXVLatentVideo")
+
+    def val(ref):
+        if not isinstance(ref, list):
+            return ref
+        target = api[ref[0]]
+        ct = target["class_type"]
+        ins = target["inputs"]
+        if ct in {"PrimitiveInt", "PrimitiveFloat", "INTConstant", "PrimitiveBoolean"}:
+            return ins.get("value")
+        if ct == "SimpleMath+":
+            return eval(ins["value"], {"max": max, "round": round}, {"a": val(ins.get("a")), "b": val(ins.get("b"))})
+        if ct == "ComfySwitchNode":
+            branch = "on_true" if val(ins.get("switch")) else "on_false"
+            return val(ins.get(branch))
+        raise AssertionError(f"unexpected dim source {ct}")
+
+    return val(node["inputs"]["width"]), val(node["inputs"]["height"])
+
+
+class ImageExtensionBypassTests(unittest.TestCase):
+    def _patch(self, workflow_id, width, height):
+        workflow = next(w for w in server.WORKFLOWS if w["id"] == workflow_id)
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": width,
+            "height": height,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        names = {"source": "src.png"}
+        if workflow["mode"] == "ia2v":
+            names["audio"] = "a.mp3"
+        else:
+            names["end"] = "end.png"
+        server.patch_api(api, workflow, run, names)
+        return api
+
+    def test_ia2v_latent_dims_follow_requested_size(self):
+        api = self._patch("ia2v_extendcrop", 1280, 720)
+        lat_w, lat_h = _resolve_latent_dims(api)
+        # latent space is half the output resolution on both axes
+        self.assertEqual((lat_w, lat_h), (640, 360))
+
+    def test_flf_latent_dims_follow_requested_size(self):
+        api = self._patch("flf_ttp_control", 1280, 720)
+        lat_w, lat_h = _resolve_latent_dims(api)
+        self.assertEqual((lat_w, lat_h), (640, 360))
+
+
 class FlfAudioTemplateTests(unittest.TestCase):
     def _flf_workflow(self):
         return next(w for w in server.WORKFLOWS if w["id"] == "flf_ttp_control")

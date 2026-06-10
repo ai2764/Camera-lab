@@ -1133,7 +1133,11 @@ def bypass_image_crop_nodes(api: dict) -> None:
 def bypass_image_extension_nodes(api: dict) -> None:
     for extension_id, node in list(api.items()):
         title = str(node.get("_meta", {}).get("title") or "").lower()
-        if "padded generation height" in title and isinstance(node["inputs"].get("a"), list):
+        # Match only the padding-height node ("padded generation height = content
+        # + matte"), not the latent-height divider ("latent height = padded
+        # generation height / 2"), which also contains the phrase but must keep
+        # its /2 so the output follows the requested size.
+        if title.startswith("padded generation height") and isinstance(node["inputs"].get("a"), list):
             replacement = node["inputs"]["a"]
             for target in api.values():
                 for input_name, value in list(target["inputs"].items()):
