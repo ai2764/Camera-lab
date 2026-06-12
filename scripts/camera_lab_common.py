@@ -153,7 +153,7 @@ def wait_for_config(url: str, timeout_s: float = 5.0) -> dict[str, Any]:
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            data = http_json(f"{url}/api/config", timeout=1.0)
+            data = http_json(f"{url}/api/config", timeout=3.0)
             if isinstance(data, dict) and "workflows" in data:
                 return data
         except (urllib.error.URLError, TimeoutError, OSError) as exc:

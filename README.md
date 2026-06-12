@@ -163,6 +163,47 @@ Then open:
 http://127.0.0.1:1234
 ```
 
+## Casting Workspace Dependencies
+
+The Casting workspace is optional and degrades safely. Camera Lab's server and UI can start without an LLM endpoint and without CosyVoice. When those dependencies are missing, the Casting tab still opens, shows a setup warning, and keeps manual line editing and the existing voice library UI available.
+
+Casting has two independent dependency groups:
+
+- **LLM dialogue analysis**: used only by the `Analyze` button to turn a script into short voice lines. It can use any OpenAI-compatible chat completions endpoint.
+- **CosyVoice TTS generation**: used only by per-line and `Generate all` speech synthesis. It runs on demand in the configured CosyVoice Python environment.
+
+Configure the LLM endpoint in `.env`:
+
+```text
+LLM_URL=http://127.0.0.1:1234/v1
+LLM_MODEL=gpt-oss-20b
+LLM_API_KEY=
+```
+
+Examples:
+
+- LM Studio: `LLM_URL=http://127.0.0.1:1234/v1`
+- Ollama: `LLM_URL=http://127.0.0.1:11434/v1` and `LLM_MODEL=gpt-oss:20b`
+- Hosted OpenAI-compatible APIs: set `LLM_URL`, `LLM_MODEL`, and `LLM_API_KEY`
+
+Configure CosyVoice in `.env`:
+
+```text
+COSYVOICE_PYTHON=python
+COSYVOICE_MODEL_DIR=tts/models/Fun-CosyVoice3-0.5B
+COSYVOICE_VENDOR=tts/cosyvoice
+CASTING_VOICES_DIR=tts/voices
+```
+
+Expected local Casting paths:
+
+- `tts/cosyvoice`: a CosyVoice source checkout, symlink, or junction
+- `tts/models/Fun-CosyVoice3-0.5B`: the local CosyVoice model folder
+- `tts/voices`: reference voice `.wav` files with matching `.txt` transcripts
+- `scripts/casting_tts.py`: the repo-side one-shot synthesis helper
+
+If only the LLM is missing, script analysis is disabled but manual line editing still works. If only CosyVoice is missing, TTS generation is disabled but script analysis can still work. If both are missing, Camera Lab still starts and the Casting tab reports both missing dependency groups.
+
 ## Browser E2E Tests
 
 Camera Lab uses Playwright for browser-level smoke tests of the web UI.
@@ -180,7 +221,7 @@ Run the E2E suite:
 npm run test:e2e
 ```
 
-The current E2E smoke test starts the local server and verifies that the public Camera Lab controls load.
+The E2E suite starts the local server and verifies the public workspaces, Director timeline behavior, and Casting UI fallback states.
 
 ## Expected ComfyUI Layout
 

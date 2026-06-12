@@ -98,9 +98,9 @@ references.
   `insert_director_global_reference_guides`,
   `insert_director_multi_guide`,
   `strip_director_image_loader_chain`.
-- `C:\Users\AIBOX\Desktop\GEN-ART\ComfyUI\custom_nodes\WhatDreamsCost-ComfyUI\ltx_director_guide.py`
+- `<COMFYUI_ROOT>/custom_nodes/WhatDreamsCost-ComfyUI/ltx_director_guide.py`
   — local patch with the `_append_guide_attention_entry` call.
-- Repro assets: `C:\Users\AIBOX\dev\youtube-video-lab\tasks\导演台\` (ref2.png
+- Repro assets: external local scratch folder (ref2.png
   three-view + timeline_1 / timeline_3).
 
 ## References

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,12 +39,17 @@ PRESETS = {
     ),
 }
 
+def default_comfy_template_root() -> Path:
+    configured = os.environ.get("COMFYUI_TEMPLATE_ROOT")
+    if configured:
+        return Path(configured)
+    comfy_root = Path(os.environ.get("COMFYUI_ROOT") or "ComfyUI")
+    return comfy_root / ".venv" / "Lib" / "site-packages" / "comfyui_workflow_templates_media_video" / "templates"
+
+
 # Official ltx2.3 flf2v template ships with ComfyUI; used purely as the
 # structural prototype for the core `LTXVAddGuide` node object.
-FLF2V = Path(
-    "C:/Users/AIBOX/Desktop/GEN-ART/ComfyUI/.venv/Lib/site-packages/"
-    "comfyui_workflow_templates_media_video/templates/video_ltx2_3_flf2v.json"
-)
+FLF2V = default_comfy_template_root() / "video_ltx2_3_flf2v.json"
 
 # Stable node ids for the additions. Chosen above the I2V top-level range
 # (<=1021) and the expanded-subgraph internal range (<=1017) to avoid collisions.

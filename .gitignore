@@ -31,6 +31,13 @@ tasks/ic_lora_*
 tasks/photography_ltx_*
 /references/
 
+# Local TTS assets and generated voice library
+tts/cosyvoice/
+tts/models/
+tts/voices/*
+!tts/voices/.gitkeep
+tts/library/
+
 # Local/editor noise
 .DS_Store
 Thumbs.db

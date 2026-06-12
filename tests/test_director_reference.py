@@ -16,6 +16,23 @@ class DirectorReferenceTests(unittest.TestCase):
 
         self.assertTrue(config["root"].exists() or config["root"] == Path("ComfyUI"))
 
+    def test_comfy_status_keeps_online_when_port_is_open_but_stats_is_slow(self):
+        def probe(_path, timeout=0):
+            raise TimeoutError(f"timed out after {timeout}s")
+
+        status = server.comfy_status(probe=probe, port_probe=lambda _url: True, timeout=2)
+
+        self.assertTrue(status["ok"])
+        self.assertIn("system_stats is slow", status["reason"])
+        self.assertEqual(status["url"], server.COMFY_URL)
+
+    def test_comfy_status_reports_offline_when_port_is_closed(self):
+        status = server.comfy_status(probe=lambda *_args, **_kwargs: {}, port_probe=lambda _url: False)
+
+        self.assertFalse(status["ok"])
+        self.assertIn("port is not reachable", status["reason"])
+        self.assertEqual(status["url"], server.COMFY_URL)
+
     def test_comfy_config_uses_comfyui_root_and_url_from_environment(self):
         root = Path(tempfile.gettempdir()) / "camera_lab_test_comfy"
         env = {
@@ -242,6 +259,90 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(guide_segments[0]["start"], 24)
         self.assertEqual(guide_segments[0]["imageFile"], "keyframe.png")
 
+    def test_director_timeline_segments_match_original_gap_absorption(self):
+        payload = {
+            "timeline_segments": [
+                {
+                    "id": "img_start",
+                    "type": "image",
+                    "prompt": "first image prompt",
+                    "duration": 1.0,
+                    "start": 0,
+                    "image_path": "fixtures/start.png",
+                    "strength": 0.8,
+                },
+                {
+                    "id": "txt_mid",
+                    "type": "text",
+                    "prompt": "middle text prompt",
+                    "duration": 1.0,
+                    "start": 2.0,
+                },
+                {
+                    "id": "img_end",
+                    "type": "image",
+                    "prompt": "final image prompt",
+                    "duration": 1.0,
+                    "start": 3.0,
+                    "image_path": "fixtures/end.png",
+                    "strength": 0.6,
+                },
+            ],
+            "duration": 4.0,
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+        guide_segments = server.director_reference_timeline_segments(
+            timeline,
+            {},
+            {1: "start.png", 3: "end.png"},
+        )
+
+        self.assertEqual(timeline["local_prompts"], "first image prompt | middle text prompt | final image prompt")
+        self.assertEqual(timeline["segment_lengths"], "48,24,24")
+        self.assertEqual(timeline["duration_frames"], 96)
+        self.assertEqual([segment["type"] for segment in guide_segments], ["image", "text", "image"])
+        self.assertEqual(guide_segments[0]["imageFile"], "start.png")
+        self.assertEqual(guide_segments[0]["start"], 0)
+        self.assertEqual(guide_segments[0]["length"], 24)
+        self.assertEqual(guide_segments[1]["start"], 48)
+        self.assertNotIn("imageFile", guide_segments[1])
+        self.assertEqual(guide_segments[2]["imageFile"], "end.png")
+        self.assertEqual(guide_segments[2]["start"], 72)
+
+    def test_director_timeline_audio_segments_are_independent_from_image_segments(self):
+        payload = {
+            "timeline_segments": [
+                {"id": "img_1", "type": "image", "prompt": "image prompt", "duration": 1.0, "start": 0},
+            ],
+            "audio_segments": [
+                {
+                    "id": "aud_1",
+                    "audio_path": "fixtures/line.wav",
+                    "start": 1.5,
+                    "duration": 2.5,
+                    "trim_start": 12,
+                }
+            ],
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["duration_frames"], 96)
+        self.assertEqual(timeline["segment_lengths"], "96")
+        self.assertEqual(
+            timeline["audio_segments"],
+            [
+                {
+                    "id": "aud_1",
+                    "audio_path": "fixtures/line.wav",
+                    "start": 36,
+                    "length": 60,
+                    "trimStart": 12,
+                }
+            ],
+        )
+
     def test_director_global_reference_images_are_encoded_as_global_guides(self):
         run = {
             "batch_id": "dry",
@@ -333,6 +434,102 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["77"]["inputs"]["positive"], ["9001", 0])
         self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
 
+    def test_director_build_api_includes_independent_audio_segments(self):
+        original_input = server.COMFY_INPUT
+        original_refs = server.copy_director_reference_images
+        original_timeline = server.copy_director_timeline_images
+        original_workflow_to_api = server.workflow_to_api
+        original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
+        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: []
+        server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
+        server.workflow_to_api = lambda _workflow: {
+            "46": {
+                "class_type": "LTXDirector",
+                "inputs": {
+                    "global_prompt": "",
+                    "duration_frames": 0,
+                    "duration_seconds": 0,
+                    "timeline_data": "",
+                    "local_prompts": "",
+                    "segment_lengths": "",
+                    "guide_strength": "",
+                    "frame_rate": 0,
+                    "custom_width": 0,
+                    "custom_height": 0,
+                    "resize_method": "",
+                    "divisible_by": 0,
+                    "img_compression": 0,
+                    "use_custom_audio": False,
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            audio = tmp_path / "line.wav"
+            audio.write_bytes(b"audio")
+            server.COMFY_INPUT = tmp_path / "comfy_input"
+            server.DIRECTOR_WORKFLOW_PATH = tmp_path / "director.json"
+            server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            run = {
+                "batch_id": "dry",
+                "run_id": "01_director",
+                "workflow_id": "ltx_director_reference_mvp",
+                "global_prompt": "",
+                "segments": [
+                    {
+                        "id": "img_1",
+                        "type": "image",
+                        "prompt": "image prompt",
+                        "duration": 1,
+                        "start": 0,
+                        "image_path": "fixtures/timeline.png",
+                        "strength": 0.75,
+                    },
+                ],
+                "audio_segments": [
+                    {
+                        "id": "aud_1",
+                        "audio_path": str(audio),
+                        "start": 0.5,
+                        "duration": 1.5,
+                        "trim_start": 12,
+                    },
+                ],
+                "reference_images": [],
+                "width": 512,
+                "height": 512,
+                "seed": "123",
+                "prompt": "image prompt",
+                "negative_prompt": "",
+            }
+            try:
+                api = server.build_ltx_director_reference_api(run)
+                copied = server.COMFY_INPUT / "01_director_segaudio_01_line.wav"
+                copied_bytes = copied.read_bytes()
+            finally:
+                server.COMFY_INPUT = original_input
+                server.copy_director_reference_images = original_refs
+                server.copy_director_timeline_images = original_timeline
+                server.workflow_to_api = original_workflow_to_api
+                server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
+
+        director_inputs = api["46"]["inputs"]
+        timeline = json.loads(director_inputs["timeline_data"])
+        self.assertTrue(director_inputs["use_custom_audio"])
+        self.assertEqual(
+            timeline["audioSegments"],
+            [
+                {
+                    "audioFile": "01_director_segaudio_01_line.wav",
+                    "fileName": "line.wav",
+                    "start": 12,
+                    "length": 36,
+                    "trimStart": 12,
+                }
+            ],
+        )
+        self.assertEqual(copied_bytes, b"audio")
+
     def test_director_custom_audio_patches_concat_audio_latent(self):
         api = {
             "4": {"class_type": "VAELoaderKJ", "inputs": {"vae_name": "audio_vae.safetensors"}},
@@ -391,6 +588,40 @@ class DirectorReferenceTests(unittest.TestCase):
 
         self.assertEqual(api["7"]["inputs"]["audio_latent"], ["46", 3])
         self.assertNotIn("9001", api)
+
+    def test_director_timeline_image_names_are_unique_per_batch(self):
+        original_input = server.COMFY_INPUT
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            src = tmp_path / "guide.png"
+            Image.new("RGB", (64, 64), (200, 20, 30)).save(src)
+            server.COMFY_INPUT = tmp_path / "comfy_input"
+            timeline = {
+                "segments": [
+                    {
+                        "image_path": str(src),
+                    },
+                ],
+            }
+            try:
+                first = server.copy_director_timeline_images(
+                    {"batch_id": "batch_one", "run_id": "01_director", "run_dir": str(tmp_path / "run_one")},
+                    timeline,
+                    64,
+                    64,
+                )
+                second = server.copy_director_timeline_images(
+                    {"batch_id": "batch_two", "run_id": "01_director", "run_dir": str(tmp_path / "run_two")},
+                    timeline,
+                    64,
+                    64,
+                )
+            finally:
+                server.COMFY_INPUT = original_input
+
+            self.assertNotEqual(first[1], second[1])
+            self.assertTrue((tmp_path / "comfy_input" / first[1]).exists())
+            self.assertTrue((tmp_path / "comfy_input" / second[1]).exists())
 
     def test_global_reference_resize_preserves_full_wide_image_with_padding(self):
         with tempfile.TemporaryDirectory() as tmp:

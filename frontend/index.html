@@ -15,6 +15,7 @@
     <nav class="workspace-tabs" aria-label="Workspace">
       <button id="cameraWorkspaceTab" class="workspace-tab active" type="button">Camera Lab</button>
       <button id="directorWorkspaceTab" class="workspace-tab" type="button">Director</button>
+      <button id="castingWorkspaceTab" class="workspace-tab" type="button">Casting</button>
       <button id="photographyWorkspaceTab" class="workspace-tab" type="button" hidden>Photography</button>
     </nav>
     <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
@@ -174,7 +175,6 @@
                 Global ref strength
                 <input id="directorGlobalReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
               </label>
-              <div id="directorAudioSlot" class="director-audio-slot"></div>
               <section class="director-video-size">
                 <div class="grid-2">
                   <label>
@@ -206,25 +206,31 @@
               <div class="director-section-kicker">02</div>
               <h3>Timeline Segments</h3>
             </div>
-            <p>Shot image / Duration / Prompt / Guide image</p>
+            <p>Image or text blocks / Duration / Prompt / Guide image</p>
           </div>
           <div class="director-workspace-grid">
             <section class="director-main-editor">
               <div class="director-timeline-shell">
                 <div class="director-timeline-head">
-                  <span>Timeline images</span>
+                  <span>Image and text timeline</span>
                   <div class="timeline-tools">
                     <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
                     <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
                   </div>
                 </div>
                 <div class="director-ruler" id="directorRuler"></div>
+                <div class="director-track-label">Video</div>
                 <div class="director-track" id="directorTrack"></div>
+                <div class="director-track-label director-audio-track-label">
+                  <span>Audio</span>
+                  <button id="addDirectorAudioBtn" class="timeline-add director-audio-add" type="button" title="Add audio clip" aria-label="Add audio clip">+</button>
+                </div>
+                <div class="director-audio-track" id="directorAudioTrack"></div>
               </div>
               <div class="director-edit-row">
                 <div id="directorSegmentInspector" class="director-inspector"></div>
                 <div class="director-shot-list">
-                  <div class="eyebrow">Shots</div>
+                  <div class="eyebrow">Timeline</div>
                   <div id="directorSegments" class="director-segments"></div>
                 </div>
               </div>
@@ -258,6 +264,38 @@
           </div>
         </section>
       </div>
+      <div id="directorAudioModal" class="director-modal" aria-hidden="true">
+        <div class="director-modal-backdrop" data-close-director-audio-modal></div>
+        <section class="director-modal-panel director-audio-modal-panel" role="dialog" aria-modal="true" aria-labelledby="directorAudioModalTitle">
+          <div class="director-modal-head">
+            <div>
+              <div class="eyebrow">Audio timeline</div>
+              <h2 id="directorAudioModalTitle">Add audio clip</h2>
+            </div>
+            <button id="closeDirectorAudioModalBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+          </div>
+          <label>
+            Casting library
+            <select id="directorAudioLibrarySelect">
+              <option value="">No audio</option>
+            </select>
+          </label>
+          <label class="storyboard-file-field">
+            Upload audio
+            <input id="directorAudioModalInput" type="file" accept="audio/*">
+            <span id="directorAudioModalUploadStatus" class="hint">No upload selected</span>
+          </label>
+          <label>
+            Start
+            <input id="directorAudioModalStart" type="number" min="0" max="120" step="0.5" value="0">
+          </label>
+          <span id="directorAudioModalStatus" class="hint">Choose a library clip or upload audio.</span>
+          <div class="director-modal-actions">
+            <button id="cancelDirectorAudioModalBtn" type="button">Cancel</button>
+            <button id="addDirectorAudioClipBtn" class="primary modal-primary" type="button">Add audio</button>
+          </div>
+        </section>
+      </div>
       <section class="director-output-zone">
         <div class="director-section-heading director-output-heading">
           <div>
@@ -270,6 +308,9 @@
           <label id="audioUploadWrap" class="audio-upload">
             Dialogue audio (optional for Director)
             <input id="audioInput" type="file" accept="audio/*,video/mp4">
+            <select id="audioLibrarySelect" class="audio-library-select">
+              <option value="">From casting library…</option>
+            </select>
             <span id="audioStatus" class="hint">No audio uploaded</span>
           </label>
         </div>
@@ -382,7 +423,85 @@
         <div id="photoCannyFrames" class="photo-canny-frames"></div>
       </section>
     </section>
+
+    <section id="castingWorkspace" class="casting-workspace">
+      <div class="casting-stage-head">
+        <div>
+          <div class="eyebrow">Casting</div>
+          <h2>Dialogue → Voices</h2>
+        </div>
+        <div class="casting-stage-tools">
+          <button id="castingAddVoiceBtn" type="button">Add voice</button>
+          <div id="castingStatus" class="casting-status">checking…</div>
+        </div>
+      </div>
+      <div id="castingSetupWarning" class="casting-setup-warning" hidden></div>
+      <div class="casting-grid">
+        <section class="casting-input">
+          <label class="casting-label">Script / prompt
+            <textarea id="castingScript" rows="14" placeholder="Paste a script or prompt. The LLM extracts each spoken line and assigns a voice + emotion."></textarea>
+          </label>
+          <div class="casting-actions">
+            <button id="castingAnalyzeBtn" class="primary" type="button">Analyze</button>
+            <span id="castingLegend" class="hint"></span>
+          </div>
+        </section>
+        <section class="casting-results">
+          <div class="casting-results-head">
+            <span>Lines</span>
+            <div class="casting-results-tools">
+              <button id="castingAddLineBtn" type="button">Add line</button>
+              <button id="castingGenerateBtn" class="primary" type="button" disabled>Generate all</button>
+            </div>
+          </div>
+          <div id="castingTableWrap" class="casting-table-wrap">
+            <div class="hint">No lines yet — paste a script and Analyze.</div>
+          </div>
+        </section>
+      </div>
+      <section class="casting-library">
+        <div class="casting-results-head">
+          <span>Voice library</span>
+          <button id="castingOpenArchiveBtn" type="button">Open archive</button>
+          <button id="castingRefreshLibraryBtn" type="button">Refresh</button>
+        </div>
+        <div id="castingLibrary" class="casting-library-list"></div>
+      </section>
+    </section>
   </main>
+
+  <div id="castingVoiceModal" class="director-modal casting-voice-modal" aria-hidden="true">
+    <div class="director-modal-backdrop" data-close-casting-voice-modal></div>
+    <section class="director-modal-panel casting-voice-panel" role="dialog" aria-modal="true" aria-labelledby="castingVoiceTitle">
+      <div class="director-modal-head">
+        <div>
+          <div class="eyebrow">Casting</div>
+          <h2 id="castingVoiceTitle">Add Voice</h2>
+        </div>
+        <button id="closeCastingVoiceBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="casting-voice-form">
+        <label>
+          Name
+          <input id="customVoiceName" type="text" placeholder="Voice name">
+        </label>
+        <label class="storyboard-file-field">
+          Reference audio
+          <input id="customVoiceFile" type="file" accept="audio/wav,.wav">
+          <span class="hint">Use a clean WAV clip with the same text below.</span>
+        </label>
+        <label>
+          Reference text
+          <textarea id="customVoiceText" rows="4" placeholder="Exact words spoken in the reference audio"></textarea>
+        </label>
+        <div id="customVoiceStatus" class="hint"></div>
+      </div>
+      <div class="director-modal-actions">
+        <button id="cancelCustomVoiceBtn" type="button">Cancel</button>
+        <button id="saveCustomVoiceBtn" class="primary modal-primary" type="button">Save</button>
+      </div>
+    </section>
+  </div>
 
   <template id="resultTemplate">
     <article class="result-card">
