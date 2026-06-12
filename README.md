@@ -4,7 +4,7 @@ Camera Lab is a small local web UI for testing camera movement prompts and Comfy
 
 It runs as a Python HTTP server and talks to a local ComfyUI instance.
 
-![Camera Lab interface](docs/images/camera-lab-home.png)
+![Camera Lab Casting workspace](docs/images/camera-lab-casting.png)
 
 ## Quick Start
 
