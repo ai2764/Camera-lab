@@ -1,10 +1,16 @@
 # Camera Lab
 
-Camera Lab is a small local web UI for testing camera movement prompts and ComfyUI video workflows.
+Camera Lab is a local web workspace for building ComfyUI-powered AI video shots. It combines prompt-driven video generation, Director-style timeline assembly, and Casting voice preparation in one browser UI.
 
-It runs as a Python HTTP server and talks to a local ComfyUI instance.
+It runs as a lightweight Python HTTP server, serves a static frontend, and submits patched workflow prompts to a local ComfyUI instance.
 
-![Camera Lab Casting workspace](docs/images/camera-lab-casting.png)
+![Camera Lab ComfyUI video workbench](docs/images/camera-lab-hero.png)
+
+## What It Does
+
+- **Camera Lab** queues image-to-video and multi-image workflow runs with reusable camera move presets, prompts, seeds, reference images, and result history.
+- **Director** assembles shot timelines, audio cues, reference images, and workflow settings for longer structured video runs.
+- **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
 
 ## Quick Start
 
