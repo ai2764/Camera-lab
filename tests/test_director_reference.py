@@ -16,6 +16,23 @@ class DirectorReferenceTests(unittest.TestCase):
 
         self.assertTrue(config["root"].exists() or config["root"] == Path("ComfyUI"))
 
+    def test_comfy_status_keeps_online_when_port_is_open_but_stats_is_slow(self):
+        def probe(_path, timeout=0):
+            raise TimeoutError(f"timed out after {timeout}s")
+
+        status = server.comfy_status(probe=probe, port_probe=lambda _url: True, timeout=2)
+
+        self.assertTrue(status["ok"])
+        self.assertIn("system_stats is slow", status["reason"])
+        self.assertEqual(status["url"], server.COMFY_URL)
+
+    def test_comfy_status_reports_offline_when_port_is_closed(self):
+        status = server.comfy_status(probe=lambda *_args, **_kwargs: {}, port_probe=lambda _url: False)
+
+        self.assertFalse(status["ok"])
+        self.assertIn("port is not reachable", status["reason"])
+        self.assertEqual(status["url"], server.COMFY_URL)
+
     def test_comfy_config_uses_comfyui_root_and_url_from_environment(self):
         root = Path(tempfile.gettempdir()) / "camera_lab_test_comfy"
         env = {
@@ -87,19 +104,19 @@ class DirectorReferenceTests(unittest.TestCase):
 
         self.assertEqual(workflow["mode"], "i2v")
         self.assertEqual(path.parent.name, "app")
-        self.assertEqual(path.name, "ltx23_nag_i2v_extendcrop_general.json")
+        self.assertEqual(path.name, "ltx23_i2v_subtitle_cleaner_nag_extend.json")
 
     def test_dropdown_json_workflows_are_checked_in_app_workflows(self):
         expected_paths = {
-            "i2v_official_local": "ltx23_nag_i2v_extendcrop_general.json",
+            "i2v_official_local": "ltx23_i2v_subtitle_cleaner_nag_extend.json",
+            "flf_ttp_control": "ltx23_flf_subtitle_cleaner_nag_extend.json",
+            "fml_two_segment_flf": "ltx23_flf_subtitle_cleaner_nag_extend.json",
             "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
-            "ltx_director_reference_mvp": "ltx_director_global_reference_mvp.json",
+            "flf_ia2v": "ltx23_flf_ia2v_nag_extend.json",
+            "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
         }
-        expected_builders = {
-            "flf_ttp_control": "ltx23_ttp_flf",
-            "fml_two_segment_flf": "ltx23_ttp_flf",
-        }
+        expected_builders: dict[str, str] = {}
 
         for workflow in server.WORKFLOWS:
             if workflow["id"] in expected_paths:
@@ -242,6 +259,90 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(guide_segments[0]["start"], 24)
         self.assertEqual(guide_segments[0]["imageFile"], "keyframe.png")
 
+    def test_director_timeline_segments_match_original_gap_absorption(self):
+        payload = {
+            "timeline_segments": [
+                {
+                    "id": "img_start",
+                    "type": "image",
+                    "prompt": "first image prompt",
+                    "duration": 1.0,
+                    "start": 0,
+                    "image_path": "fixtures/start.png",
+                    "strength": 0.8,
+                },
+                {
+                    "id": "txt_mid",
+                    "type": "text",
+                    "prompt": "middle text prompt",
+                    "duration": 1.0,
+                    "start": 2.0,
+                },
+                {
+                    "id": "img_end",
+                    "type": "image",
+                    "prompt": "final image prompt",
+                    "duration": 1.0,
+                    "start": 3.0,
+                    "image_path": "fixtures/end.png",
+                    "strength": 0.6,
+                },
+            ],
+            "duration": 4.0,
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+        guide_segments = server.director_reference_timeline_segments(
+            timeline,
+            {},
+            {1: "start.png", 3: "end.png"},
+        )
+
+        self.assertEqual(timeline["local_prompts"], "first image prompt | middle text prompt | final image prompt")
+        self.assertEqual(timeline["segment_lengths"], "48,24,24")
+        self.assertEqual(timeline["duration_frames"], 96)
+        self.assertEqual([segment["type"] for segment in guide_segments], ["image", "text", "image"])
+        self.assertEqual(guide_segments[0]["imageFile"], "start.png")
+        self.assertEqual(guide_segments[0]["start"], 0)
+        self.assertEqual(guide_segments[0]["length"], 24)
+        self.assertEqual(guide_segments[1]["start"], 48)
+        self.assertNotIn("imageFile", guide_segments[1])
+        self.assertEqual(guide_segments[2]["imageFile"], "end.png")
+        self.assertEqual(guide_segments[2]["start"], 72)
+
+    def test_director_timeline_audio_segments_are_independent_from_image_segments(self):
+        payload = {
+            "timeline_segments": [
+                {"id": "img_1", "type": "image", "prompt": "image prompt", "duration": 1.0, "start": 0},
+            ],
+            "audio_segments": [
+                {
+                    "id": "aud_1",
+                    "audio_path": "fixtures/line.wav",
+                    "start": 1.5,
+                    "duration": 2.5,
+                    "trim_start": 12,
+                }
+            ],
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["duration_frames"], 96)
+        self.assertEqual(timeline["segment_lengths"], "96")
+        self.assertEqual(
+            timeline["audio_segments"],
+            [
+                {
+                    "id": "aud_1",
+                    "audio_path": "fixtures/line.wav",
+                    "start": 36,
+                    "length": 60,
+                    "trimStart": 12,
+                }
+            ],
+        )
+
     def test_director_global_reference_images_are_encoded_as_global_guides(self):
         run = {
             "batch_id": "dry",
@@ -321,7 +422,7 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(timeline["segments"][0]["strength"], 0.75)
         self.assertEqual(director_inputs["guide_strength"], "0.75")
         self.assertEqual(api["9001"]["class_type"], "LTXVAddGuideMulti")
-        self.assertNotIn("num_guides", api["9001"]["inputs"])
+        self.assertEqual(api["9001"]["inputs"]["num_guides"], "2")
         self.assertEqual(api["9001"]["inputs"]["num_guides.image_1"], ["9002", 0])
         self.assertEqual(api["9001"]["inputs"]["num_guides.image_2"], ["9003", 0])
         self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_1"], 0)
@@ -333,42 +434,15 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["77"]["inputs"]["positive"], ["9001", 0])
         self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
 
-    def test_director_global_reference_images_use_native_node_inputs_when_available(self):
-        run = {
-            "batch_id": "dry",
-            "run_id": "01_director_native",
-            "workflow_id": "ltx_director_reference_mvp",
-            "global_prompt": "same character",
-            "segments": [
-                {
-                    "prompt": "walks",
-                    "duration": 1.0,
-                    "reference": "character",
-                    "image_path": "fixtures/timeline.png",
-                    "guide_frame": 0,
-                    "strength": 0.75,
-                },
-            ],
-            "reference_images": ["fixtures/character_front.png", "fixtures/character_side.png"],
-            "width": 512,
-            "height": 512,
-            "seed": "123",
-            "prompt": "same character | walks",
-            "negative_prompt": "",
-            "global_reference_strength": 0.47,
-        }
-
+    def test_director_build_api_includes_independent_audio_segments(self):
+        original_input = server.COMFY_INPUT
         original_refs = server.copy_director_reference_images
         original_timeline = server.copy_director_timeline_images
         original_workflow_to_api = server.workflow_to_api
         original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
-        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: [
-            "dry_reference_01.png",
-            "dry_reference_02.png",
-        ]
+        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: []
         server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
         server.workflow_to_api = lambda _workflow: {
-            "3": {"class_type": "VAELoader", "inputs": {}},
             "46": {
                 "class_type": "LTXDirector",
                 "inputs": {
@@ -382,43 +456,79 @@ class DirectorReferenceTests(unittest.TestCase):
                     "frame_rate": 0,
                     "custom_width": 0,
                     "custom_height": 0,
-                    "global_reference_images": [],
-                    "global_reference_strength": 0.0,
-                },
-            },
-            "77": {
-                "class_type": "KSampler",
-                "inputs": {
-                    "positive": ["46", 0],
-                    "negative": ["46", 1],
-                    "latent_image": ["46", 2],
+                    "resize_method": "",
+                    "divisible_by": 0,
+                    "img_compression": 0,
+                    "use_custom_audio": False,
                 },
             },
         }
         with tempfile.TemporaryDirectory() as tmp:
-            server.DIRECTOR_WORKFLOW_PATH = Path(tmp) / "director.json"
+            tmp_path = Path(tmp)
+            audio = tmp_path / "line.wav"
+            audio.write_bytes(b"audio")
+            server.COMFY_INPUT = tmp_path / "comfy_input"
+            server.DIRECTOR_WORKFLOW_PATH = tmp_path / "director.json"
             server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            run = {
+                "batch_id": "dry",
+                "run_id": "01_director",
+                "workflow_id": "ltx_director_reference_mvp",
+                "global_prompt": "",
+                "segments": [
+                    {
+                        "id": "img_1",
+                        "type": "image",
+                        "prompt": "image prompt",
+                        "duration": 1,
+                        "start": 0,
+                        "image_path": "fixtures/timeline.png",
+                        "strength": 0.75,
+                    },
+                ],
+                "audio_segments": [
+                    {
+                        "id": "aud_1",
+                        "audio_path": str(audio),
+                        "start": 0.5,
+                        "duration": 1.5,
+                        "trim_start": 12,
+                    },
+                ],
+                "reference_images": [],
+                "width": 512,
+                "height": 512,
+                "seed": "123",
+                "prompt": "image prompt",
+                "negative_prompt": "",
+            }
             try:
                 api = server.build_ltx_director_reference_api(run)
+                copied = server.COMFY_INPUT / "01_director_segaudio_01_line.wav"
+                copied_bytes = copied.read_bytes()
             finally:
+                server.COMFY_INPUT = original_input
                 server.copy_director_reference_images = original_refs
                 server.copy_director_timeline_images = original_timeline
                 server.workflow_to_api = original_workflow_to_api
                 server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
 
         director_inputs = api["46"]["inputs"]
-        self.assertEqual(
-            director_inputs["global_reference_images"],
-            ["dry_reference_01.png", "dry_reference_02.png"],
-        )
-        self.assertEqual(director_inputs["global_reference_strength"], 0.47)
         timeline = json.loads(director_inputs["timeline_data"])
-        self.assertEqual(len(timeline["segments"]), 1)
-        self.assertEqual(timeline["segments"][0]["id"], "camera-lab-segment-1")
-        self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
-        self.assertEqual(timeline["segments"][0]["strength"], 0.75)
-        self.assertEqual(director_inputs["guide_strength"], "0.75")
-        self.assertNotIn("9001", api)
+        self.assertTrue(director_inputs["use_custom_audio"])
+        self.assertEqual(
+            timeline["audioSegments"],
+            [
+                {
+                    "audioFile": "01_director_segaudio_01_line.wav",
+                    "fileName": "line.wav",
+                    "start": 12,
+                    "length": 36,
+                    "trimStart": 12,
+                }
+            ],
+        )
+        self.assertEqual(copied_bytes, b"audio")
 
     def test_director_custom_audio_patches_concat_audio_latent(self):
         api = {
@@ -479,6 +589,40 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api["7"]["inputs"]["audio_latent"], ["46", 3])
         self.assertNotIn("9001", api)
 
+    def test_director_timeline_image_names_are_unique_per_batch(self):
+        original_input = server.COMFY_INPUT
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            src = tmp_path / "guide.png"
+            Image.new("RGB", (64, 64), (200, 20, 30)).save(src)
+            server.COMFY_INPUT = tmp_path / "comfy_input"
+            timeline = {
+                "segments": [
+                    {
+                        "image_path": str(src),
+                    },
+                ],
+            }
+            try:
+                first = server.copy_director_timeline_images(
+                    {"batch_id": "batch_one", "run_id": "01_director", "run_dir": str(tmp_path / "run_one")},
+                    timeline,
+                    64,
+                    64,
+                )
+                second = server.copy_director_timeline_images(
+                    {"batch_id": "batch_two", "run_id": "01_director", "run_dir": str(tmp_path / "run_two")},
+                    timeline,
+                    64,
+                    64,
+                )
+            finally:
+                server.COMFY_INPUT = original_input
+
+            self.assertNotEqual(first[1], second[1])
+            self.assertTrue((tmp_path / "comfy_input" / first[1]).exists())
+            self.assertTrue((tmp_path / "comfy_input" / second[1]).exists())
+
     def test_global_reference_resize_preserves_full_wide_image_with_padding(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "wide_ref.png"
@@ -500,6 +644,228 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertGreater(out.getpixel((5, 50))[0], 150)
             self.assertGreater(out.getpixel((50, 50))[1], 120)
             self.assertGreater(out.getpixel((95, 50))[2], 150)
+
+
+def _resolve_latent_dims(api):
+    """Evaluate the EmptyLTXVLatentVideo width/height through the SimpleMath graph."""
+    node = next(n for n in api.values() if n["class_type"] == "EmptyLTXVLatentVideo")
+
+    def val(ref):
+        if not isinstance(ref, list):
+            return ref
+        target = api[ref[0]]
+        ct = target["class_type"]
+        ins = target["inputs"]
+        if ct in {"PrimitiveInt", "PrimitiveFloat", "INTConstant", "PrimitiveBoolean"}:
+            return ins.get("value")
+        if ct == "SimpleMath+":
+            return eval(ins["value"], {"max": max, "round": round}, {"a": val(ins.get("a")), "b": val(ins.get("b"))})
+        if ct == "ComfySwitchNode":
+            branch = "on_true" if val(ins.get("switch")) else "on_false"
+            return val(ins.get(branch))
+        raise AssertionError(f"unexpected dim source {ct}")
+
+    return val(node["inputs"]["width"]), val(node["inputs"]["height"])
+
+
+class ImageExtensionBypassTests(unittest.TestCase):
+    def _patch(self, workflow_id, width, height):
+        workflow = next(w for w in server.WORKFLOWS if w["id"] == workflow_id)
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": width,
+            "height": height,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        names = {"source": "src.png"}
+        if workflow["mode"] == "ia2v":
+            names["audio"] = "a.mp3"
+        else:
+            names["end"] = "end.png"
+        server.patch_api(api, workflow, run, names)
+        return api
+
+    def test_ia2v_latent_dims_follow_requested_size(self):
+        api = self._patch("ia2v_extendcrop", 1280, 720)
+        lat_w, lat_h = _resolve_latent_dims(api)
+        # latent space is half the output resolution on both axes
+        self.assertEqual((lat_w, lat_h), (640, 360))
+
+    def test_flf_latent_dims_follow_requested_size(self):
+        api = self._patch("flf_ttp_control", 1280, 720)
+        lat_w, lat_h = _resolve_latent_dims(api)
+        self.assertEqual((lat_w, lat_h), (640, 360))
+
+
+class FlfAudioTemplateTests(unittest.TestCase):
+    def _flf_workflow(self):
+        return next(w for w in server.WORKFLOWS if w["id"] == "flf_ttp_control")
+
+    def test_flf_workflow_uses_audio_template_path(self):
+        workflow = self._flf_workflow()
+        self.assertNotIn("builder", workflow)
+        self.assertTrue(workflow["path"].endswith("ltx23_flf_subtitle_cleaner_nag_extend.json"))
+        self.assertTrue(Path(workflow["path"]).exists())
+
+    def test_flf_template_adds_last_frame_guides_and_keeps_audio(self):
+        workflow = self._flf_workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 123,
+            "prompt": "a cat",
+            "negative_prompt": "bad",
+            "batch_id": "B1",
+            "run_id": "R1",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
+
+        add_guides = [n for n in api.values() if n["class_type"] == "LTXVAddGuide"]
+        self.assertEqual(len(add_guides), 2)
+        # last-frame keyframes
+        self.assertTrue(all(n["inputs"].get("frame_idx") == -1 for n in add_guides))
+        # both ConcatAVLatent stages now consume an AddGuide latent output
+        concat = [n for n in api.values() if n["class_type"] == "LTXVConcatAVLatent"]
+        self.assertEqual(len(concat), 2)
+        for node in concat:
+            origin = node["inputs"]["video_latent"][0]
+            self.assertEqual(api[origin]["class_type"], "LTXVAddGuide")
+        # audio chain preserved end-to-end
+        create_video = next(n for n in api.values() if n["class_type"] == "CreateVideo")
+        audio_origin = create_video["inputs"]["audio"][0]
+        self.assertEqual(api[audio_origin]["class_type"], "LTXVAudioVAEDecode")
+
+    def test_flf_end_image_is_injected_into_end_loader(self):
+        workflow = self._flf_workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
+
+        loaders = {
+            str(n.get("_meta", {}).get("title") or "").lower(): n["inputs"].get("image")
+            for n in api.values()
+            if n["class_type"] == "LoadImage"
+        }
+        self.assertEqual(loaders.get("upload image"), "src.png")
+        self.assertEqual(loaders.get("upload end image"), "end.png")
+
+
+class FlfIa2vTemplateTests(unittest.TestCase):
+    def _workflow(self):
+        return next(w for w in server.WORKFLOWS if w["id"] == "flf_ia2v")
+
+    def test_workflow_uses_path_and_combined_mode(self):
+        workflow = self._workflow()
+        self.assertEqual(workflow["mode"], "flf_ia2v")
+        self.assertTrue(workflow["path"].endswith("ltx23_flf_ia2v_nag_extend.json"))
+        self.assertTrue(Path(workflow["path"]).exists())
+
+    def test_template_has_last_frame_guides_and_uploaded_audio(self):
+        workflow = self._workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280,
+            "height": 720,
+            "duration": 4,
+            "seed": 1,
+            "prompt": "p",
+            "negative_prompt": "n",
+            "batch_id": "B",
+            "run_id": "R",
+        }
+        server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png", "audio": "voice.wav"})
+
+        # first+last keyframes
+        self.assertEqual(len([n for n in api.values() if n["class_type"] == "LTXVAddGuide"]), 2)
+        # uploaded audio drives the chain, not generated SFX
+        self.assertEqual([n for n in api.values() if n["class_type"] == "LTXVEmptyLatentAudio"], [])
+        load_audio = next(n for n in api.values() if n["class_type"] == "LoadAudio")
+        self.assertEqual(load_audio["inputs"]["audio"], "voice.wav")
+        # both images injected
+        loaders = {
+            str(n.get("_meta", {}).get("title") or "").lower(): n["inputs"].get("image")
+            for n in api.values()
+            if n["class_type"] == "LoadImage"
+        }
+        self.assertEqual(loaders.get("upload image"), "src.png")
+        self.assertEqual(loaders.get("upload end image"), "end.png")
+
+    def test_missing_audio_is_rejected(self):
+        workflow = self._workflow()
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "width": 1280, "height": 720, "duration": 4, "seed": 1,
+            "prompt": "p", "negative_prompt": "n", "batch_id": "B", "run_id": "R",
+        }
+        with self.assertRaises(ValueError):
+            server.patch_api(api, workflow, run, {"source": "src.png", "end": "end.png"})
+
+
+class ByteRangeServeFileTests(unittest.TestCase):
+    def _make_handler(self, range_header=None):
+        handler = server.Handler.__new__(server.Handler)
+        handler.headers = {} if range_header is None else {"Range": range_header}
+        captured = {"status": None, "headers": {}, "body": b""}
+
+        class FakeWFile:
+            def write(self, data):
+                captured["body"] += data
+
+        handler.send_response = lambda status: captured.__setitem__("status", status)
+        handler.send_header = lambda key, value: captured["headers"].__setitem__(key, value)
+        handler.end_headers = lambda: None
+        handler.send_error = lambda status: captured.__setitem__("status", status)
+        handler.wfile = FakeWFile()
+        return handler, captured
+
+    def test_parse_byte_range_handles_common_specs(self):
+        self.assertEqual(server.parse_byte_range("bytes=2-5", 10), (2, 5))
+        self.assertEqual(server.parse_byte_range("bytes=4-", 10), (4, 9))
+        self.assertEqual(server.parse_byte_range("bytes=-3", 10), (7, 9))
+        self.assertEqual(server.parse_byte_range(None, 10), (None, None))
+        self.assertEqual(server.parse_byte_range("bytes=20-30", 10), (None, None))
+
+    def test_serve_file_advertises_byte_range_support(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "clip.mp4"
+            clip.write_bytes(b"0123456789")
+            handler, captured = self._make_handler()
+
+            handler.serve_file(clip)
+
+            self.assertEqual(captured["status"], 200)
+            self.assertEqual(captured["headers"].get("Accept-Ranges"), "bytes")
+            self.assertEqual(captured["body"], b"0123456789")
+
+    def test_serve_file_returns_partial_content_for_range_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "clip.mp4"
+            clip.write_bytes(b"0123456789")
+            handler, captured = self._make_handler("bytes=2-5")
+
+            handler.serve_file(clip)
+
+            self.assertEqual(captured["status"], 206)
+            self.assertEqual(captured["headers"].get("Accept-Ranges"), "bytes")
+            self.assertEqual(captured["headers"].get("Content-Range"), "bytes 2-5/10")
+            self.assertEqual(captured["headers"].get("Content-Length"), "4")
+            self.assertEqual(captured["body"], b"2345")
 
 
 if __name__ == "__main__":

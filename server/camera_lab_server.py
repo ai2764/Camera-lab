@@ -5,8 +5,11 @@ import json
 import mimetypes
 import os
 import random
+import re
 import shutil
+import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -15,6 +18,7 @@ import urllib.request
 import base64
 import copy
 import ctypes
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping
@@ -85,31 +89,99 @@ TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_global_reference_mvp.json"
+DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
+
+
+def tts_env_path(value: str | Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def executable_available(value: str, resolver: Any = shutil.which) -> bool:
+    path = Path(value)
+    if path.is_absolute() or path.parent != Path("."):
+        return path.exists()
+    return resolver(value) is not None
+
+
+def display_config_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT.resolve())).replace("\\", "/")
+    except ValueError:
+        return str(path)
+
+# --- Casting: LLM dialogue analysis + on-demand CosyVoice TTS -----------------
+# Provider-neutral OpenAI-compatible LLM endpoint (LM Studio / Ollama / vLLM / cloud).
+# Ollama: set LLM_URL=http://127.0.0.1:11434/v1 and LLM_MODEL=gpt-oss:20b
+def normalize_llm_url(value: str) -> str:
+    raw = (value or "http://127.0.0.1:1234/v1").strip().rstrip("/")
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme and parsed.netloc and parsed.path in {"", "/"}:
+        return raw + "/v1"
+    return raw
+
+
+LLM_URL = normalize_llm_url(os.environ.get("LLM_URL") or "http://127.0.0.1:1234/v1")
+LLM_MODEL = os.environ.get("LLM_MODEL") or "gpt-oss-20b"
+LLM_API_KEY = os.environ.get("LLM_API_KEY") or ""
+
+# CosyVoice is loaded on demand via a one-shot subprocess in its own conda env.
+COSYVOICE_PYTHON = os.environ.get("COSYVOICE_PYTHON") or "python"
+COSYVOICE_MODEL_DIR = tts_env_path(os.environ.get("COSYVOICE_MODEL_DIR") or Path("tts") / "models" / "Fun-CosyVoice3-0.5B")
+COSYVOICE_VENDOR = tts_env_path(os.environ.get("COSYVOICE_VENDOR") or Path("tts") / "cosyvoice")
+CASTING_VOICES_DIR = tts_env_path(os.environ.get("CASTING_VOICES_DIR") or Path("tts") / "voices")
+CASTING_LIBRARY_DIR = ROOT / "tts" / "library"
+CASTING_TTS_SCRIPT = ROOT / "scripts" / "casting_tts.py"
+
+# Voice roster (data-driven, extensible). ref_text is read from the sibling .txt.
+CASTING_VOICES = [
+    {"id": "laodao", "label": "Laodao (male)", "gender": "male", "ref_wav": "laodao_en_ref.wav", "ref_txt": "laodao_en_ref.txt"},
+    {"id": "xiaomei", "label": "Xiaomei (female)", "gender": "female", "ref_wav": "xiaomei_en_ref.wav", "ref_txt": "xiaomei_en_ref.txt"},
+]
+CUSTOM_VOICE_PREFIX = "custom_"
+
+# Emotion id -> full natural-language directive (officially-recommended CV3 form;
+# the synth script wraps it per CV version). Easy to tune; add Chinese variants if needed.
+CASTING_EMOTIONS: dict[str, str] = {
+    "neutral": "",
+    "warm": "Please speak in a warm, gentle and friendly tone.",
+    "serious": "Please speak in a serious, composed and steady tone.",
+    "excited": "Please speak in a very excited, energetic tone.",
+    "sad": "Please speak in a sad, downcast tone.",
+    "angry": "Please speak in an angry, forceful tone.",
+    "gentle": "Please speak softly and tenderly.",
+    "whisper": "Please say it in a soft, hushed whisper.",
+}
 
 REFERENCE_IMAGES: list[dict[str, str]] = []
 
 WORKFLOWS = [
     {
         "id": "i2v_official_local",
-        "label": "LTX 2.3 NAG I2V Extendcrop",
+        "label": "LTX 2.3 I2V Subtitle Cleaner",
         "mode": "i2v",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_i2v_extendcrop_general.json"),
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_i2v_subtitle_cleaner_nag_extend.json"),
     },
     {
         "id": "flf_ttp_control",
-        "label": "LTX 2.3 FLF TTP Control (2 images)",
+        "label": "LTX 2.3 FLF (2 images, audio)",
         "mode": "flf",
-        "builder": "ltx23_ttp_flf",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        # FLF pins both keyframes; skip the subtitle bottom-matte extend/crop so
+        # the source and end frames get identical spatial treatment.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "fml_two_segment_flf",
-        "label": "LTX 2.3 FML (3 images, 2-stage TTP FLF)",
+        "label": "LTX 2.3 FML (3 images, 2-stage, audio)",
         "mode": "fml",
-        "builder": "ltx23_ttp_flf",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "fml_runexx_guider_local",
@@ -123,10 +195,22 @@ WORKFLOWS = [
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
         "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_ia2v_extendcrop_general.json"),
+        # Same as i2v — turn off the 307px bottom matte add/crop pair.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
+    },
+    {
+        "id": "flf_ia2v",
+        "label": "LTX 2.3 FLF IA2V (2 images + audio)",
+        "mode": "flf_ia2v",
+        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_ia2v_nag_extend.json"),
+        # First+last keyframes driven by uploaded audio; skip the bottom matte.
+        "disable_image_extension": True,
+        "disable_image_crop": True,
     },
     {
         "id": "ltx_director_reference_mvp",
-        "label": "LTX Director Global Reference MVP",
+        "label": "LTX Director Reference MVP",
         "mode": "director_ref",
         "path": str(DIRECTOR_WORKFLOW_PATH),
         "builder": "ltx_director_reference_mvp",
@@ -310,6 +394,31 @@ def http_post(path: str, payload: dict | None = None, timeout: int = 30) -> None
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         response.read()
+
+
+def comfy_port_open(url: str = COMFY_URL, timeout: float = 0.75) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def comfy_status(probe: Any = http_json, port_probe: Any = comfy_port_open, timeout: int = 2) -> dict[str, Any]:
+    if not port_probe(COMFY_URL):
+        return {"url": COMFY_URL, "ok": False, "reason": "ComfyUI port is not reachable"}
+    try:
+        probe("/system_stats", timeout=timeout)
+        return {"url": COMFY_URL, "ok": True, "reason": ""}
+    except Exception as exc:
+        return {
+            "url": COMFY_URL,
+            "ok": True,
+            "reason": f"ComfyUI port is open, but /system_stats is slow: {exc.__class__.__name__}: {exc}",
+        }
 
 
 def object_info() -> dict[str, Any]:
@@ -645,30 +754,41 @@ def kj_dynamic_inputs(node: dict, nodes_by_id: dict[int, dict], links: dict[int,
 
 
 def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> dict[str, Any]:
-    raw_segments = payload.get("segments") or []
+    raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segments: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_segments, start=1):
         prompt = str(raw.get("prompt") or "").strip()
-        duration = max(0.25, float(raw.get("duration") or 1.0))
+        duration = max(0.25, float(raw.get("duration") or raw.get("length_seconds") or 1.0))
         frames = max(1, round(duration * fps))
+        start_seconds = raw.get("start")
+        start_frame = raw.get("start_frame")
+        if start_frame is None and start_seconds is not None:
+            start_frame = round(float(start_seconds) * fps)
         role = ""
+        seg_type = str(raw.get("type") or ("image" if str(raw.get("image_path") or "").strip() else "text")).strip() or "text"
+        if seg_type not in {"image", "text"}:
+            seg_type = "image"
         image_path = str(raw.get("image_path") or "").strip()
         if not prompt and not image_path:
             continue
         if not prompt:
             prompt = "visual guide"
         strength = max(0.0, min(10.0, float(raw.get("strength") or 0.0)))
-        guide_frame = int(raw.get("guide_frame") if raw.get("guide_frame") is not None else sum(s["frames"] for s in segments))
+        sequential_start = sum(s["frames"] for s in segments)
+        guide_frame = int(raw.get("guide_frame") if raw.get("guide_frame") is not None else (start_frame if start_frame is not None else sequential_start))
         segments.append(
             {
+                "id": str(raw.get("id") or f"camera-lab-segment-{index}"),
+                "type": seg_type,
                 "prompt": prompt,
                 "duration": duration,
                 "frames": frames,
                 "reference": role,
                 "image_path": image_path,
+                "audio_path": str(raw.get("audio_path") or "").strip(),
                 "guide_frame": max(0, guide_frame),
                 "strength": strength,
-                "start_frame": sum(s["frames"] for s in segments),
+                "start_frame": max(0, int(start_frame if start_frame is not None else sequential_start)),
             }
         )
     if not segments:
@@ -679,26 +799,87 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "frames": max(1, round(float(payload.get("duration") or 4.0) * fps)),
                 "reference": "",
                 "image_path": "",
+                "audio_path": "",
                 "guide_frame": 0,
                 "strength": 0.0,
                 "start_frame": 0,
             }
         ]
     duration_frames = sum(segment["frames"] for segment in segments)
+    if payload.get("timeline_segments"):
+        duration_frames = max(duration_frames, max(segment["start_frame"] + segment["frames"] for segment in segments))
+    audio_segments = director_audio_segments_from_payload(payload, fps=fps)
+    if audio_segments:
+        duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in audio_segments))
     duration_seconds = round(duration_frames / fps, 3)
+    local_prompts, segment_lengths = director_prompt_segments_from_timeline(segments, duration_frames)
     return {
         "global_prompt": str(payload.get("global_prompt") or "").strip(),
         "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
-        "local_prompts": " | ".join(segment["prompt"] for segment in segments),
-        "segment_lengths": ",".join(str(segment["frames"]) for segment in segments),
+        "local_prompts": local_prompts,
+        "segment_lengths": segment_lengths,
         "duration_frames": duration_frames,
         "duration_seconds": duration_seconds,
         "fps": fps,
         "segments": segments,
+        "audio_segments": audio_segments,
         "guide_frames": [],
         "guide_strengths": [],
         "guide_roles": [],
     }
+
+
+def director_audio_segments_from_payload(payload: dict[str, Any], fps: int = 24) -> list[dict[str, Any]]:
+    raw_segments = payload.get("audio_segments") or []
+    segments: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_segments, start=1):
+        audio_path = str(raw.get("audio_path") or raw.get("file") or "").strip()
+        if not audio_path:
+            continue
+        start_frame = raw.get("start_frame")
+        if start_frame is None:
+            start_frame = round(float(raw.get("start") or 0) * fps)
+        length_frames = raw.get("length")
+        if length_frames is None:
+            length_frames = round(max(0.25, float(raw.get("duration") or 1.0)) * fps)
+        trim_start = raw.get("trimStart", raw.get("trim_start", 0))
+        segments.append({
+            "id": str(raw.get("id") or f"camera-lab-audio-{index}"),
+            "audio_path": audio_path,
+            "start": max(0, int(start_frame)),
+            "length": max(1, int(length_frames)),
+            "trimStart": max(0, int(trim_start or 0)),
+        })
+    return segments
+
+
+def director_prompt_segments_from_timeline(segments: list[dict[str, Any]], duration_frames: int) -> tuple[str, str]:
+    sorted_segments = sorted(segments, key=lambda segment: segment["start_frame"])
+    prompts: list[str] = []
+    lengths: list[int] = []
+    current_cursor = 0
+    pending_gap = 0
+    for segment in sorted_segments:
+        start = int(segment["start_frame"])
+        length = int(segment["frames"])
+        if start >= duration_frames:
+            break
+        if start > current_cursor:
+            gap_length = min(start, duration_frames) - current_cursor
+            if lengths:
+                lengths[-1] += gap_length
+            else:
+                pending_gap += gap_length
+        clipped_end = min(start + length, duration_frames)
+        clipped_length = max(0, clipped_end - start)
+        prompts.append(str(segment.get("prompt") or ""))
+        lengths.append(clipped_length + pending_gap)
+        pending_gap = 0
+        current_cursor = start + length
+    clamped_cursor = min(current_cursor, duration_frames)
+    if lengths and clamped_cursor < duration_frames:
+        lengths[-1] += duration_frames - clamped_cursor
+    return " | ".join(prompts), ",".join(str(length) for length in lengths)
 
 
 def normalize_reference_image_paths(refs: Any) -> list[str]:
@@ -746,7 +927,7 @@ def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any],
             continue
         frame = Path(run["run_dir"]) / f"timeline_{index}_{width}x{height}.png"
         resize_cover(src, frame, width=width, height=height)
-        name = f"{run['run_id']}_timeline_{index:02d}.png"
+        name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_timeline_{index:02d}.png"
         shutil.copy2(frame, COMFY_INPUT / name)
         input_names[index] = name
     return input_names
@@ -759,20 +940,56 @@ def director_reference_timeline_segments(
 ) -> list[dict[str, Any]]:
     segments = []
     for index, segment in enumerate(timeline["segments"], start=1):
-        if index not in timeline_input_names:
-            continue
+        seg_type = str(segment.get("type") or "image")
         start_frame = segment.get("guide_frame", segment["start_frame"])
-        segments.append(
-            {
-                "id": f"camera-lab-segment-{index}",
-                "type": "image",
-                "label": f"segment {index}",
-                "start": max(0, int(start_frame)),
-                "imageFile": timeline_input_names[index],
-                "strength": float(segment.get("strength") or 0.7),
-            }
-        )
+        item = {
+            "id": segment.get("id") or f"camera-lab-segment-{index}",
+            "type": seg_type,
+            "label": f"segment {index}",
+            "start": max(0, int(start_frame)),
+            "length": int(segment["frames"]),
+            "prompt": segment.get("prompt") or "",
+        }
+        if seg_type != "text" and index in timeline_input_names:
+            item["type"] = "image"
+            item["imageFile"] = timeline_input_names[index]
+            item["strength"] = float(segment.get("strength") or 0.7)
+        segments.append(item)
     return segments
+
+
+def director_timeline_audio_segments(run: dict[str, Any], timeline: dict[str, Any]) -> list[dict[str, Any]]:
+    """Copy each segment's audio into ComfyUI input and build LTXDirector native
+    `audioSegments` entries using independent timeline frame ranges."""
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    audio_segments: list[dict[str, Any]] = []
+    timeline_audio = timeline.get("audio_segments") or []
+    source_segments = timeline_audio or [
+        {
+            "audio_path": segment.get("audio_path"),
+            "start": int(segment["start_frame"]),
+            "length": int(segment["frames"]),
+            "trimStart": 0,
+        }
+        for segment in timeline["segments"]
+    ]
+    for index, segment in enumerate(source_segments, start=1):
+        raw_path = segment.get("audio_path")
+        if not raw_path:
+            continue
+        src = Path(str(raw_path))
+        if not src.exists():
+            raise FileNotFoundError(f"Director audio segment file is missing: {src}")
+        name = f"{run['run_id']}_segaudio_{index:02d}_{safe_filename(src.name)}"
+        shutil.copy2(src, COMFY_INPUT / name)
+        audio_segments.append({
+            "audioFile": name,
+            "fileName": src.name,
+            "start": int(segment["start"]),
+            "length": int(segment["length"]),
+            "trimStart": int(segment.get("trimStart") or 0),
+        })
+    return audio_segments
 
 
 def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
@@ -791,30 +1008,45 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["duration_frames"] = timeline["duration_frames"]
     director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
     guide_segments = director_reference_timeline_segments(timeline, reference_input_names, timeline_input_names)
-    director["inputs"]["timeline_data"] = json.dumps({"segments": guide_segments, "audioSegments": []}, ensure_ascii=False)
+    audio_segments = director_timeline_audio_segments(run, timeline)
+    director["inputs"]["timeline_data"] = json.dumps({"segments": guide_segments, "audioSegments": audio_segments}, ensure_ascii=False)
+    if audio_segments:
+        director["inputs"]["use_custom_audio"] = True
     director["inputs"]["local_prompts"] = timeline["local_prompts"]
     director["inputs"]["segment_lengths"] = timeline["segment_lengths"]
-    director["inputs"]["guide_strength"] = ",".join(str(segment["strength"]) for segment in guide_segments)
+    director["inputs"]["guide_strength"] = ",".join(
+        str(segment["strength"]) for segment in guide_segments if segment.get("type") == "image" and "strength" in segment
+    )
     director["inputs"]["frame_rate"] = timeline["fps"]
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
+    director["inputs"]["resize_method"] = "maintain aspect ratio"
+    director["inputs"]["divisible_by"] = 32
+    director["inputs"]["img_compression"] = 18
 
-    director_input_keys = set(director.get("inputs", {}).keys())
     node_info = object_info().get("LTXDirector", {})
     declared_inputs = node_info.get("input", {}) or {}
     declared_keys = set(declared_inputs.get("required", {})) | set(declared_inputs.get("optional", {}))
-    supports_native_global_reference = (
-        "global_reference_images" in director_input_keys
-        and "global_reference_strength" in director_input_keys
-    ) or (
-        "global_reference_images" in declared_keys
-        and "global_reference_strength" in declared_keys
-    )
-    if supports_native_global_reference:
-        director["inputs"]["global_reference_images"] = reference_input_names
-        director["inputs"]["global_reference_strength"] = timeline["global_reference_strength"]
-    else:
-        insert_director_global_reference_guides(api, reference_input_names, timeline)
+    # If the running ComfyUI ships a LTXDirector with native global_reference_*
+    # inputs (e.g. the ai2764 fork branch), widget-position drift can leak a
+    # neighbouring `0` into global_reference_images — the node would then parse
+    # it as filename "0", fall back to a black 512×512 placeholder, and that
+    # placeholder becomes the first guide image, collapsing derived_w/h to a
+    # square output. Clear those fields so camera-lab keeps using the
+    # LTXVAddGuideMulti fallback regardless of which node version is installed.
+    if "global_reference_images" in declared_keys:
+        director["inputs"]["global_reference_images"] = ""
+    if "global_reference_strength" in declared_keys:
+        director["inputs"]["global_reference_strength"] = 0.0
+
+    # The standalone-ComfyUI workflow wires a MultiReferenceImageLoader + 4
+    # LoadImage nodes into LTXDirector.global_reference_image_batch. Camera-lab
+    # doesn't use that path — it injects references via LTXVAddGuideMulti. Strip
+    # the loader chain so empty-filename LoadImages don't fail ComfyUI validation.
+    strip_director_image_loader_chain(api)
+    # Always take the fallback path (LTXVAddGuideMulti) so camera-lab runs the
+    # same way it did before LTXDirector grew native global-reference inputs.
+    insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -823,7 +1055,10 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
     patch_ltx23_local_loras(api)
-    patch_director_custom_audio(api, run)
+    # Timeline audio uses the LTXDirector native audioSegments above; fall back to
+    # the single whole-video custom-audio patch only when no per-shot audio is set.
+    if not audio_segments:
+        patch_director_custom_audio(api, run)
     bypass_sage_attention_patches(api)
 
     return api
@@ -882,6 +1117,36 @@ def next_free_api_id(api: dict[str, dict], start: int) -> int:
     return value
 
 
+def strip_director_image_loader_chain(api: dict[str, dict]) -> None:
+    """Remove MultiReferenceImageLoader nodes and their LoadImage feeders from the API.
+
+    The director workflow JSON wires these for standalone-ComfyUI use of the IMAGE
+    batch path on LTXDirector. Camera-lab uses LTXVAddGuideMulti instead, so the
+    loader chain is dead weight; leaving it in causes ComfyUI to validate the empty
+    LoadImage filenames and fail.
+    """
+    loader_ids = [nid for nid, n in api.items() if n.get("class_type") == "MultiReferenceImageLoader"]
+    if not loader_ids:
+        return
+    feeder_ids: set[str] = set()
+    for loader_id in loader_ids:
+        for value in api[loader_id]["inputs"].values():
+            if isinstance(value, list) and len(value) == 2:
+                source_id = str(value[0])
+                if api.get(source_id, {}).get("class_type") == "LoadImage":
+                    feeder_ids.add(source_id)
+    drop_ids = set(loader_ids) | feeder_ids
+    for node_id, node in api.items():
+        if node_id in drop_ids:
+            continue
+        for input_name in list(node.get("inputs", {}).keys()):
+            value = node["inputs"][input_name]
+            if isinstance(value, list) and len(value) == 2 and str(value[0]) in drop_ids:
+                del node["inputs"][input_name]
+    for node_id in drop_ids:
+        del api[node_id]
+
+
 def insert_director_global_reference_guides(api: dict[str, dict], input_names: list[str], timeline: dict[str, Any]) -> None:
     if not input_names:
         return
@@ -909,11 +1174,18 @@ def insert_director_multi_guide(
 ) -> None:
     multi_id = str(next_free_api_id(api, 9001))
     next_id = int(multi_id) + 1
+    # Restore commit 339355f's behaviour: anchor on LTXDirectorGuide id 58
+    # (the Stage 2 post-upscale guide) using its OUTPUT latent (slot 2). This
+    # matched what worked end-to-end yesterday; the WIP auto-detect path put
+    # the multi-guide on either a raw or upsampler latent and produced visibly
+    # different results.
+    guide_source = "58"
     guide_inputs: dict[str, Any] = {
-        "positive": ["58", 0],
-        "negative": ["58", 1],
+        "positive": [guide_source, 0],
+        "negative": [guide_source, 1],
         "vae": ["3", 0],
-        "latent": ["58", 2],
+        "latent": [guide_source, 2],
+        "num_guides": str(len(guide_roles)),
     }
     frames_by_role: dict[str, int] = {}
     strengths_by_role: dict[str, float] = {}
@@ -933,16 +1205,18 @@ def insert_director_multi_guide(
         guide_inputs[f"num_guides.strength_{index}"] = strengths_by_role.get(role, 0.7)
     api[multi_id] = {"class_type": "LTXVAddGuideMulti", "inputs": guide_inputs, "_meta": {"title": title}}
 
-    for node in api.values():
-        if node.get("class_type") == "CFGGuider":
-            for input_name, value in list(node["inputs"].items()):
-                if input_name in {"positive", "negative"} and value == ["58", 0]:
-                    node["inputs"][input_name] = [multi_id, 0]
-                elif input_name in {"positive", "negative"} and value == ["58", 1]:
-                    node["inputs"][input_name] = [multi_id, 1]
-    api[multi_id]["inputs"]["positive"] = ["58", 0]
-    api[multi_id]["inputs"]["negative"] = ["58", 1]
-    api[multi_id]["inputs"]["latent"] = ["58", 2]
+    for node_id, node in api.items():
+        if str(node_id) == multi_id:
+            continue
+        if not isinstance(node, dict):
+            continue
+        for input_name, slot, expected in (
+            ("positive", 0, [guide_source, 0]),
+            ("negative", 1, [guide_source, 1]),
+            ("conditioning", 0, [guide_source, 0]),
+        ):
+            if node.get("inputs", {}).get(input_name) == expected:
+                node["inputs"][input_name] = [multi_id, slot]
 
 
 def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str]) -> None:
@@ -1029,7 +1303,7 @@ def patch_api(api: dict, workflow: dict, run: dict, input_names: dict[str, str])
         if "noise_seed" in node["inputs"]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_load_images(api, mode, input_names)
-    if mode == "ia2v":
+    if mode in {"ia2v", "flf_ia2v"}:
         if not input_names.get("audio"):
             raise ValueError("IA2V requires uploaded audio")
         for node in api.values():
@@ -1075,7 +1349,11 @@ def bypass_image_crop_nodes(api: dict) -> None:
 def bypass_image_extension_nodes(api: dict) -> None:
     for extension_id, node in list(api.items()):
         title = str(node.get("_meta", {}).get("title") or "").lower()
-        if "padded generation height" in title and isinstance(node["inputs"].get("a"), list):
+        # Match only the padding-height node ("padded generation height = content
+        # + matte"), not the latent-height divider ("latent height = padded
+        # generation height / 2"), which also contains the phrase but must keep
+        # its /2 so the output follows the requested size.
+        if title.startswith("padded generation height") and isinstance(node["inputs"].get("a"), list):
             replacement = node["inputs"]["a"]
             for target in api.values():
                 for input_name, value in list(target["inputs"].items()):
@@ -1215,15 +1493,23 @@ def patch_load_images(api: dict, mode: str, input_names: dict[str, str]) -> None
 
     if "900" in api:
         api["900"]["inputs"]["image"] = input_names["source"]
-        if mode == "flf" and "930" in api:
-            api["930"]["inputs"]["image"] = input_names["end"]
+        if mode in {"flf", "fml", "flf_ia2v"} and input_names.get("end"):
+            injected = False
+            for node in api.values():
+                if node["class_type"] != "LoadImage":
+                    continue
+                if "end" in str(node.get("_meta", {}).get("title") or "").lower():
+                    node["inputs"]["image"] = input_names["end"]
+                    injected = True
+            if not injected and "930" in api:
+                api["930"]["inputs"]["image"] = input_names["end"]
         return
 
     load_images = [node for node in api.values() if node["class_type"] == "LoadImage"]
     if not load_images:
         return
     load_images[0]["inputs"]["image"] = input_names["source"]
-    if mode in {"flf", "fml"} and input_names.get("end") and len(load_images) > 1:
+    if mode in {"flf", "fml", "flf_ia2v"} and input_names.get("end") and len(load_images) > 1:
         load_images[1]["inputs"]["image"] = input_names["end"]
 
 
@@ -1754,13 +2040,13 @@ def run_batch_worker(batch_id: str) -> None:
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
                 input_names["middle"] = middle_name
                 input_names["end"] = end_name
-            if workflow["mode"] == "flf":
+            if workflow["mode"] in {"flf", "flf_ia2v"}:
                 end_frame = run_dir / f"end_{width}x{height}.png"
                 resize_cover(end, end_frame, width=width, height=height)
                 end_name = f"{run['run_id']}_end.png"
                 shutil.copy2(end_frame, COMFY_INPUT / end_name)
                 input_names["end"] = end_name
-            if workflow["mode"] == "ia2v" or (workflow["mode"] == "director_ref" and run.get("audio_path")):
+            if workflow["mode"] in {"ia2v", "flf_ia2v"} or (workflow["mode"] == "director_ref" and run.get("audio_path")):
                 audio = Path(run.get("audio_path") or "")
                 if not audio.exists():
                     raise FileNotFoundError(f"{workflow['label']} audio file is missing")
@@ -1828,6 +2114,469 @@ def write_batch(batch: dict) -> None:
     (batch_dir / "batch.json").write_text(json.dumps(batch, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def parse_byte_range(range_header: str | None, total: int) -> tuple[int | None, int | None]:
+    """Parse an HTTP Range header into inclusive (start, end) byte offsets.
+
+    Returns (None, None) when there is no range, it is malformed, or it cannot
+    be satisfied for a file of ``total`` bytes (caller falls back to a 200).
+    """
+    if not range_header or total <= 0 or not range_header.startswith("bytes="):
+        return None, None
+    spec = range_header[len("bytes="):].split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None, None
+    start_text, _, end_text = spec.partition("-")
+    try:
+        if not start_text:
+            length = int(end_text)
+            if length <= 0:
+                return None, None
+            start = max(0, total - length)
+            end = total - 1
+        else:
+            start = int(start_text)
+            end = int(end_text) if end_text else total - 1
+    except ValueError:
+        return None, None
+    if start > end or start >= total:
+        return None, None
+    return start, min(end, total - 1)
+
+
+def cosyvoice_version() -> str:
+    return "cv3" if "cosyvoice3" in str(COSYVOICE_MODEL_DIR).lower() else "cv2"
+
+
+def casting_voice_roster() -> list[dict[str, Any]]:
+    """Resolve the voice roster against CASTING_VOICES_DIR; load ref_text from the
+    sibling .txt. Only voices whose reference wav exists are included."""
+    roster: list[dict[str, Any]] = []
+    for voice in CASTING_VOICES:
+        wav = CASTING_VOICES_DIR / voice["ref_wav"]
+        if not wav.exists():
+            continue
+        txt = CASTING_VOICES_DIR / voice["ref_txt"]
+        ref_text = txt.read_text(encoding="utf-8").strip() if txt.exists() else ""
+        roster.append({
+            "id": voice["id"],
+            "label": voice["label"],
+            "gender": voice.get("gender", ""),
+            "ref_wav": str(wav),
+            "ref_text": ref_text,
+        })
+    for wav in sorted(CASTING_VOICES_DIR.glob(f"{CUSTOM_VOICE_PREFIX}*.wav")):
+        voice_id = wav.stem
+        txt = wav.with_suffix(".txt")
+        meta = wav.with_suffix(".json")
+        label = voice_id.removeprefix(CUSTOM_VOICE_PREFIX).replace("_", " ").strip().title() or voice_id
+        if meta.exists():
+            try:
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                label = str(data.get("label") or label).strip() or label
+            except Exception:
+                pass
+        ref_text = txt.read_text(encoding="utf-8").strip() if txt.exists() else ""
+        roster.append({
+            "id": voice_id,
+            "label": label,
+            "gender": "",
+            "ref_wav": str(wav),
+            "ref_text": ref_text,
+        })
+    return roster
+
+
+def custom_casting_voice_id(name: str, existing: set[str] | None = None) -> str:
+    base = slugify(name).strip("_")
+    if not base or base == "variant":
+        base = "voice"
+    candidate = f"{CUSTOM_VOICE_PREFIX}{base}"
+    taken = set(existing or set())
+    taken.update(path.stem for path in CASTING_VOICES_DIR.glob(f"{CUSTOM_VOICE_PREFIX}*.wav"))
+    while candidate in taken:
+        candidate = f"{CUSTOM_VOICE_PREFIX}{base}_{random.randint(1000, 9999)}"
+    return candidate
+
+
+def save_custom_casting_voice(name: str, audio_name: str, audio_bytes: bytes, ref_text: str) -> dict[str, str]:
+    label = str(name or "").strip()
+    text = str(ref_text or "").strip()
+    if not label:
+        raise ValueError("voice name is required")
+    if not text:
+        raise ValueError("reference text is required")
+    suffix = Path(audio_name or "").suffix.lower()
+    if suffix != ".wav":
+        raise ValueError("custom voice reference must be a .wav file")
+    if not audio_bytes:
+        raise ValueError("reference audio is required")
+    if len(audio_bytes) > 80 * 1024 * 1024:
+        raise ValueError("reference audio is too large")
+    CASTING_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+    voice_id = custom_casting_voice_id(label)
+    wav = CASTING_VOICES_DIR / f"{voice_id}.wav"
+    txt = CASTING_VOICES_DIR / f"{voice_id}.txt"
+    meta = CASTING_VOICES_DIR / f"{voice_id}.json"
+    wav.write_bytes(audio_bytes)
+    txt.write_text(text, encoding="utf-8")
+    meta.write_text(json.dumps({"id": voice_id, "label": label, "source": safe_filename(audio_name)}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"id": voice_id, "label": label, "ref_wav": str(wav), "ref_txt": str(txt)}
+
+
+def llm_chat(messages: list[dict[str, str]], temperature: float = 0.3, timeout: int = 120) -> str:
+    """Call an OpenAI-compatible /chat/completions endpoint (LM Studio / Ollama /
+    vLLM / cloud); return the assistant message content."""
+    payload = {"model": LLM_MODEL, "messages": messages, "temperature": temperature}
+    headers = {"Content-Type": "application/json"}
+    if LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(LLM_URL + "/chat/completions", data=data, headers=headers, method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    choices = body.get("choices")
+    if not choices:
+        raise RuntimeError(f"LLM returned no choices: {str(body.get('error') or body)[:300]}")
+    return choices[0]["message"]["content"]
+
+
+def llm_available(timeout: float = 0.75) -> tuple[bool, str]:
+    try:
+        headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
+        request = urllib.request.Request(LLM_URL + "/models", headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response.read()
+        return True, ""
+    except Exception as exc:
+        return False, f"LLM not reachable at {LLM_URL} ({exc.__class__.__name__})"
+
+
+def casting_status() -> dict[str, Any]:
+    """Availability of the casting feature: CosyVoice (on-demand subprocess) + LLM."""
+    cv_reasons: list[str] = []
+    if not executable_available(COSYVOICE_PYTHON):
+        cv_reasons.append(f"missing CosyVoice python env: {COSYVOICE_PYTHON}")
+    if not Path(COSYVOICE_MODEL_DIR).exists():
+        cv_reasons.append(f"missing model dir: {display_config_path(Path(COSYVOICE_MODEL_DIR))}")
+    if not Path(COSYVOICE_VENDOR).exists():
+        cv_reasons.append(f"missing CosyVoice vendor: {display_config_path(Path(COSYVOICE_VENDOR))}")
+    if not CASTING_TTS_SCRIPT.exists():
+        cv_reasons.append("missing scripts/casting_tts.py")
+    roster = casting_voice_roster()
+    if not roster:
+        cv_reasons.append(f"no voice references in {display_config_path(Path(CASTING_VOICES_DIR))}")
+    llm_ok, llm_reason = llm_available()
+    return {
+        "cosyvoice": {"available": not cv_reasons, "reason": "; ".join(cv_reasons), "version": cosyvoice_version()},
+        "llm": {"available": llm_ok, "reason": llm_reason, "url": LLM_URL, "model": LLM_MODEL},
+        "voices": [{"id": v["id"], "label": v["label"], "gender": v["gender"]} for v in roster],
+        "emotions": list(CASTING_EMOTIONS.keys()),
+    }
+
+
+def casting_library_clips() -> list[dict[str, Any]]:
+    """List generated voice clips in the global library (newest first)."""
+    migrate_legacy_casting_library()
+    casting_current_dir().mkdir(parents=True, exist_ok=True)
+    clips: list[dict[str, Any]] = []
+    for wav in casting_current_dir().glob("*.wav"):
+        meta = {}
+        sidecar = wav.with_suffix(".json")
+        if sidecar.exists():
+            try:
+                meta = json.loads(sidecar.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+        clips.append({
+            "name": wav.stem,
+            "file": str(wav),
+            "url": "/media?path=" + urllib.parse.quote(str(wav)),
+            "mtime": wav.stat().st_mtime,
+            "text": meta.get("text", ""),
+            "voice": meta.get("voice", ""),
+            "emotion": meta.get("emotion", ""),
+            "speed": meta.get("speed", 1.0),
+            "duration": wav_duration_seconds(wav),
+        })
+    clips.sort(key=lambda c: c["mtime"], reverse=True)
+    return clips
+
+
+def wav_duration_seconds(path: Path) -> float:
+    try:
+        with wave.open(str(path), "rb") as wav:
+            rate = wav.getframerate()
+            if rate <= 0:
+                return 0.0
+            return round(wav.getnframes() / rate, 3)
+    except Exception:
+        return 0.0
+
+
+def casting_current_dir() -> Path:
+    return CASTING_LIBRARY_DIR / "current"
+
+
+def casting_archive_dir() -> Path:
+    return CASTING_LIBRARY_DIR / "archive"
+
+
+def migrate_legacy_casting_library() -> None:
+    current_dir = casting_current_dir()
+    current_dir.mkdir(parents=True, exist_ok=True)
+    for src in sorted(CASTING_LIBRARY_DIR.glob("*.wav")):
+        dst = current_dir / src.name
+        if dst.exists():
+            continue
+        shutil.move(str(src), str(dst))
+        sidecar = src.with_suffix(".json")
+        if sidecar.exists():
+            shutil.move(str(sidecar), str(current_dir / sidecar.name))
+
+
+def casting_clip_slug(text: str, used: set[str], archive_existing: bool = False) -> str:
+    """Filename from the first ~5 words of the line, de-duplicated."""
+    words = [word.strip("_") for word in re.findall(r"[\w']+", text.lower(), flags=re.UNICODE)]
+    words = [word for word in words if word]
+    base = "_".join(words[:5])[:40] or "line"
+    name = base
+    while name in used or ((casting_current_dir() / f"{name}.wav").exists() and not archive_existing):
+        name = f"{base}_{random.randint(1000, 9999)}"
+    used.add(name)
+    return name
+
+
+def archive_casting_clip(name: str) -> list[Path]:
+    """Move any existing library files for a clip into archive/ before replacing."""
+    archived: list[Path] = []
+    archive_dir = casting_archive_dir()
+    for src in (casting_current_dir() / f"{name}.wav", casting_current_dir() / f"{name}.json"):
+        if not src.exists():
+            continue
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        dst = archive_dir / f"{src.stem}_{stamp}_{random.randint(1000, 9999)}{src.suffix}"
+        shutil.move(str(src), str(dst))
+        archived.append(dst)
+    return archived
+
+
+def archive_casting_library() -> list[Path]:
+    """Archive every generated clip currently in the library root."""
+    migrate_legacy_casting_library()
+    current_dir = casting_current_dir()
+    wavs = sorted(current_dir.glob("*.wav"))
+    if not wavs:
+        return []
+    base = time.strftime("%Y%m%d_%H%M%S")
+    archive_dir = casting_archive_dir() / base
+    while archive_dir.exists():
+        archive_dir = casting_archive_dir() / f"{base}_{random.randint(1000, 9999)}"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived: list[Path] = []
+    for wav in wavs:
+        for src in (wav, wav.with_suffix(".json")):
+            if not src.exists():
+                continue
+            dst = archive_dir / src.name
+            shutil.move(str(src), str(dst))
+            archived.append(dst)
+    return archived
+
+
+def archive_casting_files(files: list[Path]) -> list[Path]:
+    existing = [path for path in files if path.exists()]
+    if not existing:
+        return []
+    base = time.strftime("%Y%m%d_%H%M%S")
+    archive_dir = casting_archive_dir() / base
+    while archive_dir.exists():
+        archive_dir = casting_archive_dir() / f"{base}_{random.randint(1000, 9999)}"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived: list[Path] = []
+    for src in existing:
+        dst = archive_dir / src.name
+        shutil.move(str(src), str(dst))
+        archived.append(dst)
+    return archived
+
+
+def open_folder(path: Path) -> None:
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    subprocess.Popen([opener, str(path)])
+
+
+def open_casting_archive_folder(opener: Any = open_folder) -> dict[str, Any]:
+    archive_dir = casting_archive_dir()
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    opener(archive_dir)
+    return {"ok": True, "path": str(archive_dir)}
+
+
+def current_casting_clip_path(raw: str) -> Path:
+    path = Path(raw).resolve()
+    current = casting_current_dir().resolve()
+    if path.suffix.lower() != ".wav" or not (path == current or current in path.parents):
+        raise PermissionError(str(path))
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    return path
+
+
+def recycle_casting_clip(raw_path: str, recycler: Any = None) -> dict[str, Any]:
+    src = current_casting_clip_path(raw_path)
+    recycler = recycler or move_to_recycle_bin
+    files = [src, src.with_suffix(".json")]
+    recycled: list[str] = []
+    for path in files:
+        if not path.exists():
+            continue
+        recycler(path)
+        recycled.append(str(path))
+    return {"ok": True, "recycled": recycled, "clips": casting_library_clips()}
+
+
+def trim_casting_clip(raw_path: str, start: Any, end: Any, runner: Any = subprocess.run) -> dict[str, Any]:
+    src = current_casting_clip_path(raw_path)
+    start_s = max(0.0, float(start))
+    end_s = float(end)
+    if end_s <= start_s:
+        raise ValueError("trim end must be greater than trim start")
+    tmp = src.with_name(f".{src.stem}_trim_{int(time.time())}_{random.randint(1000, 9999)}.wav")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(round(start_s, 3)),
+        "-to",
+        str(round(end_s, 3)),
+        "-i",
+        str(src),
+        str(tmp),
+    ]
+    try:
+        runner(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not tmp.exists():
+            raise RuntimeError("ffmpeg did not produce trimmed audio")
+        meta_path = src.with_suffix(".json")
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+        archive_casting_files([src, meta_path])
+        shutil.move(str(tmp), str(src))
+        meta.update({"trim_start": start_s, "trim_end": end_s, "trimmed_at": time.time()})
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {
+        "ok": True,
+        "name": src.stem,
+        "file": str(src),
+        "url": "/media?path=" + urllib.parse.quote(str(src)),
+    }
+
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
+
+
+def extract_json_object(content: str) -> dict:
+    """Resilient JSON extraction from an LLM message (handles code fences / prose)."""
+    match = _JSON_FENCE_RE.search(content)
+    if match:
+        content = match.group(1)
+    start, end = content.find("{"), content.rfind("}")
+    if start < 0 or end <= start:
+        raise RuntimeError(f"LLM did not return JSON: {content.strip()[:200]!r}")
+    return json.loads(content[start:end + 1])
+
+
+def build_casting_prompt(script: str, roster: list[dict[str, Any]]) -> str:
+    emotions = ", ".join(CASTING_EMOTIONS.keys())
+    return (
+        "You prepare dialogue for text-to-speech. Read the script/prompt below and extract only the words "
+        "that should be spoken aloud, in reading order.\n\n"
+        f"Allowed emotions: {emotions}\n\n"
+        "Rules:\n"
+        "- 'text' = the exact spoken words only (no stage directions, no surrounding quotes).\n"
+        "- Pick 'emotion' from the allowed list; do not overuse neutral.\n"
+        "- Neutral is only for emotionally flat or factual speech.\n"
+        "- Infer emotion from nearby stage directions, verbs, adverbs, punctuation, and stakes in the scene.\n"
+        "- Emotion cues: whispers -> whisper; shouts/yells -> angry or excited; cries/trembles/pleads -> sad; "
+        "smiles/comforts/softly reassures -> warm or gentle; orders/warns/threatens -> serious or angry; "
+        "urgent action or exclamation -> excited.\n"
+        "- Keep the content inside one pair of quotation marks as one line when possible.\n"
+        "- Do not split quoted dialogue only because it contains punctuation.\n"
+        "- Break long dialogue into short TTS-friendly phrases.\n"
+        "- Do not identify characters, people, or roles.\n"
+        "- One object per phrase, in order.\n\n"
+        'Output ONLY JSON: {"lines":[{"text":"...","emotion":"<emotion>"}]}\n\n'
+        "# Script\n" + script
+    )
+
+
+def analyze_casting_script(script: str) -> dict[str, Any]:
+    prompt = build_casting_prompt(script, [])
+    last_err: Exception | None = None
+    for temperature in (0.2, 0.4, 0.7):
+        try:
+            content = llm_chat([{"role": "user", "content": prompt}], temperature=temperature)
+            data = extract_json_object(content)
+            lines: list[dict[str, str]] = []
+            for item in data.get("lines", []):
+                text = str(item.get("text") or "").strip()
+                if not text:
+                    continue
+                emotion = item.get("emotion") if item.get("emotion") in CASTING_EMOTIONS else "neutral"
+                lines.append({"text": text, "emotion": emotion})
+            if lines:
+                return {"lines": lines}
+        except Exception as exc:
+            last_err = exc
+            continue
+    raise RuntimeError(f"casting analysis failed: {last_err}")
+
+
+def prepare_casting_tts_job(
+    lines: list[dict[str, Any]],
+    roster: dict[str, dict[str, Any]],
+    archive_all: bool = False,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if archive_all:
+        archive_casting_library()
+    used: set[str] = set()
+    job_lines: list[dict[str, Any]] = []
+    clips_meta: list[dict[str, Any]] = []
+    for index, item in enumerate(lines, start=1):
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        voice = str(item.get("voice") or "").strip()
+        if not voice:
+            raise ValueError(f"voice is required for line {index}")
+        if voice not in roster:
+            raise ValueError(f"unknown voice for line {index}: {voice}")
+        emotion = item.get("emotion") if item.get("emotion") in CASTING_EMOTIONS else "neutral"
+        speed = clamp_casting_speed(item.get("speed"))
+        name = casting_clip_slug(text, used)
+        job_lines.append({"text": text, "voice": voice, "emotion": emotion, "speed": speed, "out_name": name})
+        clips_meta.append({"text": text, "voice": voice, "emotion": emotion, "speed": speed, "name": name})
+    return job_lines, clips_meta
+
+
+def clamp_casting_speed(value: Any) -> float:
+    try:
+        speed = float(value)
+    except (TypeError, ValueError):
+        speed = 1.0
+    return round(max(0.6, min(1.4, speed)), 2)
+
+
 def safe_media_path(raw: str) -> Path:
     path = Path(raw).resolve()
     allowed_roots = [ROOT.resolve(), COMFY_OUTPUT.resolve()]
@@ -1866,11 +2615,6 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self.serve_file(YEDP_WEB_JS / name)
             if parsed.path == "/api/config":
-                comfy_ok = True
-                try:
-                    http_json("/system_stats", timeout=5)
-                except Exception:
-                    comfy_ok = False
                 return self.send_json(
                     {
                         "workflows": public_workflows(),
@@ -1878,9 +2622,12 @@ class Handler(BaseHTTPRequestHandler):
                         "camera_examples": CAMERA_EXAMPLES,
                         "images": REFERENCE_IMAGES,
                         "default_negative": DEFAULT_NEGATIVE,
-                        "comfy": {"url": COMFY_URL, "ok": comfy_ok},
+                        "comfy": comfy_status(),
+                        "casting": casting_status(),
                     }
                 )
+            if parsed.path == "/api/casting/library":
+                return self.send_json({"clips": casting_library_clips()})
             if parsed.path.startswith("/api/batches/"):
                 batch_id = parsed.path.rsplit("/", 1)[-1]
                 return self.send_json(BATCHES.get(batch_id) or load_batch(batch_id))
@@ -1915,6 +2662,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_last_frame()
             if self.path == "/api/rate":
                 return self.handle_rate()
+            if self.path == "/api/casting/analyze":
+                return self.handle_casting_analyze()
+            if self.path == "/api/casting/tts":
+                return self.handle_casting_tts()
+            if self.path == "/api/casting/voice":
+                return self.handle_casting_voice()
+            if self.path == "/api/casting/open-archive":
+                return self.send_json(open_casting_archive_folder())
+            if self.path == "/api/casting/trim":
+                payload = self.read_json()
+                return self.send_json(trim_casting_clip(payload.get("file", ""), payload.get("start"), payload.get("end")))
+            if self.path == "/api/casting/delete":
+                payload = self.read_json()
+                return self.send_json(recycle_casting_clip(payload.get("file", "")))
             self.send_error(404)
         except Exception as exc:
             self.send_json({"error": str(exc)}, status=500)
@@ -1924,11 +2685,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         body = path.read_bytes()
+        total = len(body)
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        is_web = path.resolve() == WEB_DIR.resolve() or WEB_DIR.resolve() in path.resolve().parents
+        start, end = parse_byte_range(self.headers.get("Range"), total)
+        if start is not None:
+            chunk = body[start:end + 1]
+            self.send_response(206)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+            if is_web:
+                self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(chunk)))
+            self.end_headers()
+            self.wfile.write(chunk)
+            return
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
-        if path.resolve() == WEB_DIR.resolve() or WEB_DIR.resolve() in path.resolve().parents:
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        if is_web:
             self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(total))
         self.end_headers()
         self.wfile.write(body)
 
@@ -1943,7 +2721,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("source image is required")
         source = {"path": str(safe_media_path(source_path)) if source_path else ""}
         end_path = payload.get("end_path") or source["path"]
-        if workflow["mode"] in {"flf", "fml", "fml_native"} and not payload.get("end_path"):
+        if workflow["mode"] in {"flf", "fml", "fml_native", "flf_ia2v"} and not payload.get("end_path"):
             raise ValueError("FLF/FML requires an uploaded end image")
         end = {"path": str(safe_media_path(end_path)) if end_path else ""}
         middle = {"path": ""}
@@ -1961,13 +2739,15 @@ class Handler(BaseHTTPRequestHandler):
             variants = payload.get("variants") or [{"name": "prompt", "prompt": prompt}]
         if not any((variant.get("prompt") or "").strip() for variant in variants):
             raise ValueError("prompt is required")
-        if workflow["mode"] == "ia2v" and not payload.get("audio_path"):
+        if workflow["mode"] in {"ia2v", "flf_ia2v"} and not payload.get("audio_path"):
             raise ValueError("IA2V requires an uploaded audio file")
         reference_images = {}
-        director_segments = payload.get("segments") or []
+        director_segments = payload.get("timeline_segments") or payload.get("segments") or []
+        director_audio_segments = payload.get("audio_segments") or []
         if workflow["mode"] == "director_ref":
             reference_images = validate_reference_images(payload.get("reference_images") or {})
-            director_segments = validate_director_segments(payload.get("segments") or [])
+            director_segments = validate_director_segments(payload.get("timeline_segments") or payload.get("segments") or [])
+            director_audio_segments = validate_director_audio_segments(payload.get("audio_segments") or [])
         seed = validate_seed(payload.get("seed"))
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
         batch_dir = RUN_ROOT / batch_id
@@ -1999,6 +2779,7 @@ class Handler(BaseHTTPRequestHandler):
                     "global_prompt": payload.get("global_prompt", ""),
                     "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
                     "segments": director_segments,
+                    "audio_segments": director_audio_segments,
                     "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or DEFAULT_NEGATIVE,
                     "status": "queued",
@@ -2211,6 +2992,85 @@ class Handler(BaseHTTPRequestHandler):
         BATCHES[batch["batch_id"]] = batch
         write_batch(batch)
         self.send_json({"ok": True})
+
+    def handle_casting_analyze(self) -> None:
+        payload = self.read_json()
+        script = (payload.get("script") or "").strip()
+        if not script:
+            raise ValueError("script is required")
+        status = casting_status()
+        if not status["llm"]["available"]:
+            return self.send_json({"error": status["llm"]["reason"]}, status=503)
+        result = analyze_casting_script(script)
+        result["voices"] = status["voices"]
+        result["emotions"] = status["emotions"]
+        self.send_json(result)
+
+    def handle_casting_tts(self) -> None:
+        payload = self.read_json()
+        lines = payload.get("lines") or []
+        if not lines:
+            raise ValueError("lines are required")
+        status = casting_status()
+        if not status["cosyvoice"]["available"]:
+            return self.send_json({"error": status["cosyvoice"]["reason"]}, status=503)
+        roster = {v["id"]: v for v in casting_voice_roster()}
+        casting_current_dir().mkdir(parents=True, exist_ok=True)
+        job_lines, clips_meta = prepare_casting_tts_job(lines, roster, archive_all=bool(payload.get("archive_all")))
+        if not job_lines:
+            raise ValueError("no speakable lines are ready for TTS")
+        job = {
+            "lines": job_lines,
+            "voices": {vid: {"ref_wav": v["ref_wav"], "ref_text": v["ref_text"]} for vid, v in roster.items()},
+            "emotions": CASTING_EMOTIONS,
+            "model_dir": str(COSYVOICE_MODEL_DIR),
+            "vendor": str(COSYVOICE_VENDOR),
+            "version": cosyvoice_version(),
+            "out_dir": str(casting_current_dir()),
+        }
+        job_path = CASTING_LIBRARY_DIR / f"_job_{int(time.time())}_{random.randint(1000, 9999)}.json"
+        job_path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+        try:
+            proc = subprocess.run(
+                [str(COSYVOICE_PYTHON), str(CASTING_TTS_SCRIPT), str(job_path)],
+                capture_output=True, text=True, timeout=1800,
+            )
+        finally:
+            job_path.unlink(missing_ok=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"casting TTS failed: {(proc.stderr or proc.stdout)[-800:]}")
+        clips = []
+        for meta in clips_meta:
+            wav = casting_current_dir() / f"{meta['name']}.wav"
+            entry = dict(meta)
+            if wav.exists():
+                wav.with_suffix(".json").write_text(
+                    json.dumps({"text": meta["text"], "voice": meta["voice"], "emotion": meta["emotion"], "speed": meta["speed"]}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                entry["file"] = str(wav)
+                entry["url"] = "/media?path=" + urllib.parse.quote(str(wav))
+            else:
+                entry["url"] = None
+            clips.append(entry)
+        self.send_json({"clips": clips})
+
+    def handle_casting_voice(self) -> None:
+        payload = self.read_json()
+        data_url = str(payload.get("audio_data") or "")
+        if "," in data_url:
+            data_url = data_url.split(",", 1)[1]
+        audio_bytes = base64.b64decode(data_url)
+        voice = save_custom_casting_voice(
+            str(payload.get("name") or ""),
+            str(payload.get("audio_name") or "voice.wav"),
+            audio_bytes,
+            str(payload.get("ref_text") or ""),
+        )
+        self.send_json({
+            "voice": {"id": voice["id"], "label": voice["label"], "gender": ""},
+            "voices": [{"id": v["id"], "label": v["label"], "gender": v["gender"]} for v in casting_voice_roster()],
+        })
 
     def handle_last_frame(self) -> None:
         payload = self.read_json()
@@ -2446,7 +3306,7 @@ def build_director_prompt_summary(payload: dict[str, Any]) -> str:
     global_prompt = str(payload.get("global_prompt") or "").strip()
     segment_prompts = [
         str(segment.get("prompt") or "").strip()
-        for segment in payload.get("segments") or []
+        for segment in (payload.get("timeline_segments") or payload.get("segments") or [])
         if str(segment.get("prompt") or "").strip()
     ]
     if not global_prompt and not segment_prompts:
@@ -2468,8 +3328,83 @@ def validate_director_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]
             item["image_path"] = str(safe_media_path(image_path))
         else:
             item["image_path"] = ""
+        audio_path = str(item.get("audio_path") or "").strip()
+        if audio_path:
+            item["audio_path"] = str(safe_media_path(audio_path))
+        else:
+            item["audio_path"] = ""
         segments.append(item)
     return segments
+
+
+def validate_director_audio_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for segment in raw:
+        item = dict(segment)
+        audio_path = str(item.get("audio_path") or item.get("file") or "").strip()
+        if audio_path:
+            item["audio_path"] = str(safe_media_path(audio_path))
+        else:
+            continue
+        segments.append(item)
+    return segments
+
+
+def verify_dropdown_workflows() -> list[str]:
+    """Confirm every WORKFLOWS entry with a path actually exists in the repo.
+    Returns a list of human-readable issue strings."""
+    issues: list[str] = []
+    for workflow in WORKFLOWS:
+        path_str = workflow.get("path")
+        if not path_str:
+            continue
+        path = Path(path_str)
+        if not path.exists():
+            issues.append(
+                f"  - dropdown '{workflow['label']}' references missing file {path}"
+            )
+    return issues
+
+
+def sync_workflows_to_comfyui() -> None:
+    """Mirror repo workflows/app/*.json into ComfyUI's installed workflow folder
+    so the ComfyUI workflow browser reflects what the dropdown is configured to
+    use. Stale files (renamed or removed in the repo) are deleted from the
+    ComfyUI side. Silently no-ops if COMFYUI_ROOT is unset/missing."""
+    comfy_root_env = os.environ.get("COMFYUI_ROOT", "").strip()
+    if not comfy_root_env:
+        print("Camera Lab: COMFYUI_ROOT unset; skipping ComfyUI workflow sync.", flush=True)
+        return
+    comfy_root = Path(comfy_root_env)
+    if not comfy_root.exists():
+        print(f"Camera Lab: COMFYUI_ROOT does not exist ({comfy_root}); skipping sync.", flush=True)
+        return
+
+    target = comfy_root / "user" / "default" / "workflows" / "camera-lab" / "app"
+    target.mkdir(parents=True, exist_ok=True)
+
+    repo_files = {p.name: p for p in APP_WORKFLOW_ROOT.glob("*.json")}
+    installed_files = {p.name: p for p in target.glob("*.json")}
+
+    copied = 0
+    for name, src in repo_files.items():
+        dst = target / name
+        if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
+            shutil.copy2(src, dst)
+            copied += 1
+
+    removed = 0
+    for name, installed in installed_files.items():
+        if name not in repo_files:
+            installed.unlink()
+            removed += 1
+
+    if copied or removed:
+        print(
+            f"Camera Lab: synced {copied} workflow file(s), removed {removed} stale, "
+            f"into {target}",
+            flush=True,
+        )
 
 
 def main() -> None:
@@ -2480,6 +3415,16 @@ def main() -> None:
 
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+    # Make sure the workflow files the dropdown points at exist on disk, and
+    # mirror them into ComfyUI so its workflow browser stays in sync.
+    issues = verify_dropdown_workflows()
+    if issues:
+        print("Camera Lab: dropdown workflow files missing in repo:", flush=True)
+        for line in issues:
+            print(line, flush=True)
+    sync_workflows_to_comfyui()
+
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     shown_host = "127.0.0.1" if args.host in {"0.0.0.0", ""} else args.host
     print(f"Camera Lab: http://{shown_host}:{args.port}", flush=True)

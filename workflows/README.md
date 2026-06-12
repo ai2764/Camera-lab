@@ -18,7 +18,7 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 - `ltx23_nag_i2v_extendcrop_general.json`: `LTX 2.3 NAG I2V Extendcrop`
 - `LTX-2.3_FML2V_RuneXX_guider.local.json`: `LTX 2.3 FML RuneXX Guider Local (3 images)`
 - `ltx23_nag_ia2v_extendcrop_general.json`: `LTX 2.3 IA2V`
-- `ltx_director_global_reference_mvp.json`: `LTX Director Global Reference MVP`
+- `ltx_director_reference_mvp.json`: `LTX Director Reference MVP`
 
 The `FLF TTP Control` and `FML 2-stage TTP FLF` dropdown options are built in `server/camera_lab_server.py`, so they do not have standalone workflow JSON files.
 

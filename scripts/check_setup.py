@@ -62,9 +62,6 @@ def main() -> int:
         path = model_root / Path(model)
         add_check(checks, f"Model {model}", path.exists(), path)
 
-    ttp_path = comfy_root / "custom_nodes" / "Comfyui_TTP_Toolset" / "LTXVFirstLastFrameControl_TTP.py"
-    add_check(checks, "TTP custom node", ttp_path.exists(), ttp_path)
-
     app_workflow_root = REPO_ROOT / "workflows" / "app"
     installed_app_workflow_root = installed_workflow_root(comfy_root) / "app"
     for workflow in sorted(app_workflow_root.glob("*.json")):

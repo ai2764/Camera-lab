@@ -86,9 +86,6 @@ foreach ($model in $requiredModels) {
     $checks += Add-Check "Model $model" (Test-Path (Join-Path $modelRoot $model)) (Join-Path $modelRoot $model)
 }
 
-$ttpPath = Join-Path $comfyRoot "custom_nodes\Comfyui_TTP_Toolset\LTXVFirstLastFrameControl_TTP.py"
-$checks += Add-Check "TTP custom node" (Test-Path $ttpPath) $ttpPath
-
 $appWorkflowRoot = Join-Path $repoRoot "workflows\app"
 $installedAppWorkflowRoot = Join-Path $comfyRoot "user\default\workflows\camera-lab\app"
 $repoWorkflows = @(Get-ChildItem -Path $appWorkflowRoot -Filter "*.json" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
