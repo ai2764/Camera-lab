@@ -1620,6 +1620,7 @@ function renderBatch(batch) {
 function upsertRuns(runs, newestFirst = false) {
   const tpl = $("resultTemplate");
   for (const run of runs) {
+    if (isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
     const grid = resultsGridForRun(run);
     let card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
@@ -1663,6 +1664,11 @@ function resultsGridForRun(run) {
 function isDirectorRun(run) {
   const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
   return raw.includes("director");
+}
+
+function isMotionRun(run) {
+  const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
+  return raw.includes("motion");
 }
 
 function runKey(run) {
@@ -1974,6 +1980,7 @@ function updateElapsed() {
   if (!state.activeBatch) return;
   $("queueText").textContent = `${state.activeBatch.batch_id} / ${state.activeBatch.status} ${elapsedText(state.activeBatch)}`;
   for (const run of state.activeBatch.runs || []) {
+    if (isMotionRun(run)) continue;
     const grid = resultsGridForRun(run);
     const card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
     if (card) card.querySelector(".run-status").textContent = `${run.status} ${elapsedText(run)}`;
@@ -2112,8 +2119,6 @@ function clearMotionResult() {
 
 function renderMotionBatch(batch) {
   state.motionBatch = batch;
-  state.activeBatch = batch;
-  renderBatch(batch);
   const run = (batch.runs || [])[0] || {};
   $("motionStatus").textContent = `${batch.batch_id} / ${run.status || batch.status} ${elapsedText(run)}`;
   if (run.error) $("motionStatus").textContent = run.error;

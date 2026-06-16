@@ -5,6 +5,20 @@ const png1x1 = Buffer.from(
   "base64",
 );
 
+const motionHistoryRun = {
+  batch_id: "motion_history",
+  run_id: "01_motion",
+  workflow_mode: "motion",
+  prompt: "A person walks forward and waves.",
+  duration: 4,
+  status: "done",
+  queued_at: Date.now() / 1000,
+  started_at: Date.now() / 1000,
+  finished_at: Date.now() / 1000,
+  guide_video: "C:\\mock\\guide.mp4",
+  video: "C:\\mock\\final.mp4",
+};
+
 function mockConfig(page) {
   return page.route("**/api/config", async (route) => {
     await route.fulfill({
@@ -37,6 +51,21 @@ function mockConfig(page) {
     });
   });
 }
+
+test("Camera Lab history excludes Motion runs", async ({ page }) => {
+  await mockConfig(page);
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ runs: [motionHistoryRun] }) });
+  });
+  await page.route("**/api/casting/library", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ clips: [] }) });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#cameraWorkspaceTab")).toHaveClass(/active/);
+  await expect(page.locator("#resultsGrid")).not.toContainText("A person walks forward and waves.");
+  await expect(page.locator("#resultsGrid video")).toHaveCount(0);
+});
 
 test("Motion tab generates guide before rendering final result", async ({ page }) => {
   let finalRequested = false;
@@ -164,4 +193,8 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final\.mp4/);
+
+  await page.locator("#cameraWorkspaceTab").click();
+  await expect(page.locator("#resultsGrid")).not.toContainText("A person walks forward and waves.");
+  await expect(page.locator("#resultsGrid video")).toHaveCount(0);
 });
