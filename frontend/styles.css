@@ -1764,8 +1764,12 @@ body.motion-workspace-active .results-shell {
 }
 
 body.motion-workspace-active .motion-workspace {
-  display: block;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
   min-height: calc(100vh - 114px);
+  max-height: calc(100vh - 114px);
+  overflow: hidden;
 }
 
 .motion-stage-head {
@@ -1773,8 +1777,7 @@ body.motion-workspace-active .motion-workspace {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 12px;
-  padding: 16px;
+  padding: 12px 14px;
   border: 1px solid rgba(143,199,192,.28);
   background:
     linear-gradient(135deg, rgba(143,199,192,.14), transparent 38%),
@@ -1783,7 +1786,7 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-stage-head h2 {
   margin: 2px 0 0;
-  font-size: clamp(26px, 4vw, 42px);
+  font-size: clamp(24px, 3vw, 34px);
 }
 
 .motion-stage-actions {
@@ -1803,6 +1806,7 @@ body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   gap: 12px;
+  min-height: 0;
 }
 
 .motion-control-panel,
@@ -1814,6 +1818,8 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-control-panel {
   padding: 14px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .check-row {
@@ -1851,12 +1857,15 @@ body.motion-workspace-active .motion-workspace {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .motion-preview-card {
   display: grid;
-  grid-template-rows: auto minmax(280px, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .motion-preview-head {
@@ -1875,7 +1884,8 @@ body.motion-workspace-active .motion-workspace {
 .motion-preview-card video {
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-height: 0;
+  max-height: clamp(320px, calc(100vh - 220px), 720px);
   background: #050504;
   object-fit: contain;
   display: block;
