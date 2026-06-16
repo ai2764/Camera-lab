@@ -1,6 +1,7 @@
 function initialWorkspace() {
   if (window.location.hash === "#director") return "director";
   if (window.location.hash === "#casting") return "casting";
+  if (window.location.hash === "#motion") return "motion";
   return "camera";
 }
 
@@ -16,6 +17,7 @@ const state = {
   sourcePath: "",
   middlePath: "",
   endPath: "",
+  motionRefPath: "",
   audioPath: "",
   referencePaths: [""],
   referenceNames: [""],
@@ -351,6 +353,7 @@ function updateWorkflowFields() {
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
   const showPhotographyWorkspace = state.workspace === "photography";
   const showCastingWorkspace = state.workspace === "casting";
+  const showMotionWorkspace = state.workspace === "motion";
   const showSourceImage = wf.mode !== "t2v" && !isDirector;
   const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
   const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v";
@@ -358,12 +361,16 @@ function updateWorkflowFields() {
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
   document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
   document.body.classList.toggle("casting-workspace-active", showCastingWorkspace);
+  document.body.classList.toggle("motion-workspace-active", showMotionWorkspace);
   $("cameraWorkspaceTab").classList.toggle("active", state.workspace === "camera");
   $("directorWorkspaceTab").classList.toggle("active", showDirectorWorkspace);
   $("photographyWorkspaceTab").classList.toggle("active", showPhotographyWorkspace);
   $("castingWorkspaceTab").classList.toggle("active", showCastingWorkspace);
+  $("motionWorkspaceTab").classList.toggle("active", showMotionWorkspace);
+  $("motionWorkspace").hidden = !showMotionWorkspace;
   if (showPhotographyWorkspace) return;
   if (showCastingWorkspace) return;
+  if (showMotionWorkspace) return;
   $("cameraMoveWrap").style.display = isDirector ? "none" : "block";
   $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
@@ -2929,6 +2936,7 @@ $("workflowSelect").addEventListener("change", () => {
 $("cameraWorkspaceTab").addEventListener("click", () => setWorkspace("camera"));
 $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director"));
 $("castingWorkspaceTab").addEventListener("click", () => { setWorkspace("casting", { syncWorkflow: false }); refreshCastingLibrary(); });
+$("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));
 $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);

@@ -254,14 +254,14 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
   - `motionRewrite` (`checkbox`, **default unchecked** — opt-in in-server LLM rewrite; when checked it auto-derives caption + duration) and a `motionCopyRewrite` button ("Copy rewrite prompt") next to the prompt.
   - Collapsed `<details>` "Advanced": `motionPoseStrength` (`range` 0–10 step 0.01 value 1.0), `motionCfg` (`range` 1–15 step 0.5 value 5).
   - Guide preview `<video id="motionGuide" controls>` + final `<video id="motionResult" controls>`.
-- [ ] **Step 3: Commit** `feat(motion): add Motion tab markup`.
+- [x] **Step 3: Commit** `feat(motion): add Motion tab markup`.
 
 ### Task 9: Workspace wiring
 
 **Files:** Modify `frontend/app.js` (`setWorkspace` near `:361`, listeners near `:2929`).
 
-- [ ] **Step 1:** Add `motionWorkspaceTab` toggle in the `setWorkspace` render block and a listener `$("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));`.
-- [ ] **Step 2:** Show/hide the `motion-panel` based on `state.workspace === "motion"` (follow how `casting`/`photography` panels toggle).
+- [x] **Step 1:** Add `motionWorkspaceTab` toggle in the `setWorkspace` render block and a listener `$("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));`.
+- [x] **Step 2:** Show/hide the `motion-panel` based on `state.workspace === "motion"` (follow how `casting`/`photography` panels toggle).
 - [ ] **Step 3: Commit** `feat(motion): wire Motion workspace`.
 
 ### Task 10: Submit + two-step preview
