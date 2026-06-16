@@ -66,6 +66,9 @@ test("Camera Lab history excludes Motion runs", async ({ page }) => {
   await expect(page.locator("#cameraWorkspaceTab")).toHaveClass(/active/);
   await expect(page.locator("#resultsGrid")).not.toContainText("A person walks forward and waves.");
   await expect(page.locator("#resultsGrid video")).toHaveCount(0);
+  await page.locator("#motionWorkspaceTab").click();
+  await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
 });
 
 test("Motion tab generates guide before rendering final result", async ({ page }) => {
@@ -198,6 +201,8 @@ test("Motion tab generates guide before rendering final result", async ({ page }
 
   await expect(page.locator("#motionGuideState")).toHaveText("ready");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide\.mp4/);
+  await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
   await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
@@ -205,6 +210,7 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final\.mp4/);
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
 
   await page.locator("#cameraWorkspaceTab").click();
   await expect(page.locator("#resultsGrid")).not.toContainText("A person walks forward and waves.");
@@ -298,4 +304,6 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final-upload\.mp4/);
+  await expect(page.locator("#motionResultsGrid")).toContainText("uploaded guide video");
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
 });

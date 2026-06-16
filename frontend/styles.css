@@ -1962,6 +1962,25 @@ body.motion-workspace-active .motion-workspace {
   display: block;
 }
 
+.motion-history-shell {
+  padding: 14px;
+  border: 1px solid rgba(240,235,225,.12);
+  background: rgba(14,14,11,.84);
+}
+
+.motion-history-shell .results-header {
+  margin-bottom: 12px;
+}
+
+.motion-results-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.motion-results-grid .media-box {
+  min-height: 220px;
+  height: clamp(220px, 24vw, 380px);
+}
+
 .casting-stage-head {
   grid-column: 1 / -1;
   display: flex;

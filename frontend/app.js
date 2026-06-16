@@ -1619,43 +1619,67 @@ function renderBatch(batch) {
 }
 
 function upsertRuns(runs, newestFirst = false) {
-  const tpl = $("resultTemplate");
   for (const run of runs) {
     if (isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
     const grid = resultsGridForRun(run);
-    let card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
-    if (!card) {
-      const node = tpl.content.cloneNode(true);
-      card = node.querySelector(".result-card");
-      card.dataset.runKey = runKey(run);
-      card.querySelector(".use-prompt-run").addEventListener("click", () => {
-        if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
-        else useRunPrompt(card.dataset.prompt || "");
-      });
-      card.querySelector(".use-seed-run").addEventListener("click", () => {
-        useRunSeed(card.dataset.seed);
-      });
-      card.querySelector(".preview-run").addEventListener("click", () => {
-        openVideoPreview(card._run || {});
-      });
-      card.querySelector(".last-frame-run").addEventListener("click", () => {
-        captureRunLastFrame(card).catch((err) => {
-          $("runHint").textContent = `Last frame failed: ${err.message}`;
-        });
-      });
-      card.querySelector(".pin-run").addEventListener("click", () => {
-        const action = card.dataset.pinned === "true" ? "unpin" : "pin";
-        updateHistoryState(card.dataset.runKey, action);
-      });
-      card.querySelector(".delete-run").addEventListener("click", () => {
-        updateHistoryState(card.dataset.runKey, "delete");
-      });
-      if (newestFirst) grid.prepend(node);
-      else grid.appendChild(node);
-    }
+    const card = ensureRunCard(grid, run, newestFirst);
     updateRunCard(card, run);
   }
+}
+
+function upsertMotionRuns(runs, newestFirst = false) {
+  const grid = $("motionResultsGrid");
+  if (!grid) return;
+  for (const run of runs) {
+    if (!isMotionRun(run)) continue;
+    if (state.hiddenRunKeys.has(runKey(run))) continue;
+    const displayRun = motionDisplayRun(run);
+    const card = ensureRunCard(grid, displayRun, newestFirst);
+    updateRunCard(card, displayRun);
+  }
+}
+
+function ensureRunCard(grid, run, newestFirst = false) {
+  const tpl = $("resultTemplate");
+  let card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
+  if (!card) {
+    const node = tpl.content.cloneNode(true);
+    card = node.querySelector(".result-card");
+    card.dataset.runKey = runKey(run);
+    card.querySelector(".use-prompt-run").addEventListener("click", () => {
+      if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
+      else useRunPrompt(card.dataset.prompt || "");
+    });
+    card.querySelector(".use-seed-run").addEventListener("click", () => {
+      useRunSeed(card.dataset.seed);
+    });
+    card.querySelector(".preview-run").addEventListener("click", () => {
+      openVideoPreview(card._run || {});
+    });
+    card.querySelector(".last-frame-run").addEventListener("click", () => {
+      captureRunLastFrame(card).catch((err) => {
+        $("runHint").textContent = `Last frame failed: ${err.message}`;
+      });
+    });
+    card.querySelector(".pin-run").addEventListener("click", () => {
+      const action = card.dataset.pinned === "true" ? "unpin" : "pin";
+      updateHistoryState(card.dataset.runKey, action);
+    });
+    card.querySelector(".delete-run").addEventListener("click", () => {
+      updateHistoryState(card.dataset.runKey, "delete");
+    });
+    if (newestFirst) grid.prepend(node);
+    else grid.appendChild(node);
+  }
+  return card;
+}
+
+function motionDisplayRun(run) {
+  return {
+    ...run,
+    video: run.video || run.guide_video || "",
+  };
 }
 
 function resultsGridForRun(run) {
@@ -1779,6 +1803,7 @@ function closeVideoPreview() {
 
 function runModeLabel(run) {
   const raw = String(run.workflow_mode || run.workflow_id || "").toLowerCase();
+  if (raw.includes("motion")) return "MOTION";
   if (raw.includes("director")) return "DIR";
   if (raw.includes("ia2v")) return "IA2V";
   if (raw.includes("fml") || raw.includes("fmf")) return "FML";
@@ -2023,8 +2048,10 @@ async function loadHistory({ replace = true } = {}) {
   if (replace) {
     $("resultsGrid").innerHTML = "";
     $("directorResultsGrid").innerHTML = "";
+    $("motionResultsGrid").innerHTML = "";
   }
   upsertRuns(data.runs || [], false);
+  upsertMotionRuns(data.runs || [], false);
 }
 
 function startHistoryRefresh() {
@@ -2043,7 +2070,7 @@ async function updateHistoryState(key, action) {
   });
   if (action === "delete") {
     state.hiddenRunKeys.add(key);
-    const card = document.querySelector(`#resultsGrid .result-card[data-run-key="${cssEscape(key)}"], #directorResultsGrid .result-card[data-run-key="${cssEscape(key)}"]`);
+    const card = document.querySelector(`#resultsGrid .result-card[data-run-key="${cssEscape(key)}"], #directorResultsGrid .result-card[data-run-key="${cssEscape(key)}"], #motionResultsGrid .result-card[data-run-key="${cssEscape(key)}"]`);
     if (card) card.remove();
     const recycled = result.recycled || [];
     const canceled = result.cancel || [];
@@ -2134,6 +2161,7 @@ function clearMotionResult() {
 
 function renderMotionBatch(batch) {
   state.motionBatch = batch;
+  upsertMotionRuns(batch.runs || [], true);
   const run = (batch.runs || [])[0] || {};
   $("motionStatus").textContent = `${batch.batch_id} / ${run.status || batch.status} ${elapsedText(run)}`;
   if (run.error) $("motionStatus").textContent = run.error;
