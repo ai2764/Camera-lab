@@ -248,8 +248,8 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 **Files:** Modify `frontend/index.html` (nav `:15-19`, add a `motion` panel section).
 
-- [ ] **Step 1:** Add tab button after line 18: `<button id="motionWorkspaceTab" class="workspace-tab" type="button">Motion</button>`.
-- [ ] **Step 2:** Add a `motion-panel` section with controls (match existing label/input style):
+- [x] **Step 1:** Add tab button after line 18: `<button id="motionWorkspaceTab" class="workspace-tab" type="button">Motion</button>`.
+- [x] **Step 2:** Add a `motion-panel` section with controls (match existing label/input style):
   - `motionPrompt` (textarea), `motionRefInput` (`type=file`), `motionDuration` (`number`, seconds, default 4, min 0.5 max 12 step 0.5), size preset/scale (reuse existing `sizePreset`/`sizeScale` markup pattern), `motionSteps` (`number` default 8), `motionSeed` (`number`, placeholder Random).
   - `motionRewrite` (`checkbox`, **default unchecked** — opt-in in-server LLM rewrite; when checked it auto-derives caption + duration) and a `motionCopyRewrite` button ("Copy rewrite prompt") next to the prompt.
   - Collapsed `<details>` "Advanced": `motionPoseStrength` (`range` 0–10 step 0.01 value 1.0), `motionCfg` (`range` 1–15 step 0.5 value 5).

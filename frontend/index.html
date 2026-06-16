@@ -16,6 +16,7 @@
       <button id="cameraWorkspaceTab" class="workspace-tab active" type="button">Camera Lab</button>
       <button id="directorWorkspaceTab" class="workspace-tab" type="button">Director</button>
       <button id="castingWorkspaceTab" class="workspace-tab" type="button">Casting</button>
+      <button id="motionWorkspaceTab" class="workspace-tab" type="button">Motion</button>
       <button id="photographyWorkspaceTab" class="workspace-tab" type="button" hidden>Photography</button>
     </nav>
     <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
@@ -335,6 +336,100 @@
         <div class="queue-text" id="queueText">No active batch</div>
       </div>
       <div id="resultsGrid" class="results-grid"></div>
+    </section>
+
+    <section id="motionWorkspace" class="motion-workspace" hidden>
+      <div class="motion-stage-head">
+        <div>
+          <div class="eyebrow">Motion</div>
+          <h2>Text to Motion</h2>
+        </div>
+        <div class="motion-stage-actions">
+          <button id="motionCopyRewrite" type="button">Copy rewrite prompt</button>
+          <button id="motionRunBtn" class="primary" type="button">Queue Motion</button>
+        </div>
+      </div>
+      <div class="motion-grid">
+        <section class="motion-control-panel">
+          <label>
+            Motion prompt
+            <textarea id="motionPrompt" rows="7" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
+          </label>
+          <label>
+            Reference image
+            <input id="motionRefInput" type="file" accept="image/*">
+            <span id="motionRefStatus" class="hint">No image uploaded</span>
+          </label>
+          <div id="motionRefPreviewWrap" class="source-preview">
+            <img id="motionRefPreview" alt="motion reference preview">
+          </div>
+          <div class="grid-2">
+            <label>
+              Duration
+              <input id="motionDuration" type="number" min="0.5" max="12" step="0.5" value="4">
+            </label>
+            <label>
+              Preset
+              <select id="motionSizePreset">
+                <option value="512x512">1:1 512x512</option>
+                <option value="480x832" selected>9:16 480x832</option>
+                <option value="720x1280">9:16 720x1280</option>
+                <option value="832x480">16:9 832x480</option>
+              </select>
+            </label>
+          </div>
+          <label class="size-text-row">
+            Frame size
+            <input id="motionCustomSizeInput" type="text" value="480x832" placeholder="480x832">
+          </label>
+          <label>
+            Scale <span id="motionSizeReadout">480x832 / 100%</span>
+            <input id="motionSizeScale" type="range" min="50" max="150" step="5" value="100">
+          </label>
+          <div class="grid-2">
+            <label>
+              Steps
+              <input id="motionSteps" type="number" min="1" max="100" step="1" value="8">
+            </label>
+            <label>
+              Seed
+              <input id="motionSeed" type="number" min="1" max="2147000000" step="1" placeholder="Random">
+            </label>
+          </div>
+          <label class="check-row">
+            <input id="motionRewrite" type="checkbox">
+            <span>In-server rewrite</span>
+          </label>
+          <details>
+            <summary>Advanced</summary>
+            <label>
+              Pose strength <span id="motionPoseReadout">1.00</span>
+              <input id="motionPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
+            </label>
+            <label>
+              HY-Motion CFG <span id="motionCfgReadout">5.0</span>
+              <input id="motionCfg" type="range" min="1" max="5" step="0.5" value="5">
+            </label>
+          </details>
+          <p id="motionStatus" class="hint">Runs are saved under tasks/camera_lab_runs.</p>
+        </section>
+        <section class="motion-preview-panel">
+          <article class="motion-preview-card">
+            <div class="motion-preview-head">
+              <span>Guide</span>
+              <span id="motionGuideState" class="hint">waiting</span>
+            </div>
+            <video id="motionGuide" controls playsinline></video>
+          </article>
+          <article class="motion-preview-card">
+            <div class="motion-preview-head">
+              <span>Result</span>
+              <span id="motionResultState" class="hint">waiting</span>
+            </div>
+            <video id="motionResult" controls playsinline></video>
+          </article>
+        </section>
+      </div>
     </section>
 
     <section id="photographyWorkspace" class="photography-workspace">
