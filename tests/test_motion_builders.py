@@ -7,6 +7,10 @@ def motion_run(**overrides):
         "duration": 4.0,
         "seed": 123,
         "cfg_scale": 4.5,
+        "width": 480,
+        "height": 832,
+        "steps": 6,
+        "pose_strength": 0.85,
         "prefix": "motion/test_guide",
     }
     run.update(overrides)
@@ -53,6 +57,25 @@ def test_build_hymotion_api_uses_literal_prompt_and_manual_duration_when_rewrite
     assert api["5"]["inputs"]["seed"] == 123
     assert api["5"]["inputs"]["cfg_scale"] == 4.5
     assert api["31"]["inputs"]["filename_prefix"] == "motion/test_guide"
+
+
+def test_build_scail_api_patches_guide_and_video_settings():
+    api = s.build_scail_api(
+        motion_run(prefix="motion/test_scail"),
+        guide_name="hymotion_walk_wave_guide.mp4",
+        length=89,
+        template_path=s.ROOT / "workflows" / "app" / "scail2_video.api.json",
+    )
+
+    assert api["11"]["inputs"]["file"] == "hymotion_walk_wave_guide.mp4"
+    assert api["13"]["inputs"]["width"] == 480
+    assert api["13"]["inputs"]["height"] == 832
+    assert api["13"]["inputs"]["length"] == 89
+    assert api["13"]["inputs"]["pose_strength"] == 0.85
+    assert api["14"]["inputs"]["seed"] == 123
+    assert api["14"]["inputs"]["steps"] == 6
+    assert api["14"]["inputs"]["cfg"] == 1
+    assert api["17"]["inputs"]["filename_prefix"] == "motion/test_scail"
 
 
 def test_build_hymotion_api_defaults_rewrite_off(monkeypatch):

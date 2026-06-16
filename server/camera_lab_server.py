@@ -102,6 +102,7 @@ LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
 DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
 HYMOTION_GUIDE_TEMPLATE = APP_WORKFLOW_ROOT / "hymotion_guide.api.json"
+SCAIL_VIDEO_TEMPLATE = APP_WORKFLOW_ROOT / "scail2_video.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -1098,6 +1099,34 @@ def build_hymotion_api(run: dict[str, Any], template_path: Path | str = HYMOTION
     api["5"]["inputs"]["seed"] = int(run["seed"])
     api["5"]["inputs"]["cfg_scale"] = float(run["cfg_scale"])
     api["31"]["inputs"]["filename_prefix"] = str(run["prefix"])
+    return api
+
+
+def build_scail_api(
+    run: dict[str, Any],
+    guide_name: str,
+    length: int,
+    template_path: Path | str = SCAIL_VIDEO_TEMPLATE,
+) -> dict[str, dict]:
+    api = json.loads(Path(template_path).read_text(encoding="utf-8"))
+    expected_nodes = {
+        "11": "LoadVideo",
+        "13": "WanSCAILToVideo",
+        "14": "KSampler",
+        "17": "SaveVideo",
+    }
+    for node_id, class_type in expected_nodes.items():
+        if api.get(node_id, {}).get("class_type") != class_type:
+            raise RuntimeError(f"SCAIL workflow does not contain expected {class_type} node {node_id}")
+
+    api["11"]["inputs"]["file"] = guide_name
+    api["13"]["inputs"]["width"] = int(run["width"])
+    api["13"]["inputs"]["height"] = int(run["height"])
+    api["13"]["inputs"]["length"] = int(length)
+    api["13"]["inputs"]["pose_strength"] = float(run["pose_strength"])
+    api["14"]["inputs"]["seed"] = int(run["seed"])
+    api["14"]["inputs"]["steps"] = int(run["steps"])
+    api["17"]["inputs"]["filename_prefix"] = str(run["prefix"])
     return api
 
 
