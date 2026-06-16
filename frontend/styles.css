@@ -1766,7 +1766,7 @@ body.motion-workspace-active .results-shell {
 body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 14px;
   min-height: calc(100vh - 114px);
   overflow: auto;
 }
@@ -1776,11 +1776,12 @@ body.motion-workspace-active .motion-workspace {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding: 9px 12px;
-  border: 1px solid rgba(143,199,192,.28);
+  padding: 10px 14px;
+  border: 1px solid rgba(143,199,192,.22);
+  border-radius: 6px;
   background:
-    linear-gradient(135deg, rgba(143,199,192,.1), transparent 34%),
-    rgba(16,16,13,.86);
+    linear-gradient(90deg, rgba(143,199,192,.12), rgba(215,180,106,.05) 46%, transparent),
+    rgba(13,14,12,.9);
 }
 
 .motion-stage-head h2 {
@@ -1792,40 +1793,37 @@ body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
-}
-
-.motion-workbench,
-.motion-preview-card {
-  border: 1px solid rgba(240,235,225,.12);
-  background: rgba(14,14,11,.84);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 
 .motion-workbench {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(340px, .74fr) minmax(440px, 1.26fr);
+  grid-template-columns: minmax(330px, .42fr) minmax(520px, .58fr);
   grid-template-areas:
-    "head head"
     "body preview";
   min-height: 0;
   overflow: hidden;
+  border: 1px solid rgba(240,235,225,.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(215,180,106,.035), transparent 38%),
+    rgba(12,12,10,.88);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
 }
 
 .motion-video-panel {
-  grid-template-columns: minmax(340px, .66fr) minmax(520px, 1.34fr);
+  grid-template-columns: minmax(330px, .36fr) minmax(560px, .64fr);
 }
 
 .motion-panel-head {
-  grid-area: head;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(240,235,225,.1);
+  padding: 0 0 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(240,235,225,.09);
 }
 
 .motion-panel-head h3 {
@@ -1835,9 +1833,11 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-panel-body {
   grid-area: body;
-  padding: 12px 14px 14px;
+  padding: 14px;
   min-height: 0;
   overflow: auto;
+  border-right: 1px solid rgba(240,235,225,.08);
+  background: rgba(9,9,8,.34);
 }
 
 .motion-panel-body label {
@@ -1845,7 +1845,7 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-guide-panel textarea {
-  min-height: 92px;
+  min-height: 108px;
 }
 
 .motion-video-panel .source-preview {
@@ -1872,9 +1872,9 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-upload-card {
   margin-top: 10px;
-  padding: 9px 10px;
-  border: 1px solid rgba(240,235,225,.1);
-  background: rgba(255,255,255,.025);
+  padding: 10px;
+  border: 1px dashed rgba(143,199,192,.24);
+  background: rgba(143,199,192,.035);
 }
 
 .motion-upload-card label {
@@ -1896,8 +1896,8 @@ body.motion-workspace-active .motion-workspace {
 .motion-settings {
   margin: 10px 0 12px;
   padding: 9px 10px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(240,235,225,.1);
+  background: rgba(255,255,255,.018);
 }
 
 .motion-settings summary {
@@ -1921,19 +1921,21 @@ body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  min-height: 300px;
-  height: clamp(300px, 34vw, 520px);
+  min-height: 320px;
+  height: clamp(320px, 31vw, 500px);
   overflow: hidden;
   align-self: stretch;
-  margin: 12px 12px 12px 0;
+  margin: 14px 14px 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   border-color: var(--line);
   background: #0b0b09;
   box-shadow: none;
 }
 
 .motion-guide-panel .motion-preview-card {
-  min-height: 300px;
-  height: clamp(300px, 30vw, 420px);
+  min-height: 320px;
+  height: clamp(320px, 28vw, 430px);
 }
 
 .motion-video-panel .motion-preview-card {
@@ -1944,10 +1946,10 @@ body.motion-workspace-active .motion-workspace {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-bottom: 1px solid rgba(240,235,225,.1);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .04em;
@@ -1965,6 +1967,7 @@ body.motion-workspace-active .motion-workspace {
 .motion-history-shell {
   padding: 14px;
   border: 1px solid rgba(240,235,225,.12);
+  border-radius: 8px;
   background: rgba(14,14,11,.84);
 }
 

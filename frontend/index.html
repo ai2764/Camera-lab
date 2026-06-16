@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=motion-results-accumulate-1">
+  <link rel="stylesheet" href="/static/styles.css?v=motion-workbench-polish-1">
 </head>
 <body>
   <header class="topbar">
@@ -347,14 +347,14 @@
       </div>
       <div class="motion-grid">
         <section class="motion-workbench motion-guide-panel">
-          <div class="motion-panel-head">
+          <div class="motion-panel-body">
+            <div class="motion-panel-head">
             <div>
               <div class="eyebrow">Step 1</div>
               <h3>Motion Guide</h3>
             </div>
             <span id="motionGuideState" class="hint">waiting</span>
-          </div>
-          <div class="motion-panel-body">
+            </div>
             <label>
               Motion prompt
               <textarea id="motionPrompt" rows="4" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
@@ -400,14 +400,14 @@
         </section>
 
         <section class="motion-workbench motion-video-panel">
-          <div class="motion-panel-head">
+          <div class="motion-panel-body">
+            <div class="motion-panel-head">
             <div>
               <div class="eyebrow">Step 2</div>
               <h3>Final Video</h3>
             </div>
             <span id="motionResultState" class="hint">waiting</span>
-          </div>
-          <div class="motion-panel-body">
+            </div>
             <label>
               Reference image
               <input id="motionRefInput" type="file" accept="image/*">
