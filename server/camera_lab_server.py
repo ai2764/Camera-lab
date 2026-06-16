@@ -101,6 +101,7 @@ LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
 DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
+HYMOTION_GUIDE_TEMPLATE = APP_WORKFLOW_ROOT / "hymotion_guide.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -1072,6 +1073,31 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
         patch_director_custom_audio(api, run)
     bypass_sage_attention_patches(api)
 
+    return api
+
+
+def build_hymotion_api(run: dict[str, Any], template_path: Path | str = HYMOTION_GUIDE_TEMPLATE) -> dict[str, dict]:
+    api = json.loads(Path(template_path).read_text(encoding="utf-8"))
+    expected_nodes = {
+        "5": "HYMotionGenerate",
+        "10": "HYMotionEncodeText",
+        "31": "SaveVideo",
+    }
+    for node_id, class_type in expected_nodes.items():
+        if api.get(node_id, {}).get("class_type") != class_type:
+            raise RuntimeError(f"HY-Motion workflow does not contain expected {class_type} node {node_id}")
+
+    manual_duration = float(run["duration"])
+    if run.get("rewrite"):
+        text, seconds = rewrite_motion_prompt(str(run["prompt"]), default_duration=manual_duration)
+    else:
+        text, seconds = str(run["prompt"]), manual_duration
+
+    api["10"]["inputs"]["text"] = text
+    api["5"]["inputs"]["duration"] = float(seconds)
+    api["5"]["inputs"]["seed"] = int(run["seed"])
+    api["5"]["inputs"]["cfg_scale"] = float(run["cfg_scale"])
+    api["31"]["inputs"]["filename_prefix"] = str(run["prefix"])
     return api
 
 
