@@ -1799,7 +1799,7 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-workbench {
   display: grid;
-  grid-template-columns: minmax(330px, .42fr) minmax(520px, .58fr);
+  grid-template-columns: minmax(420px, .5fr) minmax(420px, .5fr);
   grid-template-areas:
     "body preview";
   min-height: 0;
@@ -1813,7 +1813,7 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-video-panel {
-  grid-template-columns: minmax(330px, .36fr) minmax(560px, .64fr);
+  grid-template-columns: minmax(420px, .48fr) minmax(420px, .52fr);
 }
 
 .motion-panel-head {
