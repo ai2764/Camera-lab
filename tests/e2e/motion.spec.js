@@ -180,6 +180,15 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await expect(page.locator(".motion-guide-panel #motionGuide")).toBeVisible();
   await expect(page.locator(".motion-video-panel #motionRefInput")).toBeVisible();
   await expect(page.locator(".motion-video-panel #motionResult")).toBeVisible();
+  const guidePanelBox = await page.locator(".motion-guide-panel").boundingBox();
+  const videoPanelBox = await page.locator(".motion-video-panel").boundingBox();
+  const guideBodyBox = await page.locator(".motion-guide-panel .motion-panel-body").boundingBox();
+  const guidePreviewBox = await page.locator(".motion-guide-panel .motion-preview-card").boundingBox();
+  const finalBodyBox = await page.locator(".motion-video-panel .motion-panel-body").boundingBox();
+  const finalPreviewBox = await page.locator(".motion-video-panel .motion-preview-card").boundingBox();
+  expect(videoPanelBox.y).toBeGreaterThan(guidePanelBox.y);
+  expect(guidePreviewBox.x).toBeGreaterThan(guideBodyBox.x);
+  expect(finalPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
 
   await page.locator("#motionPrompt").fill("A person walks forward and waves.");
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
