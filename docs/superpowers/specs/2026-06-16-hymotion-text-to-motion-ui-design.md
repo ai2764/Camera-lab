@@ -25,7 +25,7 @@ This is the crux of correct end-to-end behavior. SCAIL's `WanSCAILToVideo` consu
 
 Therefore:
 
-- **Rewrite estimates the duration.** The HY-Motion `Text2MotionPrompter` (Prompt Rewrite) optimizes the prompt **and** estimates an appropriate motion duration.
+- **Rewrite (optional) optimizes the prompt + estimates the duration — done in-server via camera-lab's existing LLM, NOT HY-Motion's local prompter.** HY-Motion's `Text2MotionPrompter` is a ~61GB / ~30B model that won't co-fit on the 4090 — and its node loads it with `local_files_only=True` (no usable auto-download). Since the rewrite is purely prompt engineering, camera-lab instead calls its existing `llm_chat()` client (`server/camera_lab_server.py:2254`, `LLM_MODEL`) with HY-Motion's own rewrite prompt template (`REWRITE_AND_INFER_TIME_PROMPT_FORMAT`), which returns `{"duration": <frames@30fps int>, "short_caption": "<refined English>"}`. The server parses it (reuse the resilient JSON extractor at `:2489`), sets `duration_seconds = frames / 30`, and injects `short_caption`/`duration_seconds` as literal inputs into the direct-prompt guide workflow (`HYMotionEncodeText.text`, `HYMotionGenerate.duration`). When rewrite is OFF, the user's text is used verbatim and a default/explicit duration applies. No HY-Motion prompter node, no 61GB download, no extra model in VRAM.
 - **The generated guide's actual frame count drives SCAIL `length`.** After the guide is rendered, read its frame count `N`, set SCAIL `length` to `N` aligned up/down to the nearest `4k+1` (SCAIL's step-4 / `((length-1)//4)+1` latent requirement). SCAIL then consumes the **entire** guide — no motion is truncated.
 - **fps is fixed at 30 end-to-end.** SCAIL ignores fps metadata (frame-based), so the guide render fps must equal the output save fps or the motion plays at the wrong speed. HY-Motion's native motion cadence is 30fps (`output_mesh_fps = 30`), so render the guide at 30fps and save the SCAIL output at 30fps. (The earlier proof-of-concept used a 30fps / 90-frame guide but SCAIL `length=49` + 24fps save → the motion was both **truncated** to the first ~1.6s and **slowed**; this design eliminates both.)
 
@@ -36,7 +36,7 @@ Net effect for the user: there is **no duration control**. They type a prompt; t
 Tier 1 is always visible. Tier 2 lives in a collapsed "Advanced" section (default collapsed) to preserve the minimal feel.
 
 ```
-[motion]  Motion description prompt   (text area; CN/EN, goes through Rewrite)
+[motion]  Motion description prompt   (text area; CN/EN; optional in-server LLM rewrite)
 [SCAIL]   Reference character image   (file upload; defines final identity)
 [SCAIL]   Size preset + scale         (reuse existing setup-panel controls)
 [SCAIL]   Steps                       (number, default 8)
@@ -61,7 +61,7 @@ These are locked because the working fast-path depends on them; exposing them is
 | `ModelSamplingSD3 shift` | 5.0 | proven recipe |
 | HY-Motion `network` | Full (`HY-Motion-1.0`) | best quality; 4090 has the VRAM |
 | fps | 30 | guide/output consistency (see above) |
-| `duration` | auto (Rewrite → guide → length) | see above |
+| `duration` | from in-server LLM rewrite (frames/30), else explicit/default → guide → length | see above |
 | `pose_start` / `pose_end` | 0.0 / 1.0 | advanced; sensible default |
 | `replacement_mode`, `batch_size`, `num_samples` | off / 1 | separate feature / later |
 
@@ -74,16 +74,17 @@ These are locked because the working fast-path depends on them; exposing them is
 ## Pipeline / data flow
 
 ```
-prompt ─▶ HY-Motion Load Prompter ─▶ Rewrite Prompt ──┬─▶ rewritten_text ─▶ Encode Text ─┐
-                                                       └─▶ duration ─────────────────────┤
-HY-Motion Load LLM (Qwen3-8B-bnb-4bit) ────────────────────────────▶ Encode Text ────────┤
-HY-Motion Load Network (Full) ────────────────────────────────────────────────────────────▶ Generate
-                                                                       (seed, cfg_scale)      │
-                                                                                              ▼
-                                                          render guide @30fps, N frames ◀─────┘
-                                                                                              │
-reference image ─┐                                                                            ▼
-size preset ─────┼────▶ SCAIL workflow: length = align4k1(N), steps, seed, pose_strength ────▶ video @30fps
+                  camera-lab server (Stage A)
+prompt ─▶ [optional] llm_chat(REWRITE template) ─▶ short_caption + duration(frames/30)
+                                                          │
+                                                          ▼  (literal inputs)
+guide workflow:  HYMotionLoadLLM(Qwen3-8B-bnb-4bit) ─▶ EncodeText(text) ─┐
+                 HYMotionLoadNetwork(HY-Motion-1.0) ────────────────────▶ Generate(duration, seed, cfg_scale)
+                                                                          │
+                                                          Preview(frame_step=1) ─▶ CreateVideo(fps=30) ─▶ SaveVideo
+                                                                          │  guide mp4, N frames @30fps
+reference image ─┐                                                        ▼  (Stage B)
+size preset ─────┼─▶ SCAIL workflow: LoadVideo(guide) → length = align4k1(N), steps, seed, pose_strength ─▶ video @30fps
 (fixed recipe) ──┘
 ```
 
@@ -91,7 +92,7 @@ size preset ─────┼────▶ SCAIL workflow: length = align4k1(
 
 The two stages are **two separate ComfyUI workflow submissions**, orchestrated by camera-lab's server, with the guide passed from stage A to stage B:
 
-- **Workflow A** — `text → Load Prompter / Load LLM / Load Network → Rewrite → Encode → Generate → render + save guide video`.
+- **Workflow A** — `text → [server-side llm_chat rewrite] → Load LLM / Load Network → Encode(text) → Generate(duration) → Preview(frame_step=1) → CreateVideo(fps=30) → SaveVideo`. (Validated on 8188: `hymotion_guide.api.json` → `output/motion/guide_00001_.mp4`, 512×512/30fps/120fr at duration=4.0. UI-format twin `hymotion_guide.ui.json` for GUI viewing.)
 - **Workflow B** — `load guide + reference image → SCAIL recipe (length = align4k1(guide frame count)) → save final video`.
 
 Reasons not to merge into a single graph:

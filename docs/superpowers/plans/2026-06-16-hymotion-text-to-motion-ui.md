@@ -133,32 +133,21 @@ git add workflows/app/scail2_video.api.json
 git commit -m "feat(motion): add SCAIL-2 video workflow template"
 ```
 
-### Task 3: HY-Motion guide workflow template
+### Task 3: HY-Motion guide workflow template — ✅ DONE (validated on 8188)
+
+> **Done, code-authored (no GUI build needed).** Derived from the plugin's official `workflow-rewrite prompt.json`, but **direct-prompt** (Prompt Rewrite is done in-server via `llm_chat`, see Task 5) and with a video-output tail. Committed `9678996`.
 
 **Files:**
-- Create: `workflows/app/hymotion_guide.api.json`
+- `workflows/app/hymotion_guide.api.json` — runtime (API format), direct-load + patch.
+- `workflows/app/hymotion_guide.ui.json` — GUI-viewable twin (open in ComfyUI to inspect the graph).
 
-- [ ] **Step 1:** On the 8188 ComfyUI GUI, build this graph and **Save (API Format)** to `workflows/app/hymotion_guide.api.json`. Nodes + non-default widgets (classes from `ComfyUI-HY-Motion1`):
-  - `HYMotionLoadLLM`: `model_name=Qwen3-8B-bnb-4bit`, `quantization=bnb-4bit`, `offload_to_cpu=false`
-  - `HYMotionLoadPrompter`: `model_source=(auto download)`, `offload_to_cpu=true`
-  - `HYMotionRewritePrompt`: `text="A person walks forward."` (placeholder; patched per run) — outputs `rewritten_text`, `duration`
-  - `HYMotionLoadNetwork`: `model_name=HY-Motion-1.0` (Full)
-  - `HYMotionEncodeText`: `llm`←LoadLLM, `text`←Rewrite.rewritten_text
-  - `HYMotionGenerate`: `network`←LoadNetwork, `conditioning`←EncodeText, `duration`←Rewrite.duration, `seed=42`, `cfg_scale=5.0`, `num_samples=1`
-  - `HYMotionPreview`: `motion_data`←Generate, `sample_index=0`, `frame_step=1` (every frame), `image_size=512` → IMAGE
-  - Video save: `CreateVideo` (`fps=30`) → `SaveVideo` (`filename_prefix=motion/guide`, `format=mp4`, `codec=h264`)
+Final graph (7 nodes): `HYMotionLoadLLM(15: Qwen3-8B-bnb-4bit/bnb-4bit) → HYMotionEncodeText(10: text=literal) ← / HYMotionLoadNetwork(4: HY-Motion-1.0) → HYMotionGenerate(5: duration=literal, seed=42, cfg_scale=5.0) → HYMotionPreview(6: frame_step=1, image_size=512) → CreateVideo(30: fps=30) → SaveVideo(31: motion/guide, mp4, h264)`.
 
-- [ ] **Step 2:** Verify the saved template parses and note the actual node IDs for the prompt-text node (`HYMotionRewritePrompt`), `HYMotionGenerate`, and `SaveVideo`:
+**Builder patch targets (node IDs in `hymotion_guide.api.json`):** `10.inputs.text` ← rewritten/literal prompt; `5.inputs.duration` ← seconds; `5.inputs.seed`, `5.inputs.cfg_scale`; `31.inputs.filename_prefix` ← per-run prefix.
 
-Run: `python -c "import json; w=json.load(open('workflows/app/hymotion_guide.api.json')); [print(k, v['class_type']) for k,v in w.items()]"`
-Record the IDs for `HYMotionRewritePrompt`, `HYMotionGenerate`, `SaveVideo` — used in Task 5.
+**Validation (done):** POST to 8188 `/prompt` completed; output `output/motion/guide_00001_.mp4` = 512×512, 30fps, 120 frames at duration=4.0.
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add workflows/app/hymotion_guide.api.json
-git commit -m "feat(motion): add HY-Motion guide workflow template"
-```
+**Note — dependency:** the dropped HY-Motion Prompter path required `openai` (now installed in the comfy-scail env) and a ~61GB Text2MotionPrompter model; both avoided by doing rewrite in-server (Task 5).
 
 ### Task 4: Frame-count + length helpers
 
@@ -224,9 +213,14 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 **Files:** Modify `server/camera_lab_server.py`; Test `tests/test_motion_builders.py`.
 
-- [ ] **Task 5 — Stage A builder.**
-  - Test: patching `hymotion_guide.api.json` sets the Rewrite node `text`, Generate `seed` and `cfg_scale`, and a unique `SaveVideo` prefix; assert the dict values land on the right node IDs.
-  - Implement `build_hymotion_api(run, template_path)` returning the patched API dict. Submit via `http_json("/prompt", {"prompt": api, "client_id": ...}, base_url=MOTION_COMFY_URL)`.
+- [ ] **Task 5a — In-server prompt rewrite helper.**
+  - Implement `rewrite_motion_prompt(text) -> tuple[str, float]` using the existing `llm_chat()` (`:2254`) with HY-Motion's `REWRITE_AND_INFER_TIME_PROMPT_FORMAT` template (copy the template text into a module constant — do NOT import from the plugin). Parse the JSON reply (reuse the resilient extractor at `:2489`) → `(short_caption, duration_frames/30.0)`. On parse failure or LLM unavailable, fall back to `(text, default_duration)`.
+  - Test: stub `llm_chat` to return `'{"duration": 120, "short_caption": "X walks."}'`; assert `("X walks.", 4.0)`. Stub a malformed reply; assert fallback `(text, default)`.
+  - Commit: `feat(motion): in-server LLM prompt rewrite`.
+
+- [ ] **Task 5b — Stage A builder.**
+  - Test: `build_hymotion_api(run, template_path)` patches `10.inputs.text` (prompt — rewritten when `run["rewrite"]` else literal), `5.inputs.duration` (seconds), `5.inputs.seed`, `5.inputs.cfg_scale`, and `31.inputs.filename_prefix` (per-run); assert values land on the right node IDs of `hymotion_guide.api.json`.
+  - Implement `build_hymotion_api(run, template_path)` returning the patched API dict (calls `rewrite_motion_prompt` when enabled). Submit via `http_json("/prompt", {"prompt": api, "client_id": ...}, base_url=MOTION_COMFY_URL)`.
   - Commit: `feat(motion): HY-Motion stage builder`.
 
 - [ ] **Task 6 — Stage B builder.**
