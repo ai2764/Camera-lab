@@ -77,6 +77,17 @@ def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
 load_env_file(ROOT / ".env")
 COMFY_CONFIG = comfy_config_from_env(os.environ)
 COMFY_URL = COMFY_CONFIG["url"]
+
+
+def motion_comfy_url(env: Mapping[str, str] = os.environ) -> str:
+    """ComfyUI endpoint for HY-Motion/SCAIL. Falls back to COMFY_URL so a future
+    single-instance migration needs no code change — just unset COMFYUI_MOTION_URL."""
+    return env.get("COMFYUI_MOTION_URL") or COMFY_URL
+
+
+MOTION_COMFY_URL = motion_comfy_url()
+
+
 COMFY_INPUT = COMFY_CONFIG["input"]
 COMFY_OUTPUT = COMFY_CONFIG["output"]
 COMFY_MODELS = COMFY_CONFIG["models"]
@@ -373,8 +384,8 @@ class RunCanceled(Exception):
     pass
 
 
-def http_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict:
-    url = COMFY_URL.rstrip("/") + path
+def http_json(path: str, payload: dict | None = None, timeout: int = 30, base_url: str | None = None) -> dict:
+    url = (base_url or COMFY_URL).rstrip("/") + path
     if payload is None:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -388,8 +399,8 @@ def http_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict
         raise RuntimeError(f"ComfyUI HTTP {exc.code}: {body}") from exc
 
 
-def http_post(path: str, payload: dict | None = None, timeout: int = 30) -> None:
-    url = COMFY_URL.rstrip("/") + path
+def http_post(path: str, payload: dict | None = None, timeout: int = 30, base_url: str | None = None) -> None:
+    url = (base_url or COMFY_URL).rstrip("/") + path
     data = json.dumps(payload or {}).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
