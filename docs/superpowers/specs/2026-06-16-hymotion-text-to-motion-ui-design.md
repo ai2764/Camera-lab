@@ -102,6 +102,18 @@ Reasons not to merge into a single graph:
 
 (Note: the existing `mesh2scail_workflow.json` merges mesh2motion → SCAIL in one graph, but that path has no guide-preview step and is a different flow.)
 
+## ComfyUI endpoint: minimal, migration-friendly (no dual-endpoint subsystem)
+
+HY-Motion + SCAIL nodes currently live only on the separate `dev/ComfyUI-scail` instance (port 8188); camera-lab's other tabs target the desktop instance (port 8000). **The desktop nodes will eventually be migrated so only one instance remains** — so do NOT build an elaborate multi-endpoint routing layer (it would become dead code).
+
+Minimal approach:
+
+- Add an optional `base_url` param to `http_json` / `http_post` (default `COMFY_URL`).
+- `MOTION_COMFY_URL = os.environ.get("COMFYUI_MOTION_URL") or COMFY_URL` — falls back to the single instance when unset.
+- Pass `base_url=MOTION_COMFY_URL` **only** on the motion/SCAIL submissions.
+
+After consolidation, dropping `COMFYUI_MOTION_URL` makes everything run on one instance with zero code changes.
+
 ## Out of scope (this spec)
 
 - Multi-candidate generation (`num_samples` 1–4 + a pick-best UI) — revisit if hit-rate is low.
