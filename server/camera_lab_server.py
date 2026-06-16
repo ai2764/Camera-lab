@@ -2876,6 +2876,7 @@ class Handler(BaseHTTPRequestHandler):
                         "camera_examples": CAMERA_EXAMPLES,
                         "images": REFERENCE_IMAGES,
                         "default_negative": DEFAULT_NEGATIVE,
+                        "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
                         "comfy": comfy_status(),
                         "casting": casting_status(),
                     }

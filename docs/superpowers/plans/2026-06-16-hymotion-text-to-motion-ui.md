@@ -262,16 +262,16 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 - [x] **Step 1:** Add `motionWorkspaceTab` toggle in the `setWorkspace` render block and a listener `$("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));`.
 - [x] **Step 2:** Show/hide the `motion-panel` based on `state.workspace === "motion"` (follow how `casting`/`photography` panels toggle).
-- [ ] **Step 3: Commit** `feat(motion): wire Motion workspace`.
+- [x] **Step 3: Commit** `feat(motion): wire Motion workspace`.
 
 ### Task 10: Submit + two-step preview
 
 **Files:** Modify `frontend/app.js`.
 
-- [ ] **Step 1:** `uploadImage(file, "motion_ref")` reuse of existing `/api/upload-image` (`:2104`) for the reference image.
-- [ ] **Step 2:** `startMotion()` — POST the form to `/api/text-to-motion` via `api()` including `rewrite` (from `motionRewrite.checked`, default false) and `duration` (from `motionDuration`); then `pollMotion()` (clone of `pollBatch` `:1972`): when status reaches `running_video` and `guide_video` is present, set `motionGuide.src`; when `done`, set `motionResult.src`.
-- [ ] **Step 2b:** `motionCopyRewrite` click handler: fill the rewrite-prompt template with `motionPrompt.value` and `navigator.clipboard.writeText(...)` (toast "Copied"). Source the template from the server (add it to the existing config/status payload the frontend already fetches, or a tiny `/api/motion/rewrite-prompt` route) so it stays in sync with `MOTION_REWRITE_PROMPT_FORMAT` — do NOT hardcode a second copy in JS.
-- [ ] **Step 3: Commit** `feat(motion): two-step submit + guide/result preview`.
+- [x] **Step 1:** `uploadImage(file, "motion_ref")` reuse of existing `/api/upload-image` (`:2104`) for the reference image.
+- [x] **Step 2:** `startMotion()` — POST the form to `/api/text-to-motion` via `api()` including `rewrite` (from `motionRewrite.checked`, default false) and `duration` (from `motionDuration`); then `pollMotion()` (clone of `pollBatch` `:1972`): when status reaches `running_video` and `guide_video` is present, set `motionGuide.src`; when `done`, set `motionResult.src`.
+- [x] **Step 2b:** `motionCopyRewrite` click handler: fill the rewrite-prompt template with `motionPrompt.value` and `navigator.clipboard.writeText(...)` (toast "Copied"). Source the template from the server (add it to the existing config/status payload the frontend already fetches, or a tiny `/api/motion/rewrite-prompt` route) so it stays in sync with `MOTION_REWRITE_PROMPT_FORMAT` — do NOT hardcode a second copy in JS.
+- [x] **Step 3: Commit** `feat(motion): two-step submit + guide/result preview`.
 
 ### Task 11: e2e smoke test
 

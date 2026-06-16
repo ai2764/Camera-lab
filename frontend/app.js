@@ -18,6 +18,7 @@ const state = {
   middlePath: "",
   endPath: "",
   motionRefPath: "",
+  motionBatch: null,
   audioPath: "",
   referencePaths: [""],
   referenceNames: [""],
@@ -41,6 +42,7 @@ const imageSlots = {
   source: { pathKey: "sourcePath", previewId: "sourcePreview", statusId: "sourceStatus", empty: "No image uploaded" },
   middle: { pathKey: "middlePath", previewId: "middlePreview", statusId: "middleStatus", empty: "No image uploaded" },
   end: { pathKey: "endPath", previewId: "endPreview", statusId: "endStatus", empty: "No image uploaded" },
+  motion_ref: { pathKey: "motionRefPath", previewId: "motionRefPreview", statusId: "motionRefStatus", empty: "No image uploaded" },
 };
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -187,6 +189,22 @@ function updateSizeReadout() {
   $("sourcePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("middlePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("endPreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
+}
+
+function currentMotionSize() {
+  const scale = Number($("motionSizeScale").value) / 100;
+  const base = parseSizeText($("motionCustomSizeInput").value);
+  return {
+    width: align8(base.width * scale),
+    height: align8(base.height * scale),
+    scale: Math.round(scale * 100),
+  };
+}
+
+function updateMotionSizeReadout() {
+  const size = currentMotionSize();
+  $("motionSizeReadout").textContent = `${size.width}x${size.height} / ${size.scale}%`;
+  $("motionRefPreviewWrap").style.aspectRatio = `${size.width} / ${size.height}`;
 }
 
 function resetPrompt() {
@@ -2052,6 +2070,147 @@ async function startBatch() {
   }
 }
 
+function motionPayload() {
+  const size = currentMotionSize();
+  const duration = Number($("motionDuration").value);
+  const steps = Number($("motionSteps").value);
+  const poseStrength = Number($("motionPoseStrength").value);
+  const cfgScale = Number($("motionCfg").value);
+  return {
+    prompt: $("motionPrompt").value.trim(),
+    reference_path: state.motionRefPath,
+    duration: Number.isFinite(duration) && duration > 0 ? duration : 4,
+    width: size.width,
+    height: size.height,
+    steps: Number.isFinite(steps) && steps > 0 ? steps : 8,
+    seed: $("motionSeed").value.trim(),
+    rewrite: $("motionRewrite").checked,
+    pose_strength: Number.isFinite(poseStrength) ? poseStrength : 1,
+    cfg_scale: Number.isFinite(cfgScale) ? cfgScale : 5,
+  };
+}
+
+function clearMotionVideos() {
+  for (const id of ["motionGuide", "motionResult"]) {
+    const video = $(id);
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  $("motionGuideState").textContent = "waiting";
+  $("motionResultState").textContent = "waiting";
+}
+
+function renderMotionBatch(batch) {
+  state.motionBatch = batch;
+  state.activeBatch = batch;
+  renderBatch(batch);
+  const run = (batch.runs || [])[0] || {};
+  $("motionStatus").textContent = `${batch.batch_id} / ${run.status || batch.status} ${elapsedText(run)}`;
+  if (run.error) $("motionStatus").textContent = run.error;
+  if (run.guide_video) {
+    const guideSrc = mediaUrl(run.guide_video);
+    if ($("motionGuide").getAttribute("src") !== guideSrc) {
+      $("motionGuide").src = guideSrc;
+    }
+    $("motionGuideState").textContent = "ready";
+  } else if (run.status === "running_motion") {
+    $("motionGuideState").textContent = "rendering";
+  }
+  if (run.video) {
+    const resultSrc = mediaUrl(run.video);
+    if ($("motionResult").getAttribute("src") !== resultSrc) {
+      $("motionResult").src = resultSrc;
+    }
+    $("motionResultState").textContent = "ready";
+  } else if (run.status === "running_video") {
+    $("motionResultState").textContent = "rendering";
+  }
+}
+
+async function pollMotion() {
+  if (!state.motionBatch) return;
+  try {
+    const batch = await api(`/api/batches/${state.motionBatch.batch_id}`);
+    renderMotionBatch(batch);
+    if (!["done", "error"].includes(batch.status)) {
+      state.pollTimer = setTimeout(pollMotion, 5000);
+    } else {
+      await loadHistory({ replace: false });
+    }
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
+    state.pollTimer = setTimeout(pollMotion, 5000);
+  }
+}
+
+async function startMotion() {
+  const payload = motionPayload();
+  if (!payload.prompt) {
+    $("motionStatus").textContent = "Prompt is required";
+    return;
+  }
+  if (!payload.reference_path) {
+    $("motionStatus").textContent = "Reference image is required";
+    return;
+  }
+  $("motionRunBtn").disabled = true;
+  $("motionRunBtn").textContent = "Queueing...";
+  clearMotionVideos();
+  try {
+    const batch = await api("/api/text-to-motion", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
+  } finally {
+    $("motionRunBtn").disabled = false;
+    $("motionRunBtn").textContent = "Queue Motion";
+  }
+}
+
+function fillPythonFormatTemplate(template, text) {
+  return String(template || "")
+    .replaceAll("{{", "\u0000")
+    .replaceAll("}}", "\u0001")
+    .replace("{}", text)
+    .replaceAll("\u0000", "{")
+    .replaceAll("\u0001", "}");
+}
+
+async function copyMotionRewritePrompt() {
+  const text = $("motionPrompt").value.trim();
+  if (!text) {
+    $("motionStatus").textContent = "Prompt is required";
+    return;
+  }
+  const template = state.config?.motion_rewrite_prompt_format || "";
+  if (!template) {
+    $("motionStatus").textContent = "Rewrite template is unavailable";
+    return;
+  }
+  const filled = fillPythonFormatTemplate(template, text);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(filled);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = filled;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  $("motionStatus").textContent = "Copied";
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2110,20 +2269,16 @@ function populateAudioLibrary() {
 
 async function uploadImage(file, kind) {
   if (!file) return;
-  const status = kind === "source" ? $("sourceStatus") : kind === "middle" ? $("middleStatus") : $("endStatus");
+  const slot = imageSlots[kind];
+  if (!slot) throw new Error("unknown image slot");
+  const status = $(slot.statusId);
   status.textContent = "Uploading...";
   const data = await readFileAsDataUrl(file);
   const uploaded = await api("/api/upload-image", {
     method: "POST",
     body: JSON.stringify({ name: file.name, data }),
   });
-  if (kind === "source") {
-    state.sourcePath = uploaded.path;
-  } else if (kind === "middle") {
-    state.middlePath = uploaded.path;
-  } else {
-    state.endPath = uploaded.path;
-  }
+  state[slot.pathKey] = uploaded.path;
   setImagePreview(kind, mediaUrl(uploaded.path));
   status.textContent = uploaded.name;
 }
@@ -2921,6 +3076,7 @@ async function loadConfig() {
   refreshCastingLibrary();
   updateWorkflowFields();
   updateSizeReadout();
+  updateMotionSizeReadout();
   resetPrompt();
   await loadHistory();
   startHistoryRefresh();
@@ -2962,6 +3118,10 @@ $("endInput").addEventListener("change", () => uploadImage($("endInput").files[0
   state.endPath = "";
   $("endStatus").textContent = err.message;
 }));
+$("motionRefInput").addEventListener("change", () => uploadImage($("motionRefInput").files[0], "motion_ref").catch((err) => {
+  state.motionRefPath = "";
+  $("motionRefStatus").textContent = err.message;
+}));
 $("swapSourceEndBtn").addEventListener("click", () => swapImageSlots("source", "end"));
 $("swapSourceMiddleBtn").addEventListener("click", () => swapImageSlots("source", "middle"));
 $("swapMiddleEndBtn").addEventListener("click", () => swapImageSlots("middle", "end"));
@@ -2980,12 +3140,28 @@ $("audioLibrarySelect").addEventListener("change", () => {
 $("sizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "sizePreset", scaleId: "sizeScale", sizeId: "customSizeInput" }));
 $("sizeScale").addEventListener("input", updateSizeReadout);
 $("customSizeInput").addEventListener("input", onCustomSizeInput);
+$("motionSizePreset").addEventListener("change", () => {
+  $("motionCustomSizeInput").value = $("motionSizePreset").value;
+  updateMotionSizeReadout();
+});
+$("motionSizeScale").addEventListener("input", updateMotionSizeReadout);
+$("motionCustomSizeInput").addEventListener("input", updateMotionSizeReadout);
+$("motionPoseStrength").addEventListener("input", () => {
+  $("motionPoseReadout").textContent = Number($("motionPoseStrength").value).toFixed(2);
+});
+$("motionCfg").addEventListener("input", () => {
+  $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
+});
 $("directorSizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }));
 $("directorSizeScale").addEventListener("input", updateSizeReadout);
 $("directorCustomSizeInput").addEventListener("input", onCustomSizeInput);
 $("resetPromptsBtn").addEventListener("click", resetPrompt);
 $("refreshBtn").addEventListener("click", loadConfig);
 $("runBtn").addEventListener("click", startBatch);
+$("motionRunBtn").addEventListener("click", startMotion);
+$("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt().catch((err) => {
+  $("motionStatus").textContent = err.message;
+}));
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
 $("addDirectorAudioBtn").addEventListener("click", openDirectorAudioModal);
 $("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);
