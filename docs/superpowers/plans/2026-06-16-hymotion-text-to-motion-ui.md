@@ -221,19 +221,19 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
   > 2. **In-server rewrite (toggle on):** `build_hymotion_api` calls `rewrite_motion_prompt(prompt, default_duration=manual_duration)` → caption + auto duration override.
   > 3. **Third-party manual:** a **"Copy rewrite prompt"** button (Tasks 8/10) fills `MOTION_REWRITE_PROMPT_FORMAT` with the current text and copies to clipboard; user runs it in any LLM and pastes the caption back. (= mode 1 + helper.)
 
-- [ ] **Task 5b — Stage A builder.**
+- [x] **Task 5b — Stage A builder.** DONE (commit `6ec91dc`)
   - `run` fields: `prompt` (str), `rewrite` (bool, default False), `duration` (seconds, from UI), `seed`, `cfg_scale`, plus a per-run prefix.
   - Resolve `(text, seconds)`: if `run["rewrite"]` → `rewrite_motion_prompt(run["prompt"], default_duration=run["duration"])`; else → `(run["prompt"], run["duration"])`.
   - Test: `build_hymotion_api(run, template_path)` patches `10.inputs.text` (resolved text), `5.inputs.duration` (resolved seconds), `5.inputs.seed`, `5.inputs.cfg_scale`, and `31.inputs.filename_prefix` (per-run); assert values land on the right node IDs of `hymotion_guide.api.json`. Cover both `rewrite=False` (literal + manual duration) and `rewrite=True` (stubbed `rewrite_motion_prompt`).
   - Implement `build_hymotion_api(run, template_path)` returning the patched API dict. Submit via `http_json("/prompt", {"prompt": api, "client_id": ...}, base_url=MOTION_COMFY_URL)`.
   - Commit: `feat(motion): HY-Motion stage builder`.
 
-- [ ] **Task 6 — Stage B builder.**
+- [x] **Task 6 — Stage B builder.** DONE (commit `5829d66`)
   - Test: `build_scail_api(run, guide_name, length)` sets node `13` width/height/length/pose_strength, node `14` seed/steps (cfg stays 1.0), and the `LoadVideo`/guide input to `guide_name`; assert values.
   - Implement; submit with `base_url=MOTION_COMFY_URL`.
   - Commit: `feat(motion): SCAIL stage builder`.
 
-- [ ] **Task 7 — `/api/text-to-motion` endpoint + worker.**
+- [x] **Task 7 — `/api/text-to-motion` endpoint + worker.** DONE (commit pending)
   - Add route `/api/text-to-motion` in `do_POST` (`:2645`) → `handle_text_to_motion` (mirror `handle_run` `:2713`: create run dir, store params, start `motion_worker` thread).
   - `motion_worker(run)`: Stage A → copy guide → `length = align_4k1(video_frame_count(guide))` → copy guide into `COMFY_INPUT` for stage B → Stage B → copy final video. On Stage A done, set `run["guide_video"]` so the UI can preview before B finishes (B runs in same worker; UI polls).
   - Reuse `wait_for_completion`/`copy_outputs` with `base_url`-aware submit. Status transitions: `running_motion` → `running_video` → `done`.

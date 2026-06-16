@@ -11,6 +11,7 @@ def motion_run(**overrides):
         "height": 832,
         "steps": 6,
         "pose_strength": 0.85,
+        "reference_name": "motion_ref.png",
         "prefix": "motion/test_guide",
     }
     run.update(overrides)
@@ -68,6 +69,7 @@ def test_build_scail_api_patches_guide_and_video_settings():
     )
 
     assert api["11"]["inputs"]["file"] == "hymotion_walk_wave_guide.mp4"
+    assert api["9"]["inputs"]["image"] == "motion_ref.png"
     assert api["13"]["inputs"]["width"] == 480
     assert api["13"]["inputs"]["height"] == 832
     assert api["13"]["inputs"]["length"] == 89

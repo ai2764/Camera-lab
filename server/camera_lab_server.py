@@ -1110,6 +1110,7 @@ def build_scail_api(
 ) -> dict[str, dict]:
     api = json.loads(Path(template_path).read_text(encoding="utf-8"))
     expected_nodes = {
+        "9": "LoadImage",
         "11": "LoadVideo",
         "13": "WanSCAILToVideo",
         "14": "KSampler",
@@ -1120,6 +1121,8 @@ def build_scail_api(
             raise RuntimeError(f"SCAIL workflow does not contain expected {class_type} node {node_id}")
 
     api["11"]["inputs"]["file"] = guide_name
+    if run.get("reference_name"):
+        api["9"]["inputs"]["image"] = str(run["reference_name"])
     api["13"]["inputs"]["width"] = int(run["width"])
     api["13"]["inputs"]["height"] = int(run["height"])
     api["13"]["inputs"]["length"] = int(length)
@@ -1692,8 +1695,8 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
     return sorted(set(models))
 
 
-def copy_outputs(run_dir: Path, prompt_id: str) -> list[Path]:
-    history = http_json(f"/history/{prompt_id}", timeout=30).get(prompt_id, {})
+def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+    history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url).get(prompt_id, {})
     (run_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     copied: list[Path] = []
     for output in history.get("outputs", {}).values():
@@ -1779,11 +1782,11 @@ def check_run_canceled(run: dict[str, Any]) -> None:
         raise RunCanceled()
 
 
-def wait_for_completion(prompt_id: str, run: dict[str, Any], timeout_s: int = 1800) -> None:
+def wait_for_completion(prompt_id: str, run: dict[str, Any], timeout_s: int = 1800, base_url: str | None = None) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         check_run_canceled(run)
-        history = http_json(f"/history/{prompt_id}", timeout=30)
+        history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url)
         if prompt_id in history:
             status = history[prompt_id].get("status", {})
             if status.get("status_str") == "error":
@@ -2079,6 +2082,118 @@ def comfy_prompt_running(prompt_id: str) -> bool:
     except Exception:
         return False
     return any(prompt_id in json.dumps(item, ensure_ascii=False) for item in queue.get("queue_running", []))
+
+
+def submit_motion_stage(api: dict[str, Any], run: dict[str, Any], stage_dir: Path, stage: str) -> str:
+    (stage_dir / "api_prompt.json").write_text(json.dumps(api, ensure_ascii=False, indent=2), encoding="utf-8")
+    submit = http_json(
+        "/prompt",
+        {"prompt": api, "client_id": f"camera-lab-motion-{run['run_id']}-{stage}"},
+        timeout=60,
+        base_url=MOTION_COMFY_URL,
+    )
+    (stage_dir / "submit.json").write_text(json.dumps(submit, ensure_ascii=False, indent=2), encoding="utf-8")
+    if submit.get("node_errors"):
+        raise RuntimeError(json.dumps(submit["node_errors"], ensure_ascii=False))
+    prompt_id = submit.get("prompt_id")
+    if not prompt_id:
+        raise RuntimeError(json.dumps(submit, ensure_ascii=False))
+    return str(prompt_id)
+
+
+def first_video(copied: list[Path], stage: str) -> Path:
+    videos = [path for path in copied if path.suffix.lower() in {".mp4", ".webm", ".mov"}]
+    if not videos:
+        raise RuntimeError(f"{stage} produced no video")
+    return videos[0]
+
+
+def persist_motion_batch(batch: dict[str, Any] | None) -> None:
+    if batch:
+        write_batch(batch)
+
+
+def motion_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    run_dir = Path(run["run_dir"])
+    motion_dir = run_dir / "motion"
+    video_dir = run_dir / "video"
+    motion_dir.mkdir(parents=True, exist_ok=True)
+    video_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if batch:
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run["status"] = "running_motion"
+        run["started_at"] = time.time()
+        persist_motion_batch(batch)
+
+        run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_guide"
+        hymotion_api = build_hymotion_api(run)
+        motion_prompt_id = submit_motion_stage(hymotion_api, run, motion_dir, "guide")
+        run["motion_prompt_id"] = motion_prompt_id
+        run["prompt_id"] = motion_prompt_id
+        persist_motion_batch(batch)
+        wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
+        check_run_canceled(run)
+
+        guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
+        guide_video = first_video(guide_copied, "HY-Motion guide")
+        run["guide_video"] = str(guide_video)
+        length = align_4k1(video_frame_count(guide_video))
+        run["scail_length"] = length
+
+        COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+        guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_video.name)}"
+        shutil.copy2(guide_video, COMFY_INPUT / guide_name)
+        run["guide_name"] = guide_name
+
+        reference_path = run.get("reference_image") or ""
+        if reference_path:
+            reference = Path(reference_path)
+            if not reference.exists():
+                raise FileNotFoundError("motion reference image is missing")
+            reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
+            shutil.copy2(reference, COMFY_INPUT / reference_name)
+            run["reference_name"] = reference_name
+
+        run["status"] = "running_video"
+        persist_motion_batch(batch)
+
+        run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_final"
+        scail_api = build_scail_api(run, guide_name, length)
+        video_prompt_id = submit_motion_stage(scail_api, run, video_dir, "video")
+        run["video_prompt_id"] = video_prompt_id
+        run["prompt_id"] = video_prompt_id
+        persist_motion_batch(batch)
+        wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
+        check_run_canceled(run)
+
+        final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
+        final_video = first_video(final_copied, "SCAIL video")
+        run["video"] = str(final_video)
+        run["copied"] = [str(path) for path in [*guide_copied, *final_copied]]
+        contact = run_dir / "contact.jpg"
+        try:
+            make_contact_sheet(final_video, contact, "Motion / SCAIL")
+            run["contact_sheet"] = str(contact)
+        except Exception as exc:
+            run["contact_error"] = str(exc)
+        run["status"] = "done"
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        if batch:
+            batch["status"] = "done" if all(r.get("status") in {"done", "canceled"} for r in batch["runs"]) else "error"
+            batch["finished_at"] = time.time()
+            write_batch(batch)
 
 
 def run_batch_worker(batch_id: str) -> None:
@@ -2785,6 +2900,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/api/run":
                 return self.handle_run()
+            if self.path == "/api/text-to-motion":
+                return self.handle_text_to_motion()
             if self.path == "/api/upload-audio":
                 return self.handle_upload_audio()
             if self.path == "/api/upload-image":
@@ -2931,6 +3048,64 @@ class Handler(BaseHTTPRequestHandler):
         BATCHES[batch_id] = batch
         write_batch(batch)
         thread = threading.Thread(target=run_batch_worker, args=(batch_id,), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion(self) -> None:
+        payload = self.read_json()
+        prompt = str(payload.get("prompt") or "").strip()
+        if not prompt:
+            raise ValueError("prompt is required")
+        reference_path = payload.get("reference_path") or payload.get("source_path") or ""
+        if not reference_path:
+            raise ValueError("motion reference image is required")
+        reference = safe_media_path(str(reference_path))
+        width, height = validate_size(payload.get("width") or 480, payload.get("height") or 832)
+        seed = validate_seed(payload.get("seed"))
+        duration = max(0.5, min(12.0, float(payload.get("duration") or 4.0)))
+        cfg_scale = max(1.0, min(5.0, float(payload.get("cfg_scale") or payload.get("cfg") or 5.0)))
+        steps = max(1, min(100, int(payload.get("steps") or 8)))
+        pose_strength = max(0.0, min(1.0, float(payload.get("pose_strength") or 1.0)))
+
+        batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
+        batch_dir = RUN_ROOT / batch_id
+        run_id = "01_motion"
+        run_dir = batch_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        run = {
+            "batch_id": batch_id,
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "workflow_id": "text_to_motion",
+            "workflow_mode": "motion",
+            "workflow_label": "Motion",
+            "camera_move": "motion",
+            "reference_image": str(reference),
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "seed": seed,
+            "variant_name": "motion",
+            "prompt": prompt,
+            "rewrite": bool(payload.get("rewrite")),
+            "cfg_scale": cfg_scale,
+            "steps": steps,
+            "pose_strength": pose_strength,
+            "status": "queued",
+            "queued_at": time.time(),
+            "scores": {},
+            "notes": "",
+        }
+        batch = {
+            "batch_id": batch_id,
+            "batch_dir": str(batch_dir),
+            "status": "queued",
+            "queued_at": time.time(),
+            "runs": [run],
+        }
+        BATCHES[batch_id] = batch
+        write_batch(batch)
+        thread = threading.Thread(target=motion_worker, args=(run, batch), daemon=True)
         thread.start()
         self.send_json(batch)
 
