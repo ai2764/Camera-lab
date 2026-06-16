@@ -91,6 +91,9 @@ MOTION_COMFY_URL = motion_comfy_url()
 COMFY_INPUT = COMFY_CONFIG["input"]
 COMFY_OUTPUT = COMFY_CONFIG["output"]
 COMFY_MODELS = COMFY_CONFIG["models"]
+MOTION_COMFY_ROOT = Path(os.environ.get("COMFYUI_MOTION_ROOT") or COMFY_CONFIG["root"])
+MOTION_COMFY_INPUT = MOTION_COMFY_ROOT / "input"
+MOTION_COMFY_OUTPUT = MOTION_COMFY_ROOT / "output"
 WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
 TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
@@ -1699,6 +1702,8 @@ def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> 
     history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url).get(prompt_id, {})
     (run_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     copied: list[Path] = []
+    input_root = MOTION_COMFY_INPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_INPUT
+    output_root = MOTION_COMFY_OUTPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_OUTPUT
     for output in history.get("outputs", {}).values():
         for key in ("videos", "images", "gifs"):
             for item in output.get(key, []):
@@ -1706,7 +1711,7 @@ def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> 
                 if not filename:
                     continue
                 subfolder = item.get("subfolder", "")
-                src_root = COMFY_OUTPUT if item.get("type", "output") == "output" else COMFY_INPUT
+                src_root = output_root if item.get("type", "output") == "output" else input_root
                 src = src_root / subfolder / filename
                 if src.exists():
                     dst = run_dir / filename
@@ -2154,9 +2159,9 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     length = int(run.get("scail_length") or align_4k1(video_frame_count(guide_video)))
     run["scail_length"] = length
 
-    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    MOTION_COMFY_INPUT.mkdir(parents=True, exist_ok=True)
     guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_video.name)}"
-    shutil.copy2(guide_video, COMFY_INPUT / guide_name)
+    shutil.copy2(guide_video, MOTION_COMFY_INPUT / guide_name)
     run["guide_name"] = guide_name
 
     reference_path = run.get("reference_image") or ""
@@ -2165,7 +2170,7 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
         if not reference.exists():
             raise FileNotFoundError("motion reference image is missing")
         reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
-        shutil.copy2(reference, COMFY_INPUT / reference_name)
+        shutil.copy2(reference, MOTION_COMFY_INPUT / reference_name)
         run["reference_name"] = reference_name
 
     run["status"] = "running_video"

@@ -26,6 +26,39 @@ def test_http_json_uses_base_url(monkeypatch):
     assert captured["url"].startswith("http://127.0.0.1:8188")
 
 
+def test_copy_outputs_uses_motion_output_root(monkeypatch, tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    motion_output = tmp_path / "motion_output"
+    motion_output.mkdir()
+    (motion_output / "guide.mp4").write_bytes(b"guide")
+    monkeypatch.setattr(s, "COMFY_URL", "http://main-comfy")
+    monkeypatch.setattr(s, "MOTION_COMFY_URL", "http://motion-comfy")
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "main_output")
+    monkeypatch.setattr(s, "MOTION_COMFY_OUTPUT", motion_output)
+    monkeypatch.setattr(s, "COMFY_INPUT", tmp_path / "main_input")
+    monkeypatch.setattr(s, "MOTION_COMFY_INPUT", tmp_path / "motion_input")
+
+    def fake_http_json(path, payload=None, timeout=30, base_url=None):
+        assert base_url == "http://motion-comfy"
+        return {
+            "prompt-guide": {
+                "outputs": {
+                    "31": {
+                        "videos": [{"filename": "guide.mp4", "subfolder": "", "type": "output"}],
+                    },
+                },
+            },
+        }
+
+    monkeypatch.setattr(s, "http_json", fake_http_json)
+
+    copied = s.copy_outputs(run_dir, "prompt-guide", base_url="http://motion-comfy")
+
+    assert copied == [run_dir / "guide.mp4"]
+    assert copied[0].read_bytes() == b"guide"
+
+
 def test_public_workflows_marks_status_errors_unavailable(monkeypatch):
     monkeypatch.setattr(s, "WORKFLOWS", [{"id": "broken", "label": "Broken", "path": "missing.json"}])
     monkeypatch.setattr(s, "workflow_status", lambda workflow: (_ for _ in ()).throw(RuntimeError("Comfy offline")))
@@ -208,7 +241,15 @@ def test_motion_final_worker_reuses_existing_guide(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "http_json", fake_http_json)
     monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
     monkeypatch.setattr(s, "copy_outputs", lambda stage_dir, prompt_id, base_url=None: [final])
-    monkeypatch.setattr(s.shutil, "copy2", lambda src, dst: dst.write_bytes(s.Path(src).read_bytes()))
+    motion_input = tmp_path / "motion_input"
+    copy_dests = []
+    monkeypatch.setattr(s, "MOTION_COMFY_INPUT", motion_input)
+
+    def fake_copy2(src, dst):
+        copy_dests.append(s.Path(dst))
+        s.Path(dst).write_bytes(s.Path(src).read_bytes())
+
+    monkeypatch.setattr(s.shutil, "copy2", fake_copy2)
     monkeypatch.setattr(s, "make_contact_sheet", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(s, "write_batch", lambda _batch: None)
 
@@ -217,6 +258,7 @@ def test_motion_final_worker_reuses_existing_guide(monkeypatch, tmp_path):
     assert calls["guide_name"] == "01_motion_guide.mp4"
     assert calls["length"] == 89
     assert calls["submits"][0][2] == "http://motion-comfy"
+    assert copy_dests == [motion_input / "01_motion_guide.mp4", motion_input / "01_motion_ref.png"]
     assert run["status"] == "done"
     assert run["video"] == str(final)
     assert batch["status"] == "done"
