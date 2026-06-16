@@ -1702,6 +1702,23 @@ def extract_last_frame(video: Path, image: Path) -> None:
     )
 
 
+def align_4k1(n: int) -> int:
+    """Largest valid SCAIL length <= n with (length - 1) % 4 == 0; minimum 1."""
+    if n <= 1:
+        return 1
+    return ((n - 1) // 4) * 4 + 1
+
+
+def video_frame_count(path: Path) -> int:
+    """Frame count of a video via ffprobe (ffmpeg/ffprobe already used elsewhere in this server)."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return int(out)
+
+
 def check_run_canceled(run: dict[str, Any]) -> None:
     if run.get("status") == "canceled":
         raise RunCanceled()
