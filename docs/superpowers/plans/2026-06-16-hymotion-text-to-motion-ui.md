@@ -233,7 +233,7 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
   - Implement; submit with `base_url=MOTION_COMFY_URL`.
   - Commit: `feat(motion): SCAIL stage builder`.
 
-- [x] **Task 7 — `/api/text-to-motion` endpoint + worker.** DONE (commit pending)
+- [x] **Task 7 — `/api/text-to-motion` endpoint + worker.** DONE (commit `70f0db8`)
   - Add route `/api/text-to-motion` in `do_POST` (`:2645`) → `handle_text_to_motion` (mirror `handle_run` `:2713`: create run dir, store params, start `motion_worker` thread).
   - `motion_worker(run)`: Stage A → copy guide → `length = align_4k1(video_frame_count(guide))` → copy guide into `COMFY_INPUT` for stage B → Stage B → copy final video. On Stage A done, set `run["guide_video"]` so the UI can preview before B finishes (B runs in same worker; UI polls).
   - Reuse `wait_for_completion`/`copy_outputs` with `base_url`-aware submit. Status transitions: `running_motion` → `running_video` → `done`.
@@ -277,9 +277,9 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 **Files:** Create `tests/e2e/motion.spec.js` (Playwright; mock `/api/text-to-motion` + poll responses so it runs without GPU).
 
-- [ ] **Step 1:** Test: clicking the Motion tab shows the panel; submitting with a prompt + mocked backend surfaces the guide video then the result video.
-- [ ] **Step 2:** Run `npx playwright test tests/e2e/motion.spec.js`; Expected: PASS.
-- [ ] **Step 3: Commit** `test(motion): e2e smoke for Motion tab`.
+- [x] **Step 1:** Test: clicking the Motion tab shows the panel; submitting with a prompt + mocked backend surfaces the guide video then the result video.
+- [x] **Step 2:** Run `npx playwright test tests/e2e/motion.spec.js`; Expected: PASS.
+- [x] **Step 3: Commit** `test(motion): e2e smoke for Motion tab`.
 
 ---
 

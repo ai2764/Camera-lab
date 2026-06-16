@@ -26,6 +26,27 @@ def test_http_json_uses_base_url(monkeypatch):
     assert captured["url"].startswith("http://127.0.0.1:8188")
 
 
+def test_public_workflows_marks_status_errors_unavailable(monkeypatch):
+    monkeypatch.setattr(s, "WORKFLOWS", [{"id": "broken", "label": "Broken", "path": "missing.json"}])
+    monkeypatch.setattr(s, "workflow_status", lambda workflow: (_ for _ in ()).throw(RuntimeError("Comfy offline")))
+
+    workflows = s.public_workflows()
+
+    assert workflows[0]["id"] == "broken"
+    assert workflows[0]["available"] is False
+    assert workflows[0]["reason"] == "Comfy offline"
+
+
+def test_public_workflows_can_skip_status_checks(monkeypatch):
+    monkeypatch.setattr(s, "WORKFLOWS", [{"id": "offline", "label": "Offline", "path": "missing.json"}])
+    monkeypatch.setattr(s, "workflow_status", lambda workflow: (_ for _ in ()).throw(AssertionError("should not probe")))
+
+    workflows = s.public_workflows(unavailable_reason="ComfyUI port is not reachable")
+
+    assert workflows[0]["available"] is False
+    assert workflows[0]["reason"] == "ComfyUI port is not reachable"
+
+
 def test_motion_worker_wires_guide_frame_count_into_scail_length(monkeypatch, tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

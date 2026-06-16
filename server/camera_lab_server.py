@@ -2869,15 +2869,16 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self.serve_file(YEDP_WEB_JS / name)
             if parsed.path == "/api/config":
+                comfy = comfy_status()
                 return self.send_json(
                     {
-                        "workflows": public_workflows(),
+                        "workflows": public_workflows(None if comfy.get("ok") else comfy.get("reason") or "ComfyUI unavailable"),
                         "camera_moves": CAMERA_MOVES,
                         "camera_examples": CAMERA_EXAMPLES,
                         "images": REFERENCE_IMAGES,
                         "default_negative": DEFAULT_NEGATIVE,
                         "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
-                        "comfy": comfy_status(),
+                        "comfy": comfy,
                         "casting": casting_status(),
                     }
                 )
@@ -3526,10 +3527,16 @@ def move_to_recycle_bin(path: Path) -> None:
         raise OSError(f"failed to move to recycle bin: {path} ({result})")
 
 
-def public_workflows() -> list[dict[str, Any]]:
+def public_workflows(unavailable_reason: str | None = None) -> list[dict[str, Any]]:
     items = []
     for workflow in WORKFLOWS:
-        status = workflow_status(workflow)
+        if unavailable_reason:
+            status = {"available": False, "reason": unavailable_reason}
+        else:
+            try:
+                status = workflow_status(workflow)
+            except Exception as exc:
+                status = {"available": False, "reason": str(exc)}
         item = dict(workflow)
         item.update(status)
         items.append(item)
