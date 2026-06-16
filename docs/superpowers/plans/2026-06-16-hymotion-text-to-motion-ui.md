@@ -213,14 +213,19 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 **Files:** Modify `server/camera_lab_server.py`; Test `tests/test_motion_builders.py`.
 
-- [ ] **Task 5a — In-server prompt rewrite helper.**
-  - Implement `rewrite_motion_prompt(text) -> tuple[str, float]` using the existing `llm_chat()` (`:2254`) with HY-Motion's `REWRITE_AND_INFER_TIME_PROMPT_FORMAT` template (copy the template text into a module constant — do NOT import from the plugin). Parse the JSON reply (reuse the resilient extractor at `:2489`) → `(short_caption, duration_frames/30.0)`. On parse failure or LLM unavailable, fall back to `(text, default_duration)`.
-  - Test: stub `llm_chat` to return `'{"duration": 120, "short_caption": "X walks."}'`; assert `("X walks.", 4.0)`. Stub a malformed reply; assert fallback `(text, default)`.
-  - Commit: `feat(motion): in-server LLM prompt rewrite`.
+- [x] **Task 5a — In-server prompt rewrite helper.** ✅ DONE (commit `417a722`)
+  - `rewrite_motion_prompt(text, default_duration=4.0) -> tuple[str, float]` using `llm_chat()` (`:2254`) with the copied `MOTION_REWRITE_PROMPT_FORMAT` constant (verbatim from the plugin; do NOT import). Parses via `extract_json_object` → `(short_caption, duration_frames/30.0)`. Falls back to `(text, default_duration)` on any failure. Tests in `tests/test_motion_builders.py`.
+
+  > **DESIGN DECISION (2026-06-16, user):** in-server rewrite is **OPT-IN, default OFF** — do not run the local LLM unless the user toggles it on. Three modes the UI must support:
+  > 1. **Default (rewrite=off):** literal prompt text + a **manually entered** duration (new `motionDuration` field, Tasks 8/10).
+  > 2. **In-server rewrite (toggle on):** `build_hymotion_api` calls `rewrite_motion_prompt(prompt, default_duration=manual_duration)` → caption + auto duration override.
+  > 3. **Third-party manual:** a **"Copy rewrite prompt"** button (Tasks 8/10) fills `MOTION_REWRITE_PROMPT_FORMAT` with the current text and copies to clipboard; user runs it in any LLM and pastes the caption back. (= mode 1 + helper.)
 
 - [ ] **Task 5b — Stage A builder.**
-  - Test: `build_hymotion_api(run, template_path)` patches `10.inputs.text` (prompt — rewritten when `run["rewrite"]` else literal), `5.inputs.duration` (seconds), `5.inputs.seed`, `5.inputs.cfg_scale`, and `31.inputs.filename_prefix` (per-run); assert values land on the right node IDs of `hymotion_guide.api.json`.
-  - Implement `build_hymotion_api(run, template_path)` returning the patched API dict (calls `rewrite_motion_prompt` when enabled). Submit via `http_json("/prompt", {"prompt": api, "client_id": ...}, base_url=MOTION_COMFY_URL)`.
+  - `run` fields: `prompt` (str), `rewrite` (bool, default False), `duration` (seconds, from UI), `seed`, `cfg_scale`, plus a per-run prefix.
+  - Resolve `(text, seconds)`: if `run["rewrite"]` → `rewrite_motion_prompt(run["prompt"], default_duration=run["duration"])`; else → `(run["prompt"], run["duration"])`.
+  - Test: `build_hymotion_api(run, template_path)` patches `10.inputs.text` (resolved text), `5.inputs.duration` (resolved seconds), `5.inputs.seed`, `5.inputs.cfg_scale`, and `31.inputs.filename_prefix` (per-run); assert values land on the right node IDs of `hymotion_guide.api.json`. Cover both `rewrite=False` (literal + manual duration) and `rewrite=True` (stubbed `rewrite_motion_prompt`).
+  - Implement `build_hymotion_api(run, template_path)` returning the patched API dict. Submit via `http_json("/prompt", {"prompt": api, "client_id": ...}, base_url=MOTION_COMFY_URL)`.
   - Commit: `feat(motion): HY-Motion stage builder`.
 
 - [ ] **Task 6 — Stage B builder.**
@@ -245,7 +250,8 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 
 - [ ] **Step 1:** Add tab button after line 18: `<button id="motionWorkspaceTab" class="workspace-tab" type="button">Motion</button>`.
 - [ ] **Step 2:** Add a `motion-panel` section with controls (match existing label/input style):
-  - `motionPrompt` (textarea), `motionRefInput` (`type=file`), size preset/scale (reuse existing `sizePreset`/`sizeScale` markup pattern), `motionSteps` (`number` default 8), `motionSeed` (`number`, placeholder Random).
+  - `motionPrompt` (textarea), `motionRefInput` (`type=file`), `motionDuration` (`number`, seconds, default 4, min 0.5 max 12 step 0.5), size preset/scale (reuse existing `sizePreset`/`sizeScale` markup pattern), `motionSteps` (`number` default 8), `motionSeed` (`number`, placeholder Random).
+  - `motionRewrite` (`checkbox`, **default unchecked** — opt-in in-server LLM rewrite; when checked it auto-derives caption + duration) and a `motionCopyRewrite` button ("Copy rewrite prompt") next to the prompt.
   - Collapsed `<details>` "Advanced": `motionPoseStrength` (`range` 0–10 step 0.01 value 1.0), `motionCfg` (`range` 1–15 step 0.5 value 5).
   - Guide preview `<video id="motionGuide" controls>` + final `<video id="motionResult" controls>`.
 - [ ] **Step 3: Commit** `feat(motion): add Motion tab markup`.
@@ -263,7 +269,8 @@ git commit -m "feat(motion): add align_4k1 + video_frame_count helpers"
 **Files:** Modify `frontend/app.js`.
 
 - [ ] **Step 1:** `uploadImage(file, "motion_ref")` reuse of existing `/api/upload-image` (`:2104`) for the reference image.
-- [ ] **Step 2:** `startMotion()` — POST the form to `/api/text-to-motion` via `api()`; then `pollMotion()` (clone of `pollBatch` `:1972`): when status reaches `running_video` and `guide_video` is present, set `motionGuide.src`; when `done`, set `motionResult.src`.
+- [ ] **Step 2:** `startMotion()` — POST the form to `/api/text-to-motion` via `api()` including `rewrite` (from `motionRewrite.checked`, default false) and `duration` (from `motionDuration`); then `pollMotion()` (clone of `pollBatch` `:1972`): when status reaches `running_video` and `guide_video` is present, set `motionGuide.src`; when `done`, set `motionResult.src`.
+- [ ] **Step 2b:** `motionCopyRewrite` click handler: fill the rewrite-prompt template with `motionPrompt.value` and `navigator.clipboard.writeText(...)` (toast "Copied"). Source the template from the server (add it to the existing config/status payload the frontend already fetches, or a tiny `/api/motion/rewrite-prompt` route) so it stays in sync with `MOTION_REWRITE_PROMPT_FORMAT` — do NOT hardcode a second copy in JS.
 - [ ] **Step 3: Commit** `feat(motion): two-step submit + guide/result preview`.
 
 ### Task 11: e2e smoke test
