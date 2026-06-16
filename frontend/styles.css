@@ -1789,37 +1789,58 @@ body.motion-workspace-active .motion-workspace {
   font-size: clamp(24px, 3vw, 34px);
 }
 
-.motion-stage-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.motion-stage-actions .primary {
-  width: auto;
-  min-width: 150px;
-}
-
 .motion-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-height: 0;
 }
 
-.motion-control-panel,
+.motion-workbench,
 .motion-preview-card {
   border: 1px solid rgba(240,235,225,.12);
   background: rgba(14,14,11,.84);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 
-.motion-control-panel {
-  padding: 14px;
+.motion-workbench {
+  display: grid;
+  grid-template-rows: auto minmax(210px, .7fr) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.motion-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(240,235,225,.1);
+}
+
+.motion-panel-head h3 {
+  margin-top: 2px;
+  font-size: 18px;
+}
+
+.motion-panel-body {
+  padding: 12px 14px;
   min-height: 0;
   overflow: auto;
+}
+
+.motion-actions-row {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.motion-actions-row .primary,
+.motion-video-panel .primary {
+  width: 100%;
+  margin-top: 0;
 }
 
 .check-row {
@@ -1834,30 +1855,22 @@ body.motion-workspace-active .motion-workspace {
   margin: 0;
 }
 
-.motion-control-panel details {
+.motion-panel-body details {
   margin: 2px 0 13px;
   padding: 10px;
   border: 1px solid var(--line);
   background: rgba(255,255,255,.02);
 }
 
-.motion-control-panel summary {
+.motion-panel-body summary {
   cursor: pointer;
   color: var(--accent-2);
   font-size: 12px;
   font-weight: 700;
 }
 
-.motion-control-panel details label {
+.motion-panel-body details label {
   margin-top: 12px;
-}
-
-.motion-preview-panel {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  min-width: 0;
-  min-height: 0;
 }
 
 .motion-preview-card {
@@ -1885,7 +1898,7 @@ body.motion-workspace-active .motion-workspace {
   width: 100%;
   height: 100%;
   min-height: 0;
-  max-height: clamp(320px, calc(100vh - 220px), 720px);
+  max-height: clamp(220px, calc(100vh - 500px), 520px);
   background: #050504;
   object-fit: contain;
   display: block;
@@ -2240,14 +2253,13 @@ body.motion-workspace-active .motion-workspace {
     flex-direction: column;
   }
 
-  .motion-stage-actions,
-  .motion-stage-actions .primary {
-    width: 100%;
+  .motion-grid {
+    grid-template-columns: 1fr;
   }
 
-  .motion-grid,
-  .motion-preview-panel {
-    grid-template-columns: 1fr;
+  body.motion-workspace-active .motion-workspace {
+    max-height: none;
+    overflow: visible;
   }
 
   body.casting-workspace-active .casting-workspace {
