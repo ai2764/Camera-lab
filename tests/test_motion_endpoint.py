@@ -293,3 +293,21 @@ def test_create_motion_video_batch_uses_uploaded_guide(monkeypatch, tmp_path):
     assert run["scail_length"] == 93
     assert run["status"] == "guide_done"
     assert run["workflow_id"] == "uploaded_motion_to_scail"
+
+
+def test_create_motion_guide_batch_allows_missing_reference(monkeypatch, tmp_path):
+    monkeypatch.setattr(s, "RUN_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+
+    batch = s.Handler.create_motion_batch(object(), {
+        "prompt": "walk forward",
+        "duration": 4,
+        "width": 480,
+        "height": 832,
+        "seed": 123,
+    }, require_reference=False)
+
+    run = batch["runs"][0]
+    assert run["prompt"] == "walk forward"
+    assert run["reference_image"] == ""
+    assert run["status"] == "queued"

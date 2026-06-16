@@ -3197,14 +3197,14 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         self.send_json(batch)
 
-    def create_motion_batch(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def create_motion_batch(self, payload: dict[str, Any], require_reference: bool = True) -> dict[str, Any]:
         prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
             raise ValueError("prompt is required")
         reference_path = payload.get("reference_path") or payload.get("source_path") or ""
-        if not reference_path:
+        if require_reference and not reference_path:
             raise ValueError("motion reference image is required")
-        reference = safe_media_path(str(reference_path))
+        reference = safe_media_path(str(reference_path)) if reference_path else None
         width, height = validate_size(payload.get("width") or 480, payload.get("height") or 832)
         seed = validate_seed(payload.get("seed"))
         duration = max(0.5, min(12.0, float(payload.get("duration") or 4.0)))
@@ -3225,7 +3225,7 @@ class Handler(BaseHTTPRequestHandler):
             "workflow_mode": "motion",
             "workflow_label": "Motion",
             "camera_move": "motion",
-            "reference_image": str(reference),
+            "reference_image": str(reference) if reference else "",
             "duration": duration,
             "width": width,
             "height": height,
@@ -3253,13 +3253,13 @@ class Handler(BaseHTTPRequestHandler):
         return batch
 
     def handle_text_to_motion(self) -> None:
-        batch = self.create_motion_batch(self.read_json())
+        batch = self.create_motion_batch(self.read_json(), require_reference=True)
         thread = threading.Thread(target=motion_worker, args=(batch["runs"][0], batch), daemon=True)
         thread.start()
         self.send_json(batch)
 
     def handle_text_to_motion_guide(self) -> None:
-        batch = self.create_motion_batch(self.read_json())
+        batch = self.create_motion_batch(self.read_json(), require_reference=False)
         thread = threading.Thread(target=motion_guide_worker, args=(batch["runs"][0], batch), daemon=True)
         thread.start()
         self.send_json(batch)

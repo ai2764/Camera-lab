@@ -2185,10 +2185,6 @@ async function startMotionGuide() {
     $("motionStatus").textContent = "Prompt is required";
     return;
   }
-  if (!payload.reference_path) {
-    $("motionStatus").textContent = "Reference image is required";
-    return;
-  }
   $("motionGuideBtn").disabled = true;
   $("motionGuideBtn").textContent = "Generating...";
   $("motionRunBtn").disabled = true;

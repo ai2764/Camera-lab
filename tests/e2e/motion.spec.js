@@ -86,6 +86,7 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await page.route("**/api/text-to-motion-guide", async (route) => {
     const payload = route.request().postDataJSON();
     expect(payload.prompt).toContain("waves");
+    expect(payload.reference_path).toBe("");
     expect(payload.rewrite).toBe(false);
     expect(payload.duration).toBe(4);
     await route.fulfill({
@@ -191,14 +192,15 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   expect(finalPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
 
   await page.locator("#motionPrompt").fill("A person walks forward and waves.");
-  await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
-  await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
 
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
   await page.locator("#motionGuideBtn").click();
 
   await expect(page.locator("#motionGuideState")).toHaveText("ready");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide\.mp4/);
+  await expect(page.locator("#motionRunBtn")).toBeDisabled();
+  await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
+  await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
   await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
