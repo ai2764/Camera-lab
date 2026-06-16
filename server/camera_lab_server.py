@@ -2113,72 +2113,92 @@ def persist_motion_batch(batch: dict[str, Any] | None) -> None:
         write_batch(batch)
 
 
-def motion_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+def finish_motion_batch(batch: dict[str, Any] | None) -> None:
+    if not batch:
+        return
+    batch["status"] = "done" if all(r.get("status") in {"done", "guide_done", "canceled"} for r in batch["runs"]) else "error"
+    batch["finished_at"] = time.time()
+    write_batch(batch)
+
+
+def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
     run_dir = Path(run["run_dir"])
     motion_dir = run_dir / "motion"
-    video_dir = run_dir / "video"
     motion_dir.mkdir(parents=True, exist_ok=True)
+    run["status"] = "running_motion"
+    run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_guide"
+    hymotion_api = build_hymotion_api(run)
+    motion_prompt_id = submit_motion_stage(hymotion_api, run, motion_dir, "guide")
+    run["motion_prompt_id"] = motion_prompt_id
+    run["prompt_id"] = motion_prompt_id
+    wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
+    check_run_canceled(run)
+
+    guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
+    guide_video = first_video(guide_copied, "HY-Motion guide")
+    run["guide_video"] = str(guide_video)
+    run["scail_length"] = align_4k1(video_frame_count(guide_video))
+    run["copied"] = [str(path) for path in guide_copied]
+    run["status"] = "guide_done"
+    return guide_copied
+
+
+def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
+    run_dir = Path(run["run_dir"])
+    video_dir = run_dir / "video"
     video_dir.mkdir(parents=True, exist_ok=True)
+    guide_video = Path(run.get("guide_video") or "")
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+
+    length = int(run.get("scail_length") or align_4k1(video_frame_count(guide_video)))
+    run["scail_length"] = length
+
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_video.name)}"
+    shutil.copy2(guide_video, COMFY_INPUT / guide_name)
+    run["guide_name"] = guide_name
+
+    reference_path = run.get("reference_image") or ""
+    if reference_path:
+        reference = Path(reference_path)
+        if not reference.exists():
+            raise FileNotFoundError("motion reference image is missing")
+        reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
+        shutil.copy2(reference, COMFY_INPUT / reference_name)
+        run["reference_name"] = reference_name
+
+    run["status"] = "running_video"
+    run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_final"
+    scail_api = build_scail_api(run, guide_name, length)
+    video_prompt_id = submit_motion_stage(scail_api, run, video_dir, "video")
+    run["video_prompt_id"] = video_prompt_id
+    run["prompt_id"] = video_prompt_id
+    wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
+    check_run_canceled(run)
+
+    final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
+    final_video = first_video(final_copied, "SCAIL video")
+    run["video"] = str(final_video)
+    run["copied"] = [*run.get("copied", []), *[str(path) for path in final_copied]]
+    contact = run_dir / "contact.jpg"
+    try:
+        make_contact_sheet(final_video, contact, "Motion / SCAIL")
+        run["contact_sheet"] = str(contact)
+    except Exception as exc:
+        run["contact_error"] = str(exc)
+    run["status"] = "done"
+    return final_copied
+
+
+def motion_guide_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
     try:
         if batch:
             batch["status"] = "running"
             batch["started_at"] = time.time()
-        run["status"] = "running_motion"
         run["started_at"] = time.time()
         persist_motion_batch(batch)
-
-        run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_guide"
-        hymotion_api = build_hymotion_api(run)
-        motion_prompt_id = submit_motion_stage(hymotion_api, run, motion_dir, "guide")
-        run["motion_prompt_id"] = motion_prompt_id
-        run["prompt_id"] = motion_prompt_id
-        persist_motion_batch(batch)
-        wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
-        check_run_canceled(run)
-
-        guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
-        guide_video = first_video(guide_copied, "HY-Motion guide")
-        run["guide_video"] = str(guide_video)
-        length = align_4k1(video_frame_count(guide_video))
-        run["scail_length"] = length
-
-        COMFY_INPUT.mkdir(parents=True, exist_ok=True)
-        guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_video.name)}"
-        shutil.copy2(guide_video, COMFY_INPUT / guide_name)
-        run["guide_name"] = guide_name
-
-        reference_path = run.get("reference_image") or ""
-        if reference_path:
-            reference = Path(reference_path)
-            if not reference.exists():
-                raise FileNotFoundError("motion reference image is missing")
-            reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
-            shutil.copy2(reference, COMFY_INPUT / reference_name)
-            run["reference_name"] = reference_name
-
-        run["status"] = "running_video"
-        persist_motion_batch(batch)
-
-        run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_final"
-        scail_api = build_scail_api(run, guide_name, length)
-        video_prompt_id = submit_motion_stage(scail_api, run, video_dir, "video")
-        run["video_prompt_id"] = video_prompt_id
-        run["prompt_id"] = video_prompt_id
-        persist_motion_batch(batch)
-        wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
-        check_run_canceled(run)
-
-        final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
-        final_video = first_video(final_copied, "SCAIL video")
-        run["video"] = str(final_video)
-        run["copied"] = [str(path) for path in [*guide_copied, *final_copied]]
-        contact = run_dir / "contact.jpg"
-        try:
-            make_contact_sheet(final_video, contact, "Motion / SCAIL")
-            run["contact_sheet"] = str(contact)
-        except Exception as exc:
-            run["contact_error"] = str(exc)
-        run["status"] = "done"
+        run_motion_guide_stage(run)
         run["finished_at"] = time.time()
     except RunCanceled:
         run["status"] = "canceled"
@@ -2190,10 +2210,54 @@ def motion_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> N
         run["finished_at"] = time.time()
     finally:
         persist_motion_batch(batch)
+        finish_motion_batch(batch)
+
+
+def motion_final_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    try:
         if batch:
-            batch["status"] = "done" if all(r.get("status") in {"done", "canceled"} for r in batch["runs"]) else "error"
-            batch["finished_at"] = time.time()
-            write_batch(batch)
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run.pop("error", None)
+        run["finished_at"] = None
+        persist_motion_batch(batch)
+        run_motion_final_stage(run)
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        finish_motion_batch(batch)
+
+
+def motion_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    try:
+        if batch:
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run["started_at"] = time.time()
+        persist_motion_batch(batch)
+        run_motion_guide_stage(run)
+        persist_motion_batch(batch)
+        run_motion_final_stage(run)
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        finish_motion_batch(batch)
 
 
 def run_batch_worker(batch_id: str) -> None:
@@ -2904,6 +2968,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_run()
             if self.path == "/api/text-to-motion":
                 return self.handle_text_to_motion()
+            if self.path == "/api/text-to-motion-guide":
+                return self.handle_text_to_motion_guide()
+            if self.path == "/api/text-to-motion-final":
+                return self.handle_text_to_motion_final()
             if self.path == "/api/upload-audio":
                 return self.handle_upload_audio()
             if self.path == "/api/upload-image":
@@ -3053,8 +3121,7 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         self.send_json(batch)
 
-    def handle_text_to_motion(self) -> None:
-        payload = self.read_json()
+    def create_motion_batch(self, payload: dict[str, Any]) -> dict[str, Any]:
         prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
             raise ValueError("prompt is required")
@@ -3107,7 +3174,47 @@ class Handler(BaseHTTPRequestHandler):
         }
         BATCHES[batch_id] = batch
         write_batch(batch)
-        thread = threading.Thread(target=motion_worker, args=(run, batch), daemon=True)
+        return batch
+
+    def handle_text_to_motion(self) -> None:
+        batch = self.create_motion_batch(self.read_json())
+        thread = threading.Thread(target=motion_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion_guide(self) -> None:
+        batch = self.create_motion_batch(self.read_json())
+        thread = threading.Thread(target=motion_guide_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion_final(self) -> None:
+        payload = self.read_json()
+        batch_id = str(payload.get("batch_id") or "").strip()
+        if not batch_id:
+            raise ValueError("batch_id is required")
+        batch = BATCHES.get(batch_id) or load_batch(batch_id)
+        BATCHES[batch_id] = batch
+        run_id = str(payload.get("run_id") or "").strip()
+        run = next((item for item in batch.get("runs", []) if not run_id or item.get("run_id") == run_id), None)
+        if not run:
+            raise ValueError("motion run not found")
+        if not run.get("guide_video"):
+            raise ValueError("generate a motion guide first")
+
+        if payload.get("reference_path") or payload.get("source_path"):
+            run["reference_image"] = str(safe_media_path(str(payload.get("reference_path") or payload.get("source_path"))))
+        width, height = validate_size(payload.get("width") or run.get("width") or 480, payload.get("height") or run.get("height") or 832)
+        run["width"] = width
+        run["height"] = height
+        if payload.get("steps") not in {None, ""}:
+            run["steps"] = max(1, min(100, int(payload.get("steps"))))
+        if payload.get("pose_strength") not in {None, ""}:
+            run["pose_strength"] = max(0.0, min(1.0, float(payload.get("pose_strength"))))
+        if payload.get("seed") not in {None, ""}:
+            run["seed"] = validate_seed(payload.get("seed"))
+        write_batch(batch)
+        thread = threading.Thread(target=motion_final_worker, args=(run, batch), daemon=True)
         thread.start()
         self.send_json(batch)
 

@@ -38,7 +38,8 @@ function mockConfig(page) {
   });
 }
 
-test("Motion tab submits and previews guide before final result", async ({ page }) => {
+test("Motion tab generates guide before rendering final result", async ({ page }) => {
+  let finalRequested = false;
   await mockConfig(page);
   await page.route("**/api/history?limit=200", async (route) => {
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ runs: [] }) });
@@ -52,7 +53,7 @@ test("Motion tab submits and previews guide before final result", async ({ page 
       body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
     });
   });
-  await page.route("**/api/text-to-motion", async (route) => {
+  await page.route("**/api/text-to-motion-guide", async (route) => {
     const payload = route.request().postDataJSON();
     expect(payload.prompt).toContain("waves");
     expect(payload.rewrite).toBe(false);
@@ -68,6 +69,30 @@ test("Motion tab submits and previews guide before final result", async ({ page 
           run_id: "01_motion",
           workflow_mode: "motion",
           prompt: payload.prompt,
+          status: "running_motion",
+          queued_at: Date.now() / 1000,
+          started_at: Date.now() / 1000,
+        }],
+      }),
+    });
+  });
+  await page.route("**/api/text-to-motion-final", async (route) => {
+    finalRequested = true;
+    const payload = route.request().postDataJSON();
+    expect(payload.batch_id).toBe("motion_e2e");
+    expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "motion_e2e",
+        status: "running",
+        queued_at: Date.now() / 1000,
+        runs: [{
+          batch_id: "motion_e2e",
+          run_id: "01_motion",
+          workflow_mode: "motion",
+          prompt: "A person walks forward and waves.",
+          duration: 4,
           status: "running_video",
           queued_at: Date.now() / 1000,
           started_at: Date.now() / 1000,
@@ -77,14 +102,8 @@ test("Motion tab submits and previews guide before final result", async ({ page 
     });
   });
   await page.route("**/api/batches/motion_e2e", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        batch_id: "motion_e2e",
-        status: "done",
-        queued_at: Date.now() / 1000,
-        finished_at: Date.now() / 1000,
-        runs: [{
+    const run = finalRequested
+      ? {
           batch_id: "motion_e2e",
           run_id: "01_motion",
           workflow_mode: "motion",
@@ -96,7 +115,27 @@ test("Motion tab submits and previews guide before final result", async ({ page 
           finished_at: Date.now() / 1000,
           guide_video: "C:\\mock\\guide.mp4",
           video: "C:\\mock\\final.mp4",
-        }],
+        }
+      : {
+          batch_id: "motion_e2e",
+          run_id: "01_motion",
+          workflow_mode: "motion",
+          prompt: "A person walks forward and waves.",
+          duration: 4,
+          status: "guide_done",
+          queued_at: Date.now() / 1000,
+          started_at: Date.now() / 1000,
+          finished_at: Date.now() / 1000,
+          guide_video: "C:\\mock\\guide.mp4",
+        };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "motion_e2e",
+        status: "done",
+        queued_at: Date.now() / 1000,
+        finished_at: Date.now() / 1000,
+        runs: [run],
       }),
     });
   });
@@ -112,10 +151,13 @@ test("Motion tab submits and previews guide before final result", async ({ page 
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
   await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
 
-  await page.locator("#motionRunBtn").click();
+  await expect(page.locator("#motionRunBtn")).toBeDisabled();
+  await page.locator("#motionGuideBtn").click();
 
   await expect(page.locator("#motionGuideState")).toHaveText("ready");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide\.mp4/);
+  await expect(page.locator("#motionRunBtn")).toBeEnabled();
+  await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final\.mp4/);
 });

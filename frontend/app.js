@@ -2099,6 +2099,15 @@ function clearMotionVideos() {
   }
   $("motionGuideState").textContent = "waiting";
   $("motionResultState").textContent = "waiting";
+  $("motionRunBtn").disabled = true;
+}
+
+function clearMotionResult() {
+  const video = $("motionResult");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  $("motionResultState").textContent = "waiting";
 }
 
 function renderMotionBatch(batch) {
@@ -2114,8 +2123,10 @@ function renderMotionBatch(batch) {
       $("motionGuide").src = guideSrc;
     }
     $("motionGuideState").textContent = "ready";
+    $("motionRunBtn").disabled = false;
   } else if (run.status === "running_motion") {
     $("motionGuideState").textContent = "rendering";
+    $("motionRunBtn").disabled = true;
   }
   if (run.video) {
     const resultSrc = mediaUrl(run.video);
@@ -2125,6 +2136,10 @@ function renderMotionBatch(batch) {
     $("motionResultState").textContent = "ready";
   } else if (run.status === "running_video") {
     $("motionResultState").textContent = "rendering";
+    $("motionRunBtn").disabled = true;
+  }
+  if (["done", "guide_done", "error"].includes(run.status || batch.status) && run.guide_video) {
+    $("motionRunBtn").disabled = false;
   }
 }
 
@@ -2144,7 +2159,7 @@ async function pollMotion() {
   }
 }
 
-async function startMotion() {
+async function startMotionGuide() {
   const payload = motionPayload();
   if (!payload.prompt) {
     $("motionStatus").textContent = "Prompt is required";
@@ -2154,11 +2169,12 @@ async function startMotion() {
     $("motionStatus").textContent = "Reference image is required";
     return;
   }
+  $("motionGuideBtn").disabled = true;
+  $("motionGuideBtn").textContent = "Generating...";
   $("motionRunBtn").disabled = true;
-  $("motionRunBtn").textContent = "Queueing...";
   clearMotionVideos();
   try {
-    const batch = await api("/api/text-to-motion", {
+    const batch = await api("/api/text-to-motion-guide", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -2170,8 +2186,44 @@ async function startMotion() {
   } catch (err) {
     $("motionStatus").textContent = err.message;
   } finally {
+    $("motionGuideBtn").disabled = false;
+    $("motionGuideBtn").textContent = "Generate Motion Guide";
+  }
+}
+
+async function startMotionFinal() {
+  const payload = motionPayload();
+  const run = (state.motionBatch?.runs || [])[0] || {};
+  if (!state.motionBatch || !run.guide_video) {
+    $("motionStatus").textContent = "Generate a motion guide first";
+    return;
+  }
+  if (!payload.reference_path) {
+    $("motionStatus").textContent = "Reference image is required";
+    return;
+  }
+  $("motionRunBtn").disabled = true;
+  $("motionRunBtn").textContent = "Rendering...";
+  clearMotionResult();
+  try {
+    const batch = await api("/api/text-to-motion-final", {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        batch_id: state.motionBatch.batch_id,
+        run_id: run.run_id,
+      }),
+    });
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
     $("motionRunBtn").disabled = false;
-    $("motionRunBtn").textContent = "Queue Motion";
+  } finally {
+    $("motionRunBtn").textContent = "Render Final Video";
   }
 }
 
@@ -3158,7 +3210,8 @@ $("directorCustomSizeInput").addEventListener("input", onCustomSizeInput);
 $("resetPromptsBtn").addEventListener("click", resetPrompt);
 $("refreshBtn").addEventListener("click", loadConfig);
 $("runBtn").addEventListener("click", startBatch);
-$("motionRunBtn").addEventListener("click", startMotion);
+$("motionGuideBtn").addEventListener("click", startMotionGuide);
+$("motionRunBtn").addEventListener("click", startMotionFinal);
 $("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt().catch((err) => {
   $("motionStatus").textContent = err.message;
 }));
