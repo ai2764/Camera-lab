@@ -262,3 +262,34 @@ def test_motion_final_worker_reuses_existing_guide(monkeypatch, tmp_path):
     assert run["status"] == "done"
     assert run["video"] == str(final)
     assert batch["status"] == "done"
+
+
+def test_create_motion_video_batch_uses_uploaded_guide(monkeypatch, tmp_path):
+    guide = tmp_path / "uploads" / "guide.mp4"
+    reference = tmp_path / "uploads" / "ref.png"
+    run_root = tmp_path / "runs"
+    guide.parent.mkdir()
+    guide.write_bytes(b"guide")
+    reference.write_bytes(b"ref")
+    monkeypatch.setattr(s, "ROOT", tmp_path)
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "comfy_output")
+    monkeypatch.setattr(s, "RUN_ROOT", run_root)
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 94)
+
+    batch = s.create_motion_video_batch({
+        "guide_video_path": str(guide),
+        "reference_path": str(reference),
+        "width": 480,
+        "height": 832,
+        "steps": 8,
+        "pose_strength": 0.7,
+        "seed": 123,
+    })
+
+    run = batch["runs"][0]
+    assert run["guide_video"] == str(guide.resolve())
+    assert run["reference_image"] == str(reference.resolve())
+    assert run["scail_length"] == 93
+    assert run["status"] == "guide_done"
+    assert run["workflow_id"] == "uploaded_motion_to_scail"

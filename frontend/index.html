@@ -357,7 +357,7 @@
           <div class="motion-panel-body">
             <label>
               Motion prompt
-              <textarea id="motionPrompt" rows="7" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
+              <textarea id="motionPrompt" rows="4" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
             </label>
             <div class="grid-2">
               <label>
@@ -369,6 +369,17 @@
                 <input id="motionSeed" type="number" min="1" max="2147000000" step="1" placeholder="Random">
               </label>
             </div>
+            <div class="motion-actions-row">
+              <button id="motionCopyRewrite" type="button">Copy rewrite prompt</button>
+              <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
+            </div>
+            <div class="motion-upload-card">
+              <label>
+                Upload guide video
+                <input id="motionGuideInput" type="file" accept="video/*">
+                <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+              </label>
+            </div>
             <label class="check-row">
               <input id="motionRewrite" type="checkbox">
               <span>In-server rewrite</span>
@@ -377,10 +388,6 @@
               HY-Motion CFG <span id="motionCfgReadout">5.0</span>
               <input id="motionCfg" type="range" min="1" max="5" step="0.5" value="5">
             </label>
-            <div class="motion-actions-row">
-              <button id="motionCopyRewrite" type="button">Copy rewrite prompt</button>
-              <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
-            </div>
             <p id="motionStatus" class="hint">Runs are saved under tasks/camera_lab_runs.</p>
           </div>
           <div class="motion-preview-card">
@@ -408,6 +415,7 @@
             <div id="motionRefPreviewWrap" class="source-preview">
               <img id="motionRefPreview" alt="motion reference preview">
             </div>
+            <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
             <div class="grid-2">
             <label>
               Preset
@@ -435,7 +443,6 @@
               Pose strength <span id="motionPoseReadout">1.00</span>
               <input id="motionPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
             </label>
-            <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
           </div>
           <div class="motion-preview-card">
             <div class="motion-preview-head">

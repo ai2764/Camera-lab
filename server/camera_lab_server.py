@@ -2126,6 +2126,73 @@ def finish_motion_batch(batch: dict[str, Any] | None) -> None:
     write_batch(batch)
 
 
+def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    guide_path = payload.get("guide_video_path") or payload.get("guide_path") or ""
+    if not guide_path:
+        raise ValueError("motion guide video is required")
+    guide_video = safe_media_path(str(guide_path))
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+
+    reference_path = payload.get("reference_path") or payload.get("source_path") or ""
+    if not reference_path:
+        raise ValueError("motion reference image is required")
+    reference = safe_media_path(str(reference_path))
+    if not reference.exists():
+        raise FileNotFoundError("motion reference image is missing")
+
+    width, height = validate_size(payload.get("width") or 480, payload.get("height") or 832)
+    seed = validate_seed(payload.get("seed"))
+    steps = max(1, min(100, int(payload.get("steps") or 8)))
+    pose_strength = max(0.0, min(1.0, float(payload.get("pose_strength") or 1.0)))
+    frame_count = video_frame_count(guide_video)
+    scail_length = align_4k1(frame_count)
+    duration = max(0.5, min(60.0, float(payload.get("duration") or frame_count / 24 or 4.0)))
+    prompt = str(payload.get("prompt") or "").strip() or f"uploaded guide video: {guide_video.name}"
+
+    batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
+    batch_dir = RUN_ROOT / batch_id
+    run_id = "01_motion"
+    run_dir = batch_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run = {
+        "batch_id": batch_id,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "workflow_id": "uploaded_motion_to_scail",
+        "workflow_mode": "motion",
+        "workflow_label": "Motion",
+        "camera_move": "motion",
+        "reference_image": str(reference),
+        "guide_video": str(guide_video),
+        "scail_length": scail_length,
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "variant_name": "motion",
+        "prompt": prompt,
+        "rewrite": False,
+        "cfg_scale": 5.0,
+        "steps": steps,
+        "pose_strength": pose_strength,
+        "status": "guide_done",
+        "queued_at": time.time(),
+        "scores": {},
+        "notes": "",
+    }
+    batch = {
+        "batch_id": batch_id,
+        "batch_dir": str(batch_dir),
+        "status": "queued",
+        "queued_at": time.time(),
+        "runs": [run],
+    }
+    BATCHES[batch_id] = batch
+    write_batch(batch)
+    return batch
+
+
 def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
     run_dir = Path(run["run_dir"])
     motion_dir = run_dir / "motion"
@@ -2977,8 +3044,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_text_to_motion_guide()
             if self.path == "/api/text-to-motion-final":
                 return self.handle_text_to_motion_final()
+            if self.path == "/api/text-to-motion-video-final":
+                return self.handle_text_to_motion_video_final()
             if self.path == "/api/upload-audio":
                 return self.handle_upload_audio()
+            if self.path == "/api/upload-video":
+                return self.handle_upload_video()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
             if self.path == "/api/photography-subject":
@@ -3223,6 +3294,12 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         self.send_json(batch)
 
+    def handle_text_to_motion_video_final(self) -> None:
+        batch = create_motion_video_batch(self.read_json())
+        thread = threading.Thread(target=motion_final_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
     def handle_upload_audio(self) -> None:
         payload = self.read_json()
         name = safe_filename(payload.get("name") or "audio.wav")
@@ -3236,6 +3313,24 @@ class Handler(BaseHTTPRequestHandler):
         if len(raw) > 80 * 1024 * 1024:
             raise ValueError("audio file is too large")
         upload_dir = UPLOAD_ROOT / "audio"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
+        path.write_bytes(raw)
+        self.send_json({"path": str(path), "name": name})
+
+    def handle_upload_video(self) -> None:
+        payload = self.read_json()
+        name = safe_filename(payload.get("name") or "video.mp4")
+        data_url = payload.get("data") or ""
+        if "," in data_url:
+            data_url = data_url.split(",", 1)[1]
+        suffix = Path(name).suffix.lower()
+        if suffix not in {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}:
+            raise ValueError("unsupported video file type")
+        raw = base64.b64decode(data_url)
+        if len(raw) > 512 * 1024 * 1024:
+            raise ValueError("video file is too large")
+        upload_dir = UPLOAD_ROOT / "videos"
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)

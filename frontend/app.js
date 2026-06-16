@@ -18,6 +18,7 @@ const state = {
   middlePath: "",
   endPath: "",
   motionRefPath: "",
+  motionGuideVideoPath: "",
   motionBatch: null,
   audioPath: "",
   referencePaths: [""],
@@ -2097,7 +2098,21 @@ function motionPayload() {
   };
 }
 
+function currentMotionRun() {
+  return (state.motionBatch?.runs || [])[0] || {};
+}
+
+function hasMotionGuideVideo() {
+  return Boolean(currentMotionRun().guide_video || state.motionGuideVideoPath);
+}
+
+function updateMotionRunAvailability() {
+  $("motionRunBtn").disabled = !(hasMotionGuideVideo() && state.motionRefPath);
+}
+
 function clearMotionVideos() {
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = "No video uploaded";
   for (const id of ["motionGuide", "motionResult"]) {
     const video = $(id);
     video.pause();
@@ -2128,7 +2143,7 @@ function renderMotionBatch(batch) {
       $("motionGuide").src = guideSrc;
     }
     $("motionGuideState").textContent = "ready";
-    $("motionRunBtn").disabled = false;
+    updateMotionRunAvailability();
   } else if (run.status === "running_motion") {
     $("motionGuideState").textContent = "rendering";
     $("motionRunBtn").disabled = true;
@@ -2144,7 +2159,7 @@ function renderMotionBatch(batch) {
     $("motionRunBtn").disabled = true;
   }
   if (["done", "guide_done", "error"].includes(run.status || batch.status) && run.guide_video) {
-    $("motionRunBtn").disabled = false;
+    updateMotionRunAvailability();
   }
 }
 
@@ -2177,6 +2192,8 @@ async function startMotionGuide() {
   $("motionGuideBtn").disabled = true;
   $("motionGuideBtn").textContent = "Generating...";
   $("motionRunBtn").disabled = true;
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = "No video uploaded";
   clearMotionVideos();
   try {
     const batch = await api("/api/text-to-motion-guide", {
@@ -2198,9 +2215,10 @@ async function startMotionGuide() {
 
 async function startMotionFinal() {
   const payload = motionPayload();
-  const run = (state.motionBatch?.runs || [])[0] || {};
-  if (!state.motionBatch || !run.guide_video) {
-    $("motionStatus").textContent = "Generate a motion guide first";
+  const run = currentMotionRun();
+  const guideVideoPath = run.guide_video || state.motionGuideVideoPath;
+  if (!guideVideoPath) {
+    $("motionStatus").textContent = "Generate or upload a motion guide first";
     return;
   }
   if (!payload.reference_path) {
@@ -2211,13 +2229,13 @@ async function startMotionFinal() {
   $("motionRunBtn").textContent = "Rendering...";
   clearMotionResult();
   try {
-    const batch = await api("/api/text-to-motion-final", {
+    const endpoint = state.motionBatch && run.guide_video ? "/api/text-to-motion-final" : "/api/text-to-motion-video-final";
+    const body = endpoint === "/api/text-to-motion-final"
+      ? { ...payload, batch_id: state.motionBatch.batch_id, run_id: run.run_id }
+      : { ...payload, guide_video_path: guideVideoPath };
+    const batch = await api(endpoint, {
       method: "POST",
-      body: JSON.stringify({
-        ...payload,
-        batch_id: state.motionBatch.batch_id,
-        run_id: run.run_id,
-      }),
+      body: JSON.stringify(body),
     });
     renderMotionBatch(batch);
     if (state.clockTimer) clearInterval(state.clockTimer);
@@ -2230,6 +2248,26 @@ async function startMotionFinal() {
   } finally {
     $("motionRunBtn").textContent = "Render Final Video";
   }
+}
+
+async function uploadMotionGuideVideo(file) {
+  if (!file) return;
+  $("motionGuideUploadStatus").textContent = "Uploading...";
+  const data = await readFileAsDataUrl(file);
+  const uploaded = await api("/api/upload-video", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, data }),
+  });
+  state.motionGuideVideoPath = uploaded.path;
+  state.motionBatch = null;
+  const video = $("motionGuide");
+  video.pause();
+  video.src = mediaUrl(uploaded.path);
+  $("motionGuideState").textContent = "uploaded";
+  $("motionGuideUploadStatus").textContent = uploaded.name;
+  clearMotionResult();
+  $("motionStatus").textContent = "Guide video uploaded. Ready for SCAIL2.";
+  updateMotionRunAvailability();
 }
 
 function fillPythonFormatTemplate(template, text) {
@@ -2338,6 +2376,7 @@ async function uploadImage(file, kind) {
   state[slot.pathKey] = uploaded.path;
   setImagePreview(kind, mediaUrl(uploaded.path));
   status.textContent = uploaded.name;
+  if (kind === "motion_ref") updateMotionRunAvailability();
 }
 
 // --- Casting tab ---
@@ -3178,6 +3217,12 @@ $("endInput").addEventListener("change", () => uploadImage($("endInput").files[0
 $("motionRefInput").addEventListener("change", () => uploadImage($("motionRefInput").files[0], "motion_ref").catch((err) => {
   state.motionRefPath = "";
   $("motionRefStatus").textContent = err.message;
+  updateMotionRunAvailability();
+}));
+$("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($("motionGuideInput").files[0]).catch((err) => {
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = err.message;
+  updateMotionRunAvailability();
 }));
 $("swapSourceEndBtn").addEventListener("click", () => swapImageSlots("source", "end"));
 $("swapSourceMiddleBtn").addEventListener("click", () => swapImageSlots("source", "middle"));
