@@ -2015,7 +2015,16 @@ function updateMotionSubtabs() {
     $(panelId).hidden = !active;
     $(panelId).classList.toggle("active", active);
   }
+  moveMotionGuidePreview();
   moveMotionVideoPanel();
+}
+
+function moveMotionGuidePreview() {
+  const panel = $("motionGuidePreviewCard");
+  const target = $(state.motionSubtab === "scail" ? "motionScailGuideMount" : "motionTextGuideMount");
+  if (panel && target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
 }
 
 function moveMotionVideoPanel() {

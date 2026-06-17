@@ -1846,9 +1846,25 @@ body.motion-workspace-active .motion-workspace {
   display: contents;
 }
 
+.motion-guide-mount {
+  display: contents;
+}
+
 .motion-scail-upload-strip {
   max-width: 600px;
   margin: 0 0 12px;
+}
+
+.motion-scail-guide-mount {
+  display: block;
+  max-width: min(760px, 100%);
+  margin: 0 0 12px;
+}
+
+.motion-scail-guide-mount .motion-guide-preview-card {
+  grid-area: auto;
+  height: 380px;
+  margin: 0;
 }
 
 .motion-grid {

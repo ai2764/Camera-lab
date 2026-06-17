@@ -127,6 +127,7 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motionTextPanel .motion-video-panel")).toBeVisible();
   await expect(page.locator("#motionTextPanel #motionRefInput")).toBeVisible();
   await expect(page.locator("#motionTextPanel #motionResult")).toBeVisible();
+  await expect(page.locator("#motionTextPanel #motionTrimPanel")).toBeVisible();
 
   await page.locator("#motionScailTab").click();
   await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
@@ -135,6 +136,7 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motionScailPanel #motionGuideInput")).toBeVisible();
   await expect(page.locator("#motionScailPanel #motionRefInput")).toBeVisible();
   await expect(page.locator("#motionScailPanel #motionResult")).toBeVisible();
+  await expect(page.locator("#motionScailPanel #motionTrimPanel")).toBeVisible();
 
   await page.locator("#motion3dTab").click();
   await expect(page.locator("#motion3dTab")).toHaveClass(/active/);
@@ -395,8 +397,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     expect(payload.guide_video_path).toBe("C:\\mock\\guide-upload.mp4");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
     expect(payload.seed).toBe("777");
-    expect(payload.guide_trim_start).toBe(0);
-    expect(payload.guide_trim_end).toBe(4);
+    expect(payload.guide_trim_start).toBe(1);
+    expect(payload.guide_trim_end).toBe(2.5);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -457,6 +459,10 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide.mp4");
   await expect(page.locator("#motionGuideState")).toHaveText("uploaded");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-upload\.mp4/);
+  await expect(page.locator("#motionTrimPanel")).toBeVisible();
+  await page.locator("#motionTrimStart").fill("1");
+  await page.locator("#motionTrimEnd").fill("2.5");
+  await expect(page.locator("#motionTrimDuration")).toHaveText("1.50s");
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
 
   await page.locator("#motionRunBtn").click();
