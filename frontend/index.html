@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=motion-preview-balance-1">
+  <link rel="stylesheet" href="/static/styles.css?v=motion-trim-editor-2">
 </head>
 <body>
   <header class="topbar">
@@ -371,10 +371,13 @@
             </div>
             <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
             <div class="motion-upload-card">
-              <label>
-                Upload guide video
+              <label class="motion-file-field">
+                <span>Upload guide video</span>
                 <input id="motionGuideInput" type="file" accept="video/*">
-                <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+                <span class="motion-file-control">
+                  <span class="motion-file-button">Choose video</span>
+                  <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+                </span>
               </label>
             </div>
             <details class="motion-settings">
@@ -396,6 +399,33 @@
               <span>Guide preview</span>
             </div>
             <video id="motionGuide" controls playsinline></video>
+            <div id="motionTrimPanel" class="motion-trim-panel">
+              <div class="motion-trim-readout">
+                <span>Start <b id="motionTrimStartReadout">0.00s</b></span>
+                <span>End <b id="motionTrimEndReadout">4.00s</b></span>
+                <span>Keep <b id="motionTrimDuration">4.00s</b></span>
+              </div>
+              <div class="motion-trim-inputs">
+                <label>
+                  Start
+                  <input id="motionTrimStart" type="number" min="0" step="0.05" value="0">
+                </label>
+                <label>
+                  End
+                  <input id="motionTrimEnd" type="number" min="0.05" step="0.05" value="4">
+                </label>
+              </div>
+              <div class="motion-trim-rails">
+                <input id="motionTrimStartRange" type="range" min="0" max="4" step="0.05" value="0" aria-label="Trim start">
+                <input id="motionTrimEndRange" type="range" min="0" max="4" step="0.05" value="4" aria-label="Trim end">
+              </div>
+              <div class="motion-trim-actions">
+                <button id="motionTrimSetStart" type="button">Set start</button>
+                <button id="motionTrimSetEnd" type="button">Set end</button>
+                <button id="motionTrimPlay" type="button">Play trim</button>
+                <button id="motionTrimReset" type="button">Reset</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -408,13 +438,18 @@
             </div>
             <span id="motionResultState" class="hint">waiting</span>
             </div>
-            <label>
-              Reference image
-              <input id="motionRefInput" type="file" accept="image/*">
-              <span id="motionRefStatus" class="hint">No image uploaded</span>
-            </label>
-            <div id="motionRefPreviewWrap" class="source-preview">
-              <img id="motionRefPreview" alt="motion reference preview">
+            <div class="motion-reference-row">
+              <label class="motion-file-field">
+                <span>Reference image</span>
+                <input id="motionRefInput" type="file" accept="image/*">
+                <span class="motion-file-control">
+                  <span class="motion-file-button">Choose image</span>
+                  <span id="motionRefStatus" class="hint">No image uploaded</span>
+                </span>
+              </label>
+              <div id="motionRefPreviewWrap" class="source-preview motion-ref-thumb">
+                <img id="motionRefPreview" alt="motion reference preview">
+              </div>
             </div>
             <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
             <details class="motion-settings">
@@ -677,7 +712,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-video-upload-1"></script>
+  <script src="/static/app.js?v=motion-trim-editor-2"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

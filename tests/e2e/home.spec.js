@@ -9,6 +9,46 @@ test("home screen loads public Camera Lab controls", async ({ page }) => {
   await expect(page.locator("#photographyWorkspaceTab")).toBeHidden();
 });
 
+test("completed history entries without media do not render waiting placeholders", async ({ page }) => {
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: [
+          {
+            batch_id: "done_no_media",
+            run_id: "01",
+            workflow_mode: "i2v",
+            prompt: "done no media",
+            duration: 3,
+            status: "done",
+            queued_at: Date.now() / 1000,
+            finished_at: Date.now() / 1000,
+          },
+          {
+            batch_id: "queued_no_media",
+            run_id: "01",
+            workflow_mode: "i2v",
+            prompt: "queued no media",
+            duration: 3,
+            status: "queued",
+            queued_at: Date.now() / 1000,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+
+  const doneCard = page.locator("#resultsGrid .result-card").filter({ hasText: "done no media" });
+  const queuedCard = page.locator("#resultsGrid .result-card").filter({ hasText: "queued no media" });
+  await expect(doneCard.locator(".media-box")).toHaveClass(/media-empty/);
+  await expect(doneCard.locator(".media-box")).not.toContainText("waiting");
+  await expect(queuedCard.locator(".media-box")).toHaveClass(/media-empty/);
+  await expect(queuedCard.locator(".media-box")).not.toContainText("waiting");
+});
+
 test("director workspace starts without generated empty prompt segments", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);

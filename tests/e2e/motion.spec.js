@@ -115,6 +115,8 @@ test("Motion tab generates guide before rendering final result", async ({ page }
     const payload = route.request().postDataJSON();
     expect(payload.batch_id).toBe("motion_e2e");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    expect(payload.guide_trim_start).toBe(0.5);
+    expect(payload.guide_trim_end).toBe(3);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -193,6 +195,8 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   expect(videoPanelBox.y).toBeGreaterThan(guidePanelBox.y);
   expect(guidePreviewBox.x).toBeGreaterThan(guideBodyBox.x);
   expect(finalPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
+  expect(Math.abs(guidePreviewBox.width - guideBodyBox.width)).toBeLessThan(80);
+  expect(guidePreviewBox.height).toBeGreaterThan(440);
 
   await page.locator("#motionPrompt").fill("A person walks forward and waves.");
 
@@ -201,6 +205,10 @@ test("Motion tab generates guide before rendering final result", async ({ page }
 
   await expect(page.locator("#motionGuideState")).toHaveText("ready");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide\.mp4/);
+  await expect(page.locator("#motionTrimPanel")).toBeVisible();
+  await page.locator("#motionTrimStart").fill("0.5");
+  await page.locator("#motionTrimEnd").fill("3");
+  await expect(page.locator("#motionTrimDuration")).toHaveText("2.50s");
   await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
   await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
@@ -243,6 +251,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     const payload = route.request().postDataJSON();
     expect(payload.guide_video_path).toBe("C:\\mock\\guide-upload.mp4");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    expect(payload.guide_trim_start).toBe(1);
+    expect(payload.guide_trim_end).toBe(2.5);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -299,6 +309,10 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide.mp4");
   await expect(page.locator("#motionGuideState")).toHaveText("uploaded");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-upload\.mp4/);
+  await expect(page.locator("#motionTrimPanel")).toBeVisible();
+  await page.locator("#motionTrimStart").fill("1");
+  await page.locator("#motionTrimEnd").fill("2.5");
+  await expect(page.locator("#motionTrimDuration")).toHaveText("1.50s");
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
 
   await page.locator("#motionRunBtn").click();

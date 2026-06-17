@@ -519,6 +519,10 @@ button:hover {
   overflow: hidden;
 }
 
+.media-box.media-empty {
+  display: none;
+}
+
 .media-box video, .media-box img {
   width: 100%;
   height: 100%;
@@ -1793,33 +1797,37 @@ body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
 }
 
 .motion-workbench {
   display: grid;
-  grid-template-columns: minmax(420px, .5fr) minmax(420px, .5fr);
+  grid-template-columns: minmax(520px, 1fr) minmax(280px, 360px);
   grid-template-areas:
     "body preview";
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(240,235,225,.12);
   border-radius: 8px;
   background:
-    linear-gradient(90deg, rgba(215,180,106,.035), transparent 38%),
-    rgba(12,12,10,.88);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+    linear-gradient(90deg, rgba(143,199,192,.045), transparent 36%),
+    rgba(12,12,10,.9);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 12px 30px rgba(0,0,0,.18);
 }
 
 .motion-video-panel {
-  grid-template-columns: minmax(420px, .48fr) minmax(420px, .52fr);
+  grid-template-columns: minmax(520px, 1fr) minmax(300px, 380px);
+}
+
+.motion-guide-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .motion-panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   padding: 0 0 12px;
   margin-bottom: 12px;
@@ -1828,12 +1836,12 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-panel-head h3 {
   margin-top: 2px;
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .motion-panel-body {
   grid-area: body;
-  padding: 14px;
+  padding: 16px;
   min-height: 0;
   overflow: auto;
   border-right: 1px solid rgba(240,235,225,.08);
@@ -1844,17 +1852,61 @@ body.motion-workspace-active .motion-workspace {
   margin-bottom: 10px;
 }
 
-.motion-guide-panel textarea {
-  min-height: 108px;
+.motion-panel-body > label,
+.motion-panel-body > .grid-2,
+.motion-panel-body > .primary,
+.motion-panel-body > .motion-upload-card,
+.motion-panel-body > .motion-reference-row,
+.motion-panel-body > .motion-settings,
+.motion-panel-body > p {
+  max-width: 720px;
 }
 
-.motion-video-panel .source-preview {
-  width: 100%;
-  height: 116px;
+.motion-panel-body > .primary,
+.motion-panel-body > .motion-upload-card,
+.motion-panel-body > .motion-reference-row,
+.motion-panel-body > .motion-settings {
+  max-width: 574px;
+}
+
+.motion-guide-panel .motion-panel-body > label,
+.motion-guide-panel .motion-panel-body > .grid-2,
+.motion-guide-panel .motion-panel-body > .primary,
+.motion-guide-panel .motion-panel-body > .motion-upload-card,
+.motion-guide-panel .motion-panel-body > .motion-settings,
+.motion-guide-panel .motion-panel-body > p {
+  max-width: none;
+}
+
+.motion-guide-panel textarea {
+  min-height: 92px;
+}
+
+.motion-reference-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 142px;
+  gap: 12px;
+  align-items: stretch;
+  justify-content: start;
+  margin-bottom: 12px;
+}
+
+.motion-reference-row .motion-file-field {
+  margin-bottom: 0;
+}
+
+.motion-ref-thumb {
+  width: 142px;
+  height: 112px;
   max-height: none;
   aspect-ratio: unset;
   box-sizing: border-box;
-  margin-bottom: 10px;
+  margin: 0;
+}
+
+.motion-ref-thumb img {
+  object-fit: contain;
+  padding: 6px;
 }
 
 .motion-actions-row {
@@ -1872,13 +1924,62 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-upload-card {
   margin-top: 10px;
-  padding: 10px;
-  border: 1px dashed rgba(143,199,192,.24);
-  background: rgba(143,199,192,.035);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .motion-upload-card label {
   margin-bottom: 0;
+}
+
+.motion-file-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.motion-file-field input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.motion-file-control {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 6px;
+  border: 1px dashed rgba(143,199,192,.32);
+  background:
+    linear-gradient(90deg, rgba(143,199,192,.08), transparent 70%),
+    rgba(8,9,8,.72);
+}
+
+.motion-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(143,199,192,.45);
+  background: rgba(143,199,192,.1);
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.motion-file-control .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .check-row {
@@ -1921,11 +2022,11 @@ body.motion-workspace-active .motion-workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  min-height: 320px;
-  height: clamp(320px, 31vw, 500px);
+  min-height: 0;
+  height: 252px;
   overflow: hidden;
-  align-self: stretch;
-  margin: 14px 14px 14px 0;
+  align-self: start;
+  margin: 16px 16px 16px 0;
   border: 1px solid var(--line);
   border-radius: 6px;
   border-color: var(--line);
@@ -1934,12 +2035,13 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-guide-panel .motion-preview-card {
-  min-height: 320px;
-  height: clamp(320px, 28vw, 430px);
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  height: 520px;
+  margin: 16px;
 }
 
 .motion-video-panel .motion-preview-card {
-  min-height: 300px;
+  height: 300px;
 }
 
 .motion-preview-head {
@@ -1962,6 +2064,129 @@ body.motion-workspace-active .motion-workspace {
   background: #050504;
   object-fit: contain;
   display: block;
+}
+
+.motion-trim-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(240,235,225,.1);
+  background:
+    linear-gradient(90deg, rgba(143,199,192,.08), transparent 70%),
+    #0a0a08;
+}
+
+.motion-trim-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.motion-trim-readout span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid rgba(143,199,192,.24);
+  background: rgba(143,199,192,.05);
+}
+
+.motion-trim-readout b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.motion-trim-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.motion-trim-inputs label {
+  margin: 0;
+}
+
+.motion-trim-inputs input {
+  margin-top: 5px;
+  padding: 7px 9px;
+}
+
+.motion-trim-rails {
+  position: relative;
+  height: 28px;
+  margin: 0 1px;
+}
+
+.motion-trim-rails input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.motion-trim-rails::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(143,199,192,.32), rgba(215,180,106,.45));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+
+.motion-trim-rails input::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.motion-trim-rails input::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: 6px;
+  border: 2px solid #11110f;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(215,180,106,.85);
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.motion-trim-rails input::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.motion-trim-rails input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #11110f;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: auto;
+}
+
+.motion-trim-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.motion-trim-actions button {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 .motion-history-shell {
@@ -2348,6 +2573,16 @@ body.motion-workspace-active .motion-workspace {
 
   .motion-preview-card {
     margin: 0 12px 12px;
+  }
+
+  .motion-panel-body > label,
+  .motion-panel-body > .grid-2,
+  .motion-panel-body > .primary,
+  .motion-panel-body > .motion-upload-card,
+  .motion-panel-body > .motion-reference-row,
+  .motion-panel-body > .motion-settings,
+  .motion-panel-body > p {
+    max-width: none;
   }
 
   body.motion-workspace-active .motion-workspace {

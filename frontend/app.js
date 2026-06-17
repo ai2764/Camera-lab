@@ -19,6 +19,8 @@ const state = {
   endPath: "",
   motionRefPath: "",
   motionGuideVideoPath: "",
+  motionGuideDuration: 4,
+  motionTrimPlaying: false,
   motionBatch: null,
   audioPath: "",
   referencePaths: [""],
@@ -1749,12 +1751,14 @@ function updateRunCard(card, run) {
     ? `video:${run.video}`
     : run.contact_sheet
       ? `contact:${run.contact_sheet}`
-      : `status:${run.status}:${run.error || ""}`;
+      : `empty:${run.status || ""}:${run.error || ""}`;
   if (card.dataset.mediaKey !== mediaKey) {
     card.dataset.mediaKey = mediaKey;
-    media.textContent = run.error || "waiting";
+    media.classList.toggle("media-empty", !run.video && !run.contact_sheet && !run.error);
+    media.textContent = run.error || "";
     if (run.video) {
       media.innerHTML = "";
+      media.classList.remove("media-empty");
       const video = document.createElement("video");
       video.src = mediaUrl(run.video);
       video.controls = true;
@@ -1763,6 +1767,7 @@ function updateRunCard(card, run) {
       media.appendChild(video);
     } else if (run.contact_sheet) {
       media.innerHTML = "";
+      media.classList.remove("media-empty");
       const img = document.createElement("img");
       img.src = mediaUrl(run.contact_sheet);
       img.alt = "contact sheet";
@@ -2135,6 +2140,75 @@ function motionPayload() {
   };
 }
 
+function roundMotionTime(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
+}
+
+function motionGuideDurationFallback() {
+  const videoDuration = Number($("motionGuide").duration);
+  if (Number.isFinite(videoDuration) && videoDuration > 0) return videoDuration;
+  const inputDuration = Number($("motionDuration").value);
+  if (Number.isFinite(inputDuration) && inputDuration > 0) return inputDuration;
+  return state.motionGuideDuration || 4;
+}
+
+function setMotionTrimBounds(duration, reset = false) {
+  const max = Math.max(0.05, roundMotionTime(duration || motionGuideDurationFallback()));
+  state.motionGuideDuration = max;
+  for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
+    const input = $(id);
+    input.max = String(max);
+  }
+  if (reset || Number($("motionTrimEnd").value) <= 0) {
+    $("motionTrimStart").value = "0";
+    $("motionTrimStartRange").value = "0";
+    $("motionTrimEnd").value = String(max);
+    $("motionTrimEndRange").value = String(max);
+  }
+  updateMotionTrimDisplay();
+}
+
+function motionTrimValues() {
+  const max = motionGuideDurationFallback();
+  let start = roundMotionTime($("motionTrimStart").value);
+  let end = roundMotionTime($("motionTrimEnd").value);
+  start = Math.min(Math.max(0, start), Math.max(0, max - 0.05));
+  end = Math.min(Math.max(start + 0.05, end || max), max);
+  return { start, end, duration: roundMotionTime(end - start) };
+}
+
+function updateMotionTrimDisplay(sourceId = "") {
+  const { start, end, duration } = motionTrimValues();
+  if (sourceId !== "motionTrimStart") $("motionTrimStart").value = String(start);
+  if (sourceId !== "motionTrimEnd") $("motionTrimEnd").value = String(end);
+  if (sourceId !== "motionTrimStartRange") $("motionTrimStartRange").value = String(start);
+  if (sourceId !== "motionTrimEndRange") $("motionTrimEndRange").value = String(end);
+  $("motionTrimStartReadout").textContent = `${start.toFixed(2)}s`;
+  $("motionTrimEndReadout").textContent = `${end.toFixed(2)}s`;
+  $("motionTrimDuration").textContent = `${duration.toFixed(2)}s`;
+}
+
+function motionTrimPayload() {
+  const { start, end } = motionTrimValues();
+  return {
+    guide_trim_start: start,
+    guide_trim_end: end,
+  };
+}
+
+function playMotionTrim() {
+  const video = $("motionGuide");
+  if (!video.getAttribute("src")) return;
+  const { start } = motionTrimValues();
+  state.motionTrimPlaying = true;
+  video.currentTime = start;
+  const promise = video.play();
+  if (promise?.catch) promise.catch(() => {
+    state.motionTrimPlaying = false;
+  });
+}
+
 function currentMotionRun() {
   return (state.motionBatch?.runs || [])[0] || {};
 }
@@ -2150,6 +2224,7 @@ function updateMotionRunAvailability() {
 function clearMotionVideos() {
   state.motionGuideVideoPath = "";
   $("motionGuideUploadStatus").textContent = "No video uploaded";
+  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
   for (const id of ["motionGuide", "motionResult"]) {
     const video = $(id);
     video.pause();
@@ -2180,6 +2255,7 @@ function renderMotionBatch(batch) {
     if ($("motionGuide").getAttribute("src") !== guideSrc) {
       $("motionGuide").src = guideSrc;
     }
+    setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
     $("motionGuideState").textContent = "ready";
     updateMotionRunAvailability();
   } else if (run.status === "running_motion") {
@@ -2265,8 +2341,8 @@ async function startMotionFinal() {
   try {
     const endpoint = state.motionBatch && run.guide_video ? "/api/text-to-motion-final" : "/api/text-to-motion-video-final";
     const body = endpoint === "/api/text-to-motion-final"
-      ? { ...payload, batch_id: state.motionBatch.batch_id, run_id: run.run_id }
-      : { ...payload, guide_video_path: guideVideoPath };
+      ? { ...payload, ...motionTrimPayload(), batch_id: state.motionBatch.batch_id, run_id: run.run_id }
+      : { ...payload, ...motionTrimPayload(), guide_video_path: guideVideoPath };
     const batch = await api(endpoint, {
       method: "POST",
       body: JSON.stringify(body),
@@ -2295,6 +2371,7 @@ async function uploadMotionGuideVideo(file) {
   const video = $("motionGuide");
   video.pause();
   video.src = mediaUrl(uploaded.path);
+  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
   $("motionGuideState").textContent = "uploaded";
   $("motionGuideUploadStatus").textContent = uploaded.name;
   clearMotionResult();
@@ -3256,6 +3333,37 @@ $("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($(
   $("motionGuideUploadStatus").textContent = err.message;
   updateMotionRunAvailability();
 }));
+for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
+  $(id).addEventListener("input", () => {
+    if (id === "motionTrimStartRange") $("motionTrimStart").value = $("motionTrimStartRange").value;
+    if (id === "motionTrimEndRange") $("motionTrimEnd").value = $("motionTrimEndRange").value;
+    updateMotionTrimDisplay(id);
+  });
+}
+$("motionGuide").addEventListener("loadedmetadata", () => {
+  setMotionTrimBounds($("motionGuide").duration || motionGuideDurationFallback(), true);
+});
+$("motionGuide").addEventListener("timeupdate", () => {
+  if (!state.motionTrimPlaying) return;
+  const { end } = motionTrimValues();
+  if ($("motionGuide").currentTime >= end) {
+    $("motionGuide").pause();
+    state.motionTrimPlaying = false;
+  }
+});
+$("motionGuide").addEventListener("pause", () => {
+  state.motionTrimPlaying = false;
+});
+$("motionTrimSetStart").addEventListener("click", () => {
+  $("motionTrimStart").value = String(roundMotionTime($("motionGuide").currentTime || 0));
+  updateMotionTrimDisplay("motionTrimStart");
+});
+$("motionTrimSetEnd").addEventListener("click", () => {
+  $("motionTrimEnd").value = String(roundMotionTime($("motionGuide").currentTime || motionGuideDurationFallback()));
+  updateMotionTrimDisplay("motionTrimEnd");
+});
+$("motionTrimPlay").addEventListener("click", playMotionTrim);
+$("motionTrimReset").addEventListener("click", () => setMotionTrimBounds(motionGuideDurationFallback(), true));
 $("swapSourceEndBtn").addEventListener("click", () => swapImageSlots("source", "end"));
 $("swapSourceMiddleBtn").addEventListener("click", () => swapImageSlots("source", "middle"));
 $("swapMiddleEndBtn").addEventListener("click", () => swapImageSlots("middle", "end"));
@@ -3285,6 +3393,9 @@ $("motionPoseStrength").addEventListener("input", () => {
 });
 $("motionCfg").addEventListener("input", () => {
   $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
+});
+$("motionDuration").addEventListener("input", () => {
+  if (!hasMotionGuideVideo()) setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
 });
 $("directorSizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }));
 $("directorSizeScale").addEventListener("input", updateSizeReadout);

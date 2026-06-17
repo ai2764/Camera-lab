@@ -2149,8 +2149,14 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
     steps = max(1, min(100, int(payload.get("steps") or 8)))
     pose_strength = max(0.0, min(1.0, float(payload.get("pose_strength") or 1.0)))
     frame_count = video_frame_count(guide_video)
-    scail_length = align_4k1(frame_count)
-    duration = max(0.5, min(60.0, float(payload.get("duration") or frame_count / 24 or 4.0)))
+    trim_start, trim_end = motion_trim_values(payload)
+    if trim_end is not None:
+        trim_duration = max(0.5, trim_end - trim_start)
+        scail_length = align_4k1(round(trim_duration * 24))
+        duration = max(0.5, min(60.0, trim_duration))
+    else:
+        scail_length = align_4k1(frame_count)
+        duration = max(0.5, min(60.0, float(payload.get("duration") or frame_count / 24 or 4.0)))
     prompt = str(payload.get("prompt") or "").strip() or f"uploaded guide video: {guide_video.name}"
 
     batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
@@ -2170,6 +2176,8 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
         "guide_video": str(guide_video),
         "scail_length": scail_length,
         "duration": duration,
+        "guide_trim_start": trim_start,
+        "guide_trim_end": trim_end,
         "width": width,
         "height": height,
         "seed": seed,
@@ -2194,6 +2202,50 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
     BATCHES[batch_id] = batch
     write_batch(batch)
     return batch
+
+
+def motion_trim_values(values: Mapping[str, Any]) -> tuple[float, float | None]:
+    raw_start = values.get("guide_trim_start", values.get("trim_start", 0))
+    raw_end = values.get("guide_trim_end", values.get("trim_end"))
+    start = max(0.0, float(raw_start or 0))
+    if raw_end in {None, ""}:
+        return start, None
+    end = max(0.0, float(raw_end))
+    if end <= start + 0.05:
+        raise ValueError("trim end must be greater than trim start")
+    return round(start, 3), round(end, 3)
+
+
+def trim_motion_guide_video(run: dict[str, Any], guide_video: Path, run_dir: Path) -> Path:
+    trim_start, trim_end = motion_trim_values(run)
+    if trim_end is None:
+        return guide_video
+    trim_dir = run_dir / "motion_trim"
+    trim_dir.mkdir(parents=True, exist_ok=True)
+    trimmed = trim_dir / f"{guide_video.stem}_trim.mp4"
+    duration = trim_end - trim_start
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{trim_start:.3f}",
+        "-i",
+        str(guide_video),
+        "-t",
+        f"{duration:.3f}",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        str(trimmed),
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if not trimmed.exists():
+        raise RuntimeError("ffmpeg did not produce trimmed guide video")
+    run["guide_trimmed_video"] = str(trimmed)
+    run["duration"] = round(duration, 3)
+    return trimmed
 
 
 def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
@@ -2226,12 +2278,16 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     if not guide_video.exists():
         raise FileNotFoundError("motion guide video is missing")
 
-    length = int(run.get("scail_length") or align_4k1(video_frame_count(guide_video)))
+    guide_for_scail = trim_motion_guide_video(run, guide_video, run_dir)
+    if guide_for_scail != guide_video:
+        length = align_4k1(video_frame_count(guide_for_scail))
+    else:
+        length = int(run.get("scail_length") or align_4k1(video_frame_count(guide_for_scail)))
     run["scail_length"] = length
 
     MOTION_COMFY_INPUT.mkdir(parents=True, exist_ok=True)
-    guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_video.name)}"
-    shutil.copy2(guide_video, MOTION_COMFY_INPUT / guide_name)
+    guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_for_scail.name)}"
+    shutil.copy2(guide_for_scail, MOTION_COMFY_INPUT / guide_name)
     run["guide_name"] = guide_name
 
     reference_path = run.get("reference_image") or ""
@@ -3292,6 +3348,12 @@ class Handler(BaseHTTPRequestHandler):
             run["pose_strength"] = max(0.0, min(1.0, float(payload.get("pose_strength"))))
         if payload.get("seed") not in {None, ""}:
             run["seed"] = validate_seed(payload.get("seed"))
+        trim_start, trim_end = motion_trim_values(payload)
+        run["guide_trim_start"] = trim_start
+        run["guide_trim_end"] = trim_end
+        if trim_end is not None:
+            run["duration"] = round(trim_end - trim_start, 3)
+            run["scail_length"] = align_4k1(round((trim_end - trim_start) * 24))
         write_batch(batch)
         thread = threading.Thread(target=motion_final_worker, args=(run, batch), daemon=True)
         thread.start()

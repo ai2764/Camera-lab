@@ -295,6 +295,97 @@ def test_create_motion_video_batch_uses_uploaded_guide(monkeypatch, tmp_path):
     assert run["workflow_id"] == "uploaded_motion_to_scail"
 
 
+def test_create_motion_video_batch_records_guide_trim(monkeypatch, tmp_path):
+    guide = tmp_path / "uploads" / "guide.mp4"
+    reference = tmp_path / "uploads" / "ref.png"
+    guide.parent.mkdir()
+    guide.write_bytes(b"guide")
+    reference.write_bytes(b"ref")
+    monkeypatch.setattr(s, "ROOT", tmp_path)
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "comfy_output")
+    monkeypatch.setattr(s, "RUN_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 240)
+
+    batch = s.create_motion_video_batch({
+        "guide_video_path": str(guide),
+        "reference_path": str(reference),
+        "guide_trim_start": 1.25,
+        "guide_trim_end": 4.75,
+        "width": 480,
+        "height": 832,
+        "seed": 123,
+    })
+
+    run = batch["runs"][0]
+    assert run["guide_trim_start"] == 1.25
+    assert run["guide_trim_end"] == 4.75
+    assert run["duration"] == 3.5
+    assert run["scail_length"] == 81
+
+
+def test_run_motion_final_stage_trims_guide_before_scail(monkeypatch, tmp_path):
+    run_dir = tmp_path / "run"
+    guide = run_dir / "motion" / "guide.mp4"
+    final = run_dir / "video" / "final.mp4"
+    reference = tmp_path / "ref.png"
+    guide.parent.mkdir(parents=True)
+    final.parent.mkdir()
+    guide.write_bytes(b"guide")
+    final.write_bytes(b"final")
+    reference.write_bytes(b"ref")
+    run = {
+        "batch_id": "motion_test",
+        "run_id": "01_motion",
+        "run_dir": str(run_dir),
+        "guide_video": str(guide),
+        "guide_trim_start": 1.0,
+        "guide_trim_end": 2.5,
+        "reference_image": str(reference),
+        "prompt": "walk and wave",
+        "duration": 1.5,
+        "rewrite": False,
+        "seed": 123,
+        "cfg_scale": 5.0,
+        "width": 480,
+        "height": 832,
+        "steps": 6,
+        "pose_strength": 1.0,
+        "status": "guide_done",
+    }
+    calls = {"ffmpeg": None, "guide_name": None, "length": None}
+    monkeypatch.setattr(s, "MOTION_COMFY_INPUT", tmp_path / "motion_input")
+    monkeypatch.setattr(s, "MOTION_COMFY_URL", "http://motion-comfy")
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 36 if "trim" in str(path) else 240)
+    monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
+    monkeypatch.setattr(s, "copy_outputs", lambda stage_dir, prompt_id, base_url=None: [final])
+    monkeypatch.setattr(s, "make_contact_sheet", lambda *_args, **_kwargs: None)
+
+    def fake_run(cmd, **kwargs):
+        calls["ffmpeg"] = cmd
+        s.Path(cmd[-1]).write_bytes(b"trimmed")
+        return None
+
+    monkeypatch.setattr(s.subprocess, "run", fake_run)
+    monkeypatch.setattr(s, "http_json", lambda *_args, **_kwargs: {"prompt_id": "prompt-final"})
+
+    def fake_build_scail_api(motion_run, guide_name, length):
+        calls["guide_name"] = guide_name
+        calls["length"] = length
+        return {"stage": "video"}
+
+    monkeypatch.setattr(s, "build_scail_api", fake_build_scail_api)
+
+    s.run_motion_final_stage(run)
+
+    assert calls["ffmpeg"][0] == "ffmpeg"
+    assert "-ss" in calls["ffmpeg"]
+    assert "-t" in calls["ffmpeg"]
+    assert calls["guide_name"].endswith("_guide_trim.mp4")
+    assert calls["length"] == 33
+    assert run["guide_trimmed_video"].endswith("guide_trim.mp4")
+
+
 def test_create_motion_guide_batch_allows_missing_reference(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "RUN_ROOT", tmp_path / "runs")
     monkeypatch.setattr(s, "write_batch", lambda _batch: None)
