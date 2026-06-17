@@ -6,6 +6,7 @@ test-results/
 
 # Runtime outputs
 .env
+.camera_lab_ai_settings.json
 tasks/
 tasks/camera_lab_runs/
 tasks/camera_lab_uploads/

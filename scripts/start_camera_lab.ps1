@@ -60,7 +60,7 @@ if ($listeners.Count -gt 0) {
 Write-Host "Starting Camera Lab..."
 $proc = Start-Process `
     -FilePath "python" `
-    -ArgumentList @($serverPath, "--port", $Port) `
+    -ArgumentList @("`"$serverPath`"", "--port", $Port) `
     -WorkingDirectory $repoRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdoutLog `

@@ -32,6 +32,7 @@ RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
+AI_SETTINGS_PATH = ROOT / ".camera_lab_ai_settings.json"
 
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
@@ -48,6 +49,19 @@ def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> Mu
         if key and key not in target:
             target[key] = value
     return target
+
+
+def read_json_file(path: Path, fallback: Any) -> Any:
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+    return fallback
+
+
+def write_json_file(path: Path, data: Any) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
@@ -85,11 +99,19 @@ TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
 LOCAL_LTX23_DISTILLED_LORA = "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"
 APP_WORKFLOW_ROOT = ROOT / "workflows" / "app"
+INSTALLED_APP_WORKFLOW_ROOT = WORKFLOW_ROOT / "camera-lab" / "app"
 TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
+
+
+def app_workflow_path(name: str) -> Path:
+    installed = INSTALLED_APP_WORKFLOW_ROOT / name
+    return installed if installed.exists() else APP_WORKFLOW_ROOT / name
+
+
+DIRECTOR_WORKFLOW_PATH = app_workflow_path("ltx_director_reference_mvp.json")
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -127,6 +149,12 @@ def normalize_llm_url(value: str) -> str:
 LLM_URL = normalize_llm_url(os.environ.get("LLM_URL") or "http://127.0.0.1:1234/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL") or "gpt-oss-20b"
 LLM_API_KEY = os.environ.get("LLM_API_KEY") or ""
+ENABLE_DIRECTOR_GLOBAL_GUIDE_INJECTION = os.environ.get("CAMERA_LAB_DIRECTOR_GLOBAL_GUIDES", "").strip().lower() in {"1", "true", "yes", "on"}
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+KIE_API_URL = "https://api.kie.ai"
+KIE_UPLOAD_URL = "https://kieai.redpandaai.co"
+DEFAULT_OPENROUTER_MODEL = "google/gemini-flash-latest"
+DEFAULT_KIE_IMAGE_MODEL = "nano-banana-2"
 
 # CosyVoice is loaded on demand via a one-shot subprocess in its own conda env.
 COSYVOICE_PYTHON = os.environ.get("COSYVOICE_PYTHON") or "python"
@@ -163,13 +191,13 @@ WORKFLOWS = [
         "id": "i2v_official_local",
         "label": "LTX 2.3 I2V Subtitle Cleaner",
         "mode": "i2v",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_i2v_subtitle_cleaner_nag_extend.json"),
+        "path": str(app_workflow_path("ltx23_i2v_subtitle_cleaner_nag_extend.json")),
     },
     {
         "id": "flf_ttp_control",
         "label": "LTX 2.3 FLF (2 images, audio)",
         "mode": "flf",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        "path": str(app_workflow_path("ltx23_flf_subtitle_cleaner_nag_extend.json")),
         # FLF pins both keyframes; skip the subtitle bottom-matte extend/crop so
         # the source and end frames get identical spatial treatment.
         "disable_image_extension": True,
@@ -179,7 +207,7 @@ WORKFLOWS = [
         "id": "fml_two_segment_flf",
         "label": "LTX 2.3 FML (3 images, 2-stage, audio)",
         "mode": "fml",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_subtitle_cleaner_nag_extend.json"),
+        "path": str(app_workflow_path("ltx23_flf_subtitle_cleaner_nag_extend.json")),
         "disable_image_extension": True,
         "disable_image_crop": True,
     },
@@ -187,14 +215,14 @@ WORKFLOWS = [
         "id": "fml_runexx_guider_local",
         "label": "LTX 2.3 FML RuneXX Guider Local (3 images)",
         "mode": "fml_native",
-        "path": str(APP_WORKFLOW_ROOT / "LTX-2.3_FML2V_RuneXX_guider.local.json"),
+        "path": str(app_workflow_path("LTX-2.3_FML2V_RuneXX_guider.local.json")),
         "disable_prompt_enhance": True,
     },
     {
         "id": "ia2v_extendcrop",
         "label": "LTX 2.3 IA2V",
         "mode": "ia2v",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_nag_ia2v_extendcrop_general.json"),
+        "path": str(app_workflow_path("ltx23_nag_ia2v_extendcrop_general.json")),
         # Same as i2v — turn off the 307px bottom matte add/crop pair.
         "disable_image_extension": True,
         "disable_image_crop": True,
@@ -203,7 +231,7 @@ WORKFLOWS = [
         "id": "flf_ia2v",
         "label": "LTX 2.3 FLF IA2V (2 images + audio)",
         "mode": "flf_ia2v",
-        "path": str(APP_WORKFLOW_ROOT / "ltx23_flf_ia2v_nag_extend.json"),
+        "path": str(app_workflow_path("ltx23_flf_ia2v_nag_extend.json")),
         # First+last keyframes driven by uploaded audio; skip the bottom matte.
         "disable_image_extension": True,
         "disable_image_crop": True,
@@ -388,12 +416,394 @@ def http_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict
         raise RuntimeError(f"ComfyUI HTTP {exc.code}: {body}") from exc
 
 
+def external_json(url: str, payload: dict | None = None, headers: dict[str, str] | None = None, timeout: int = 60) -> dict:
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Content-Type": "application/json", **(headers or {})}
+    method = "POST" if payload is not None else "GET"
+    request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{url} returned HTTP {exc.code}: {details[:1000]}") from exc
+
+
 def http_post(path: str, payload: dict | None = None, timeout: int = 30) -> None:
     url = COMFY_URL.rstrip("/") + path
     data = json.dumps(payload or {}).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         response.read()
+
+
+def ai_default_settings() -> dict[str, str]:
+    return {
+        "openrouter_api_key": os.environ.get("OPENROUTER_API_KEY") or "",
+        "openrouter_model": os.environ.get("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL,
+        "kie_api_key": os.environ.get("KIE_API_KEY") or "",
+        "kie_image_model": os.environ.get("KIE_IMAGE_MODEL") or DEFAULT_KIE_IMAGE_MODEL,
+    }
+
+
+def load_ai_settings(include_secrets: bool = True) -> dict[str, Any]:
+    settings = ai_default_settings()
+    saved = read_json_file(AI_SETTINGS_PATH, {})
+    if isinstance(saved, dict):
+        settings.update({key: str(value or "") for key, value in saved.items() if key in settings})
+    if include_secrets:
+        return settings
+    return {
+        "openrouter_model": settings["openrouter_model"],
+        "kie_image_model": settings["kie_image_model"],
+        "has_openrouter_api_key": bool(settings["openrouter_api_key"]),
+        "has_kie_api_key": bool(settings["kie_api_key"]),
+    }
+
+
+def save_ai_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    current = load_ai_settings(include_secrets=True)
+    defaults = ai_default_settings()
+    for key in ("openrouter_model", "kie_image_model"):
+        if key in payload:
+            current[key] = str(payload.get(key) or "").strip() or defaults[key]
+    for key in ("openrouter_api_key", "kie_api_key"):
+        if key in payload:
+            value = str(payload.get(key) or "").strip()
+            if value:
+                current[key] = value
+    write_json_file(AI_SETTINGS_PATH, current)
+    return load_ai_settings(include_secrets=False)
+
+
+def data_url_mime(data_url: str) -> str:
+    match = re.match(r"^data:([^;,]+)", data_url or "")
+    return match.group(1) if match else "image/png"
+
+
+def data_url_ext(data_url: str) -> str:
+    return mimetypes.guess_extension(data_url_mime(data_url)) or ".png"
+
+
+def save_data_url_image(data_url: str, name: str, folder: Path | None = None) -> Path:
+    if "," not in data_url:
+        raise ValueError("image data URL is required")
+    header, encoded = data_url.split(",", 1)
+    if not header.startswith("data:image/"):
+        raise ValueError("image data must be an image data URL")
+    raw = base64.b64decode(encoded)
+    if len(raw) > 18 * 1024 * 1024:
+        raise ValueError("image is too large")
+    target_dir = folder or UPLOAD_ROOT
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{safe_filename(Path(name).stem or 'image')}{data_url_ext(data_url)}"
+    path.write_bytes(raw)
+    return path
+
+
+def openrouter_chat(settings: dict[str, Any], messages: list[dict[str, Any]], max_tokens: int = 1800) -> str:
+    api_key = str(settings.get("openrouter_api_key") or "").strip()
+    if not api_key:
+        raise ValueError("OpenRouter API key is required in Settings")
+    data = external_json(
+        f"{OPENROUTER_URL}/chat/completions",
+        {
+            "model": str(settings.get("openrouter_model") or DEFAULT_OPENROUTER_MODEL).strip(),
+            "messages": messages,
+            "temperature": 0.65,
+            "max_tokens": max_tokens,
+        },
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "http://127.0.0.1:1234",
+            "X-Title": "Camera Lab",
+        },
+        timeout=120,
+    )
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("OpenRouter returned no choices")
+    content = choices[0].get("message", {}).get("content", "")
+    if isinstance(content, list):
+        return "\n".join(str(item.get("text") or "") for item in content if isinstance(item, dict)).strip()
+    return str(content or "").strip()
+
+
+def kie_headers(settings: dict[str, Any]) -> dict[str, str]:
+    api_key = str(settings.get("kie_api_key") or "").strip()
+    if not api_key:
+        raise ValueError("Kie API key is required in Settings")
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def kie_upload_headers(settings: dict[str, Any], extra: dict[str, str] | None = None) -> dict[str, str]:
+    return {
+        **kie_headers(settings),
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://kie.ai",
+        "Referer": "https://kie.ai/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        **(extra or {}),
+    }
+
+
+def multipart_form_data(fields: dict[str, str], files: dict[str, tuple[str, bytes, str]]) -> tuple[bytes, str]:
+    boundary = f"----CameraLab{int(time.time())}{random.randint(1000, 9999)}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    for name, (filename, content, content_type) in files.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"),
+                f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                content,
+                b"\r\n",
+            ]
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def kie_upload_base64(settings: dict[str, Any], data_url: str, filename: str) -> str:
+    data = external_json(
+        f"{KIE_UPLOAD_URL}/api/file-base64-upload",
+        {
+            "base64Data": data_url,
+            "uploadPath": "images/camera-lab",
+            "fileName": filename,
+        },
+        headers=kie_upload_headers(settings),
+        timeout=180,
+    )
+    info = data.get("data") or {}
+    url = info.get("fileUrl") or info.get("downloadUrl")
+    if not url:
+        raise RuntimeError(f"Kie base64 upload did not return a public file URL: {data}")
+    return str(url)
+
+
+def kie_upload_data_url(settings: dict[str, Any], data_url: str, file_name: str) -> str:
+    if "," not in data_url:
+        raise ValueError("image data URL is required for Kie upload")
+    _header, encoded = data_url.split(",", 1)
+    raw = base64.b64decode(encoded)
+    if len(raw) > 30 * 1024 * 1024:
+        raise ValueError("Kie image upload must be 30MB or smaller")
+    mime = data_url_mime(data_url)
+    filename = safe_filename(file_name) or f"camera_lab_reference{data_url_ext(data_url)}"
+    body, content_type = multipart_form_data(
+        {"uploadPath": "images/camera-lab", "fileName": filename},
+        {"file": (filename, raw, mime)},
+    )
+    headers = kie_upload_headers(settings, {"Content-Type": content_type, "Content-Length": str(len(body))})
+    request = urllib.request.Request(f"{KIE_UPLOAD_URL}/api/file-stream-upload", data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        if exc.code in {403, 405, 500} and len(raw) <= 10 * 1024 * 1024:
+            try:
+                return kie_upload_base64(settings, data_url, filename)
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"Kie stream upload returned HTTP {exc.code}: {details[:500]}; base64 fallback failed: {fallback_exc}"
+                ) from fallback_exc
+        raise RuntimeError(f"Kie file upload returned HTTP {exc.code}: {details[:1000]}") from exc
+    info = data.get("data") or {}
+    url = info.get("fileUrl") or info.get("downloadUrl")
+    if not url:
+        raise RuntimeError(f"Kie upload did not return a public file URL: {data}")
+    return str(url)
+
+
+def recursive_image_urls(value: Any) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                urls.extend(recursive_image_urls(json.loads(stripped)))
+                return urls
+            except Exception:
+                pass
+        if re.search(r"https?://[^\s\"']+\.(png|jpe?g|webp)(?:\?[^\s\"']*)?", value, re.I):
+            urls.extend(match.group(0) for match in re.finditer(r"https?://[^\s\"']+\.(png|jpe?g|webp)(?:\?[^\s\"']*)?", value, re.I))
+        elif re.search(r"\.(png|jpe?g|webp)(?:\?|$)", value, re.I):
+            urls.append(value)
+    elif isinstance(value, list):
+        for item in value:
+            urls.extend(recursive_image_urls(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            urls.extend(recursive_image_urls(item))
+    return urls
+
+
+def kie_create_image_task(settings: dict[str, Any], prompt: str, image_urls: list[str], options: dict[str, Any] | None = None) -> str:
+    opts = options or {}
+    data = external_json(
+        f"{KIE_API_URL}/api/v1/jobs/createTask",
+        {
+            "model": str(settings.get("kie_image_model") or DEFAULT_KIE_IMAGE_MODEL).strip(),
+            "input": {
+                "prompt": prompt,
+                "image_input": image_urls,
+                "aspect_ratio": str(opts.get("aspect_ratio") or "1:1"),
+                "resolution": str(opts.get("resolution") or "1K"),
+                "output_format": str(opts.get("output_format") or "png"),
+            },
+        },
+        headers=kie_headers(settings),
+        timeout=120,
+    )
+    task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
+    if not task_id:
+        raise RuntimeError(f"Kie did not return a taskId: {data}")
+    return str(task_id)
+
+
+def kie_poll_image_task(settings: dict[str, Any], task_id: str, timeout_seconds: int = 600) -> str:
+    deadline = time.time() + timeout_seconds
+    last_status = ""
+    while time.time() < deadline:
+        url = f"{KIE_API_URL}/api/v1/jobs/recordInfo?taskId={urllib.parse.quote(task_id)}"
+        data = external_json(url, None, headers=kie_headers(settings), timeout=60)
+        info = data.get("data") or data
+        status = str(info.get("state") or info.get("status") or info.get("taskStatus") or "").lower()
+        last_status = status or last_status
+        result_urls = recursive_image_urls(info.get("resultJson")) if info.get("resultJson") else []
+        urls = result_urls or recursive_image_urls(info)
+        if info.get("resultJson"):
+            urls.extend(url for url in recursive_image_urls(info.get("resultJson")) if url not in urls)
+        if status == "success" and urls:
+            return urls[0]
+        if status in {"fail", "failed", "error"}:
+            raise RuntimeError(f"Kie task failed: {json.dumps(info, ensure_ascii=False)[:1000]}")
+        if urls and not status:
+            return urls[0]
+        time.sleep(3)
+    raise TimeoutError(f"Kie task timed out; last status was {last_status or 'unknown'}")
+
+
+def download_storyboard_image(url: str, run_id: str) -> tuple[Path, str]:
+    request = urllib.request.Request(url, headers={"User-Agent": "CameraLab/1.0"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        content_type = response.headers.get("Content-Type", "image/png")
+        raw = response.read()
+    if len(raw) > 24 * 1024 * 1024:
+        raise ValueError("generated storyboard image is too large")
+    mime = content_type.split(";", 1)[0].strip() or "image/png"
+    ext = mimetypes.guess_extension(mime) or ".png"
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    path = UPLOAD_ROOT / f"{run_id}_storyboard{ext}"
+    path.write_bytes(raw)
+    return path, f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+def generate_storyboard_ai(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = load_ai_settings(include_secrets=True)
+    idea = str(payload.get("idea") or "").strip()
+    if not idea:
+        raise ValueError("video idea is required")
+    ref_data = str(payload.get("reference_image_data") or "").strip()
+    ref_url = str(payload.get("reference_image_url") or "").strip()
+    if not ref_data and not ref_url:
+        raise ValueError("creative reference image or public reference URL is required")
+    if ref_url and not re.match(r"^https?://", ref_url, re.I):
+        raise ValueError("Nano Banana 2 reference URL must be public http(s)")
+    duration = max(1, min(600, int(float(payload.get("duration") or 20))))
+    cols = max(1, min(8, int(payload.get("cols") or 2)))
+    rows = max(1, min(8, int(payload.get("rows") or 2)))
+    shot_count = cols * rows
+    grid_label = f"{cols}x{rows}"
+    theme = str(payload.get("theme") or "").strip()
+    topic = str(payload.get("topic") or "").strip()
+    kie_options = {
+        "aspect_ratio": str(payload.get("kie_aspect_ratio") or "1:1"),
+        "resolution": str(payload.get("kie_resolution") or "1K"),
+        "output_format": str(payload.get("kie_output_format") or "png"),
+    }
+    run_id = f"storyboard_ai_{int(time.time())}_{random.randint(1000, 9999)}"
+    if ref_data:
+        save_data_url_image(ref_data, f"{run_id}_reference", UPLOAD_ROOT)
+    if not ref_url and ref_data:
+        ref_url = kie_upload_data_url(settings, ref_data, f"{run_id}_reference{data_url_ext(ref_data)}")
+
+    script_text = (
+        f"Create a {duration}s story. The main character is the character in the image. "
+        f"Make a beautiful short story based on the image. The story should have strong continuity between shots. "
+        f"Break it into {shot_count} shots.\n\n"
+        f"Video idea: {idea}\nTheme: {theme or 'unspecified'}\nTopic: {topic or 'unspecified'}\n\n"
+        "Return a clean shot list with Shot 1, Shot 2, etc. Include exact time ranges and concise action description for each shot."
+    )
+    script = openrouter_chat(
+        settings,
+        [
+            {"role": "system", "content": "You are a cinematic short-film writer. Prioritize continuity, same character identity, and no abrupt scene changes unless requested."},
+            {"role": "user", "content": [{"type": "text", "text": script_text}, {"type": "image_url", "image_url": {"url": ref_data or ref_url}}]},
+        ],
+        max_tokens=2200,
+    )
+
+    storyboard_prompt = (
+        f"Turns this script into a {shot_count} panel storyboard. Use a {grid_label} layout. "
+        "No borders. Each panel should represent a continuous action. No scene changes. Actions should be continuous. "
+        "VISUALS ONLY: do not add any text, captions, labels, shot numbers, timecodes, subtitles, handwriting, UI, speech bubbles, or typography anywhere in the image. "
+        "No words or letters should appear inside any panel. "
+        "Keep the same main character identity from the reference image, same wardrobe/setting continuity when possible, cinematic composition, clear readable panels.\n\n"
+        f"HERE THE SCRIPT\n{script}"
+    )
+    task_id = kie_create_image_task(settings, storyboard_prompt, [ref_url], kie_options)
+    storyboard_url = kie_poll_image_task(settings, task_id)
+    storyboard_path, storyboard_data = download_storyboard_image(storyboard_url, run_id)
+
+    prompt_text = openrouter_chat(
+        settings,
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Provide a prompt for each shot optimized for LTX 2.3 video generation. "
+                    "Also evaluate and suggest the best duration for each shot. "
+                    "Use this exact format for every shot and output only the prompt block:\n"
+                    "4.0s cinematic medium shot...\n\n4.0s same young woman with ...\n\n4.0s same young woman stepping ..."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Script:\n{script}\n\nStoryboard image is attached. Produce exactly {shot_count} LTX 2.3 prompts totaling about {duration}s."},
+                    {"type": "image_url", "image_url": {"url": storyboard_data}},
+                ],
+            },
+        ],
+        max_tokens=2600,
+    )
+    return {
+        "script": script,
+        "storyboard_prompt": storyboard_prompt,
+        "storyboard": {
+            "path": str(storyboard_path),
+            "name": storyboard_path.name,
+            "url": "/media?path=" + urllib.parse.quote(str(storyboard_path)),
+            "data": storyboard_data,
+            "source_url": storyboard_url,
+            "task_id": task_id,
+        },
+        "prompt_text": prompt_text,
+        "grid": {"cols": cols, "rows": rows, "label": grid_label, "shots": shot_count},
+        "duration": duration,
+    }
 
 
 def comfy_port_open(url: str = COMFY_URL, timeout: float = 0.75) -> bool:
@@ -498,6 +908,8 @@ def workflow_to_api(workflow: dict) -> dict:
         node_type = node.get("type")
         if node_type in {"Reroute", "Note", "MarkdownNote", "PreviewAny", "easy showAnything"}:
             continue
+        if is_unlinked_model_loader(node):
+            continue
         if node_type == "LTXVImgToVideoInplaceKJ":
             api[str(node["id"])] = {"class_type": node_type, "inputs": kj_dynamic_inputs(node, nodes_by_id, links)}
             continue
@@ -531,6 +943,24 @@ def workflow_to_api(workflow: dict) -> dict:
         widget_idx = fill_widget_inputs_from_object_info(node_type, inputs, widget_values, widget_idx, info, widget_map)
         api[str(node["id"])] = {"class_type": node_type, "inputs": inputs, "_meta": {"title": node.get("title", "")}}
     return api
+
+
+def is_unlinked_model_loader(node: dict) -> bool:
+    if node.get("type") not in {
+        "CheckpointLoaderSimple",
+        "UNETLoader",
+        "UnetLoaderGGUF",
+        "CLIPLoader",
+        "DualCLIPLoader",
+        "VAELoader",
+        "VAELoaderKJ",
+        "LoraLoader",
+        "LoraLoaderModelOnly",
+        "LatentUpscaleModelLoader",
+    }:
+        return False
+    outputs = node.get("outputs") or []
+    return bool(outputs) and not any(output.get("links") for output in outputs)
 
 
 def inline_set_get_nodes(workflow: dict) -> dict:
@@ -1014,15 +1444,21 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
         director["inputs"]["use_custom_audio"] = True
     director["inputs"]["local_prompts"] = timeline["local_prompts"]
     director["inputs"]["segment_lengths"] = timeline["segment_lengths"]
+    director["inputs"]["epsilon"] = 0.001
     director["inputs"]["guide_strength"] = ",".join(
         str(segment["strength"]) for segment in guide_segments if segment.get("type") == "image" and "strength" in segment
     )
     director["inputs"]["frame_rate"] = timeline["fps"]
+    director["inputs"]["display_mode"] = "seconds"
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
     director["inputs"]["resize_method"] = "maintain aspect ratio"
     director["inputs"]["divisible_by"] = 32
     director["inputs"]["img_compression"] = 18
+    director["inputs"]["reference_mode"] = "Ghost Mask (End)"
+    director["inputs"]["msr_prefix_frames"] = 17
+    director["inputs"]["save_prompts_to_file"] = False
+    director["inputs"]["reference_strength"] = 1.0
 
     node_info = object_info().get("LTXDirector", {})
     declared_inputs = node_info.get("input", {}) or {}
@@ -1039,14 +1475,18 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     if "global_reference_strength" in declared_keys:
         director["inputs"]["global_reference_strength"] = 0.0
 
-    # The standalone-ComfyUI workflow wires a MultiReferenceImageLoader + 4
-    # LoadImage nodes into LTXDirector.global_reference_image_batch. Camera-lab
-    # doesn't use that path — it injects references via LTXVAddGuideMulti. Strip
-    # the loader chain so empty-filename LoadImages don't fail ComfyUI validation.
+    # The standalone-ComfyUI workflow may wire a MultiReferenceImageLoader + 4
+    # LoadImage nodes into a reference image batch path. Camera Lab feeds segment
+    # images through LTXDirector timeline_data instead; strip empty loader chains
+    # so ComfyUI validation does not fail on blank LoadImage filenames.
     strip_director_image_loader_chain(api)
-    # Always take the fallback path (LTXVAddGuideMulti) so camera-lab runs the
-    # same way it did before LTXDirector grew native global-reference inputs.
-    insert_director_global_reference_guides(api, reference_input_names, timeline)
+    # The older fallback global-reference injection path uses LTXVAddGuideMulti
+    # after the Stage 2 director guide. With the current WhatDreamsCost
+    # LTXDirector/MSR mask path this can produce mismatched guide masks, so keep
+    # it opt-in and let Director timeline image references drive the run by
+    # default.
+    if ENABLE_DIRECTOR_GLOBAL_GUIDE_INJECTION:
+        insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -1528,8 +1968,41 @@ def patch_model_names(api: dict, run: dict) -> None:
 
 
 def ensure_model_exists(folder: str, name: str) -> None:
-    if not (COMFY_MODELS / folder / name).exists():
+    if not model_available(folder, name):
         raise FileNotFoundError(f"Missing ComfyUI model: models/{folder}/{name}")
+
+
+MODEL_CHOICE_INPUTS = {
+    "checkpoints": [("CheckpointLoaderSimple", "ckpt_name")],
+    "diffusion_models": [("UNETLoader", "unet_name")],
+    "loras": [("LoraLoader", "lora_name"), ("LoraLoaderModelOnly", "lora_name")],
+    "text_encoders": [("CLIPLoader", "clip_name"), ("DualCLIPLoader", "clip_name1"), ("DualCLIPLoader", "clip_name2")],
+    "vae": [("VAELoader", "vae_name"), ("VAELoaderKJ", "vae_name")],
+    "latent_upscale_models": [("LatentUpscaleModelLoader", "model_name"), ("LatentUpscaleModelLoader", "upscale_model_name")],
+}
+
+
+def model_available(folder: str, name: str) -> bool:
+    if (COMFY_MODELS / folder / name).exists():
+        return True
+    wanted = str(name).replace("/", "\\").lower()
+    try:
+        info = object_info()
+    except Exception:
+        return False
+    for node_type, input_name in MODEL_CHOICE_INPUTS.get(folder, []):
+        choices = (
+            info.get(node_type, {})
+            .get("input", {})
+            .get("required", {})
+            .get(input_name)
+        )
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], list):
+            continue
+        available = {str(choice).replace("/", "\\").lower() for choice in choices[0]}
+        if wanted in available:
+            return True
+    return False
 
 
 def workflow_status(workflow: dict) -> dict[str, Any]:
@@ -1543,7 +2016,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
             ("loras", LOCAL_LTX23_DISTILLED_LORA),
             ("latent_upscale_models", LTX23_UPSCALER),
         ]:
-            if not (COMFY_MODELS / folder / name).exists():
+            if not model_available(folder, name):
                 missing.append(f"models/{folder}/{name}")
         if missing:
             return {"available": False, "reason": "missing " + ", ".join(missing)}
@@ -1563,7 +2036,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
     for folder, name in required_models(expand_subgraphs(data)):
-        if not (COMFY_MODELS / folder / name).exists():
+        if not model_available(folder, name):
             missing.append(f"models/{folder}/{name}")
     if missing:
         return {"available": False, "reason": "missing " + ", ".join(missing)}
@@ -2626,6 +3099,8 @@ class Handler(BaseHTTPRequestHandler):
                         "casting": casting_status(),
                     }
                 )
+            if parsed.path == "/api/ai-settings":
+                return self.send_json(load_ai_settings(include_secrets=False))
             if parsed.path == "/api/casting/library":
                 return self.send_json({"clips": casting_library_clips()})
             if parsed.path.startswith("/api/batches/"):
@@ -2650,6 +3125,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_audio()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
+            if self.path == "/api/ai-settings":
+                return self.handle_ai_settings()
+            if self.path == "/api/storyboard-ai/generate":
+                return self.handle_storyboard_ai_generate()
             if self.path == "/api/photography-subject":
                 return self.handle_photography_subject()
             if self.path == "/api/photography-frames":
@@ -2830,6 +3309,12 @@ class Handler(BaseHTTPRequestHandler):
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
         self.send_json({"path": str(path), "name": name})
+
+    def handle_ai_settings(self) -> None:
+        self.send_json(save_ai_settings(self.read_json()))
+
+    def handle_storyboard_ai_generate(self) -> None:
+        self.send_json(generate_storyboard_ai(self.read_json()))
 
     def handle_photography_subject(self) -> None:
         payload = self.read_json()
