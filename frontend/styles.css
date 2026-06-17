@@ -2034,20 +2034,26 @@ body.motion-workspace-active .motion-workspace {
 .motion-preview-stack {
   grid-area: preview;
   display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-self: start;
+  height: 520px;
   margin: 16px 16px 16px 0;
 }
 
 .motion-preview-stack .motion-preview-card {
   grid-area: auto;
+  align-self: stretch;
+  height: 100%;
 }
 
 .motion-reference-preview-card {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  height: 196px;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -2066,7 +2072,7 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-video-panel .motion-preview-card {
   margin: 0;
-  height: 300px;
+  height: auto;
 }
 
 .motion-preview-head {
@@ -2601,6 +2607,7 @@ body.motion-workspace-active .motion-workspace {
   }
 
   .motion-preview-stack {
+    height: 560px;
     margin: 0 12px 12px;
   }
 
