@@ -1660,7 +1660,8 @@ function ensureRunCard(grid, run, newestFirst = false) {
     card = node.querySelector(".result-card");
     card.dataset.runKey = runKey(run);
     card.querySelector(".use-prompt-run").addEventListener("click", () => {
-      if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
+      if (card._run && isMotionRun(card._run)) useMotionRun(card._run);
+      else if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
       else useRunPrompt(card.dataset.prompt || "");
     });
     card.querySelector(".use-seed-run").addEventListener("click", () => {
@@ -1690,6 +1691,7 @@ function ensureRunCard(grid, run, newestFirst = false) {
 function motionDisplayRun(run) {
   return {
     ...run,
+    motion_result_video: run.video || "",
     video: run.video || run.guide_video || "",
   };
 }
@@ -1734,10 +1736,16 @@ function updateRunCard(card, run) {
   card.querySelector(".run-status").textContent = `${run.status} ${elapsedText(run)}`;
   const usePromptButton = card.querySelector(".use-prompt-run");
   const directorRun = isDirectorRun(run);
-  usePromptButton.textContent = directorRun ? "Use Timeline" : "Use Prompt";
-  usePromptButton.disabled = directorRun
-    ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
-    : !run.prompt;
+  const motionRun = isMotionRun(run);
+  const motionFinalRun = motionRun && Boolean(motionFinalVideo(run));
+  usePromptButton.textContent = motionRun
+    ? (motionFinalRun ? "Use Same Setup" : "Use Motion")
+    : directorRun ? "Use Timeline" : "Use Prompt";
+  usePromptButton.disabled = motionRun
+    ? !run.guide_video
+    : directorRun
+      ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
+      : !run.prompt;
   card.querySelector(".use-seed-run").disabled = !run.seed;
   card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
@@ -1889,8 +1897,98 @@ function useRunPrompt(prompt) {
   $("runHint").textContent = "Prompt copied from result";
 }
 
+function setInputIfPresent(id, value) {
+  if (value === undefined || value === null || value === "") return;
+  $(id).value = String(value);
+}
+
 function fileNameFromPath(path) {
   return String(path || "").split(/[\\/]/).pop() || "";
+}
+
+function motionFinalVideo(run) {
+  if (run.motion_result_video) return run.motion_result_video;
+  if (run.video && run.video !== run.guide_video) return run.video;
+  return "";
+}
+
+function motionReferencePath(run) {
+  return run.reference_image || run.reference_path || run.source_path || "";
+}
+
+function restoreMotionSize(run) {
+  const width = Number(run.width);
+  const height = Number(run.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+  const size = `${Math.round(width)}x${Math.round(height)}`;
+  $("motionCustomSizeInput").value = size;
+  const preset = [...$("motionSizePreset").options].find((option) => option.value === size);
+  if (preset) $("motionSizePreset").value = size;
+  $("motionSizeScale").value = "100";
+  updateMotionSizeReadout();
+}
+
+function restoreMotionTrim(run) {
+  const start = Number(run.guide_trim_start ?? run.trim_start);
+  const end = Number(run.guide_trim_end ?? run.trim_end);
+  if (Number.isFinite(start)) {
+    $("motionTrimStart").value = String(Math.max(0, start));
+    $("motionTrimStartRange").value = $("motionTrimStart").value;
+  }
+  if (Number.isFinite(end) && end > 0) {
+    $("motionTrimEnd").value = String(end);
+    $("motionTrimEndRange").value = $("motionTrimEnd").value;
+  }
+  updateMotionTrimDisplay();
+}
+
+function restoreMotionGuide(run) {
+  if (!run.guide_video) return false;
+  state.motionBatch = null;
+  state.motionGuideVideoPath = run.guide_video;
+  const guide = $("motionGuide");
+  guide.pause();
+  guide.src = mediaUrl(run.guide_video);
+  $("motionGuideUploadStatus").textContent = fileNameFromPath(run.guide_video);
+  $("motionGuideState").textContent = "ready";
+  setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
+  restoreMotionTrim(run);
+  return true;
+}
+
+function restoreMotionReference(run) {
+  const referencePath = motionReferencePath(run);
+  state.motionRefPath = referencePath;
+  setImagePreview("motion_ref", referencePath ? mediaUrl(referencePath) : "");
+  $("motionRefStatus").textContent = referencePath ? fileNameFromPath(referencePath) : imageSlots.motion_ref.empty;
+}
+
+function useMotionRun(run) {
+  if (!run || !run.guide_video) return;
+  setWorkspace("motion", { syncWorkflow: false });
+  if (run.prompt) $("motionPrompt").value = run.prompt;
+  setInputIfPresent("motionDuration", run.duration);
+  setInputIfPresent("motionSeed", run.seed);
+  setInputIfPresent("motionSteps", run.steps);
+  setInputIfPresent("motionPoseStrength", run.pose_strength);
+  setInputIfPresent("motionCfg", run.cfg_scale);
+  $("motionPoseReadout").textContent = Number($("motionPoseStrength").value).toFixed(2);
+  $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
+  restoreMotionSize(run);
+  restoreMotionGuide(run);
+  const finalVideo = motionFinalVideo(run);
+  if (finalVideo) {
+    restoreMotionReference(run);
+    const result = $("motionResult");
+    result.pause();
+    result.src = mediaUrl(finalVideo);
+    $("motionResultState").textContent = "ready";
+    $("motionStatus").textContent = `Setup restored from ${run.batch_id || "result"}`;
+  } else {
+    clearMotionResult();
+    $("motionStatus").textContent = `Motion guide loaded from ${run.batch_id || "result"}`;
+  }
+  updateMotionRunAvailability();
 }
 
 function savedFrameSeconds(value, fallback = 0) {

@@ -20,6 +20,44 @@ const motionHistoryRun = {
   video: "C:\\mock\\final.mp4",
 };
 
+const motionGuideHistoryRun = {
+  batch_id: "motion_guide_history",
+  run_id: "01_motion",
+  workflow_mode: "motion",
+  prompt: "A guide-only motion.",
+  duration: 3,
+  seed: 111,
+  cfg_scale: 4.5,
+  status: "guide_done",
+  queued_at: Date.now() / 1000,
+  started_at: Date.now() / 1000,
+  finished_at: Date.now() / 1000,
+  guide_video: "C:\\mock\\guide-only.mp4",
+};
+
+const motionFinalHistoryRun = {
+  batch_id: "motion_final_history",
+  run_id: "01_motion",
+  workflow_mode: "motion",
+  prompt: "A final setup motion.",
+  duration: 5,
+  seed: 222,
+  cfg_scale: 3.5,
+  width: 832,
+  height: 480,
+  steps: 12,
+  pose_strength: 0.64,
+  guide_trim_start: 1.25,
+  guide_trim_end: 2.75,
+  reference_image: "C:\\mock\\ref-setup.png",
+  status: "done",
+  queued_at: Date.now() / 1000,
+  started_at: Date.now() / 1000,
+  finished_at: Date.now() / 1000,
+  guide_video: "C:\\mock\\guide-final.mp4",
+  video: "C:\\mock\\final-setup.mp4",
+};
+
 function mockConfig(page) {
   return page.route("**/api/config", async (route) => {
     await route.fulfill({
@@ -69,6 +107,49 @@ test("Camera Lab history excludes Motion runs", async ({ page }) => {
   await page.locator("#motionWorkspaceTab").click();
   await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
   await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
+});
+
+test("Motion history restores motion guides and complete final setups", async ({ page }) => {
+  await mockConfig(page);
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs: [motionGuideHistoryRun, motionFinalHistoryRun] }),
+    });
+  });
+  await page.route("**/api/casting/library", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ clips: [] }) });
+  });
+
+  await page.goto("/#motion");
+  await expect(page.locator("#motionWorkspace")).toBeVisible();
+
+  const guideCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "A guide-only motion." });
+  await expect(guideCard.locator(".use-prompt-run")).toHaveText("Use Motion");
+  await guideCard.locator(".use-prompt-run").click();
+  await expect(page.locator("#motionPrompt")).toHaveValue("A guide-only motion.");
+  await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-only\.mp4/);
+  await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide-only.mp4");
+  await expect(page.locator("#motionGuideState")).toHaveText("ready");
+  await expect(page.locator("#motionRunBtn")).toBeDisabled();
+
+  const finalCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "A final setup motion." });
+  await expect(finalCard.locator(".use-prompt-run")).toHaveText("Use Same Setup");
+  await finalCard.locator(".use-prompt-run").click();
+  await expect(page.locator("#motionPrompt")).toHaveValue("A final setup motion.");
+  await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-final\.mp4/);
+  await expect(page.locator("#motionResult")).toHaveAttribute("src", /final-setup\.mp4/);
+  await expect(page.locator("#motionRefPreviewWrap")).toHaveClass(/has-image/);
+  await expect(page.locator("#motionRefStatus")).toHaveText("ref-setup.png");
+  await expect(page.locator("#motionDuration")).toHaveValue("5");
+  await expect(page.locator("#motionSeed")).toHaveValue("222");
+  await expect(page.locator("#motionCustomSizeInput")).toHaveValue("832x480");
+  await expect(page.locator("#motionSteps")).toHaveValue("12");
+  await expect(page.locator("#motionPoseStrength")).toHaveValue("0.64");
+  await expect(page.locator("#motionCfg")).toHaveValue("3.5");
+  await expect(page.locator("#motionTrimStart")).toHaveValue("1.25");
+  await expect(page.locator("#motionTrimEnd")).toHaveValue("2.75");
+  await expect(page.locator("#motionRunBtn")).toBeEnabled();
 });
 
 test("Motion tab generates guide before rendering final result", async ({ page }) => {
