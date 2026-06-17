@@ -533,90 +533,7 @@
         </div>
       </section>
       <section id="motion3dPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motion3dTab" hidden>
-        <div class="motion-3d-native">
-          <aside class="motion-3d-sidebar">
-            <div class="motion-3d-panel-head">
-              <div class="eyebrow">Action Library</div>
-              <button id="motion3dResetTimeline" type="button">Reset</button>
-            </div>
-            <div id="motion3dActionLibrary" class="motion-3d-action-list"></div>
-          </aside>
-          <section class="motion-3d-stage-panel">
-            <div class="motion-3d-toolbar">
-              <div>
-                <div class="eyebrow">SCAIL-2 Driving Source</div>
-                <h3>3D Motion Stage</h3>
-              </div>
-              <div class="motion-3d-tools">
-                <button id="motion3dPlay" type="button">Play</button>
-                <button id="motion3dResetView" type="button">Reset</button>
-                <button id="motion3dRecord" class="primary" type="button">Record Take</button>
-              </div>
-            </div>
-            <div class="motion-3d-canvas-wrap">
-              <canvas id="motion3dCanvas"></canvas>
-            </div>
-            <div class="motion-3d-timebar">
-              <span id="motion3dTime">0.00s</span>
-              <div class="motion-3d-rail"><div id="motion3dRailFill"></div></div>
-              <span id="motion3dDuration">3.00s</span>
-            </div>
-          </section>
-          <aside class="motion-3d-control-panel">
-            <section class="motion-3d-card">
-              <div class="motion-3d-panel-head">
-                <div class="eyebrow">Timeline</div>
-                <span id="motion3dClipCount" class="hint">1 clip</span>
-              </div>
-              <div id="motion3dTimeline" class="motion-3d-timeline"></div>
-            </section>
-            <section class="motion-3d-card">
-              <div class="eyebrow">SCAIL2</div>
-              <h3>Generate video</h3>
-              <label class="motion-file-field">
-                <span>Reference image</span>
-                <input id="motion3dRefInput" type="file" accept="image/*">
-                <span class="motion-file-control">
-                  <span class="motion-file-button">Choose image</span>
-                  <span id="motion3dRefStatus" class="hint">No image uploaded</span>
-                </span>
-              </label>
-              <details class="motion-settings" open>
-                <summary>SCAIL2 settings</summary>
-                <div class="grid-2">
-                  <label>
-                    Preset
-                    <select id="motion3dSizePreset">
-                      <option value="512x512">1:1 512x512</option>
-                      <option value="480x832" selected>9:16 480x832</option>
-                      <option value="720x1280">9:16 720x1280</option>
-                      <option value="832x480">16:9 832x480</option>
-                    </select>
-                  </label>
-                  <label>
-                    Steps
-                    <input id="motion3dSteps" type="number" min="1" max="100" step="1" value="8">
-                  </label>
-                  <label>
-                    Seed
-                    <input id="motion3dSeed" type="number" min="1" max="2147000000" step="1" placeholder="Random">
-                  </label>
-                </div>
-                <label>
-                  Frame size
-                  <input id="motion3dSizeText" type="text" value="480x832" placeholder="480x832">
-                </label>
-                <label>
-                  Pose strength <span id="motion3dPoseReadout">1.00</span>
-                  <input id="motion3dPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
-                </label>
-              </details>
-              <button id="motion3dGenerate" class="primary" type="button" disabled>Generate With SCAIL2</button>
-              <p id="motion3dStatus" class="hint">Choose a reference image, then generate with SCAIL2.</p>
-              <video id="motion3dPreview" class="motion-3d-preview" controls playsinline></video>
-            </section>
-          </aside>
-        </div>
+        <div id="root" class="motion-3d-embed-root"></div>
       </section>
       <div id="motionHiddenPreviewParking" hidden></div>
     </section>
@@ -835,6 +752,8 @@
   </div>
 
   <script src="/static/app.js?v=motion-scail-video-row-1"></script>
+  <link rel="stylesheet" href="/static/3dmotion/embedded.css?v=native-3dmotion-2">
+  <script type="module" src="/static/3dmotion/assets/index-CrqKtsNz.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

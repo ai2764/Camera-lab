@@ -2049,7 +2049,9 @@ function updateMotionSubtabs() {
   moveMotionVideoPanel();
   moveMotionGuidePreview();
   moveMotionPreviewCards();
-  if (state.motionSubtab === "3d") initMotion3d();
+  if (state.motionSubtab === "3d") {
+    window.setTimeout(() => window.dispatchEvent(new Event("resize")), 0);
+  }
 }
 
 function moveMotionGuidePreview() {
@@ -3871,36 +3873,6 @@ $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photo
 $("motionTextTab").addEventListener("click", () => setMotionSubtab("text"));
 $("motionScailTab").addEventListener("click", () => setMotionSubtab("scail"));
 $("motion3dTab").addEventListener("click", () => setMotionSubtab("3d"));
-$("motion3dPlay").addEventListener("click", toggleMotion3dPlayback);
-$("motion3dResetView").addEventListener("click", resetMotion3dPlayhead);
-$("motion3dResetTimeline").addEventListener("click", resetMotion3dTimeline);
-$("motion3dRecord").addEventListener("click", () => {
-  recordMotion3dGuide().then((blob) => {
-    const url = URL.createObjectURL(blob);
-    $("motion3dPreview").src = url;
-    $("motion3dStatus").textContent = "Recorded preview ready.";
-  }).catch((err) => {
-    $("motion3dStatus").textContent = err.message;
-  });
-});
-$("motion3dRefInput").addEventListener("change", () => uploadMotion3dReference($("motion3dRefInput").files[0]).catch((err) => {
-  state.motion3d.refPath = "";
-  $("motion3dRefStatus").textContent = err.message;
-  $("motion3dGenerate").disabled = true;
-}));
-$("motion3dSizePreset").addEventListener("change", () => {
-  $("motion3dSizeText").value = $("motion3dSizePreset").value;
-});
-$("motion3dPoseStrength").addEventListener("input", () => {
-  $("motion3dPoseReadout").textContent = Number($("motion3dPoseStrength").value).toFixed(2);
-});
-$("motion3dGenerate").addEventListener("click", generateMotion3dScail);
-window.addEventListener("resize", () => {
-  if (state.workspace === "motion" && state.motionSubtab === "3d") {
-    resizeMotion3dCanvas();
-    renderMotion3d();
-  }
-});
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);
 $("castingGenerateBtn").addEventListener("click", generateCasting);
