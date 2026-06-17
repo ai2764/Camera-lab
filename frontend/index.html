@@ -435,6 +435,10 @@
         </section>
       </section>
       <section id="motionScailPanel" class="motion-subpanel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
+        <div id="motionScailPreviewRow" class="motion-scail-preview-row">
+          <div id="motionScailGuideMount" class="motion-preview-slot motion-scail-guide-mount"></div>
+          <div id="motionScailResultMount" class="motion-preview-slot motion-scail-result-mount"></div>
+        </div>
         <div class="motion-scail-upload-strip">
           <div class="motion-upload-card">
             <label class="motion-file-field">
@@ -447,7 +451,6 @@
             </label>
           </div>
         </div>
-        <div id="motionScailGuideMount" class="motion-guide-mount motion-scail-guide-mount"></div>
         <div class="motion-grid">
           <div id="motionScailMount" class="motion-scail-mount">
           <section class="motion-workbench motion-video-panel">
@@ -506,7 +509,8 @@
               </details>
             </div>
             <div class="motion-preview-stack">
-              <div class="motion-reference-preview-card">
+              <div id="motionTextReferenceMount" class="motion-preview-slot">
+              <div id="motionReferencePreviewCard" class="motion-reference-preview-card">
                 <div class="motion-preview-head">
                   <span>Reference preview</span>
                 </div>
@@ -514,11 +518,14 @@
                   <img id="motionRefPreview" alt="motion reference preview">
                 </div>
               </div>
-              <div class="motion-preview-card">
+              </div>
+              <div id="motionTextResultMount" class="motion-preview-slot">
+              <div id="motionResultPreviewCard" class="motion-preview-card">
                 <div class="motion-preview-head">
                   <span>Final preview</span>
                 </div>
                 <video id="motionResult" controls playsinline></video>
+              </div>
               </div>
             </div>
           </section>
@@ -531,6 +538,7 @@
           <h3>3D Motion</h3>
         </div>
       </section>
+      <div id="motionHiddenPreviewParking" hidden></div>
     </section>
 
     <section id="photographyWorkspace" class="photography-workspace">
@@ -746,7 +754,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-scail-guide-trim-1"></script>
+  <script src="/static/app.js?v=motion-scail-video-row-1"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

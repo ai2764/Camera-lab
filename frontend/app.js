@@ -2012,8 +2012,9 @@ function updateMotionSubtabs() {
     $(panelId).hidden = !active;
     $(panelId).classList.toggle("active", active);
   }
-  moveMotionGuidePreview();
   moveMotionVideoPanel();
+  moveMotionGuidePreview();
+  moveMotionPreviewCards();
 }
 
 function moveMotionGuidePreview() {
@@ -2029,6 +2030,21 @@ function moveMotionVideoPanel() {
   const target = $(state.motionSubtab === "scail" ? "motionScailMount" : "motionTextScailMount");
   if (panel && target && panel.parentElement !== target) {
     target.appendChild(panel);
+  }
+}
+
+function moveMotionPreviewCards() {
+  const inScail = state.motionSubtab === "scail";
+  const resultCard = $("motionResultPreviewCard");
+  const resultTarget = $(inScail ? "motionScailResultMount" : "motionTextResultMount");
+  if (resultCard && resultTarget && resultCard.parentElement !== resultTarget) {
+    resultTarget.appendChild(resultCard);
+  }
+
+  const referenceCard = $("motionReferencePreviewCard");
+  const referenceTarget = $(inScail ? "motionHiddenPreviewParking" : "motionTextReferenceMount");
+  if (referenceCard && referenceTarget && referenceCard.parentElement !== referenceTarget) {
+    referenceTarget.appendChild(referenceCard);
   }
 }
 
