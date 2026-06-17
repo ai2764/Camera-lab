@@ -1763,14 +1763,12 @@ function updateRunCard(card, run) {
     ? `video:${run.video}`
     : run.contact_sheet
       ? `contact:${run.contact_sheet}`
-      : `empty:${run.status || ""}:${run.error || ""}`;
+      : `status:${run.status}:${run.error || ""}`;
   if (card.dataset.mediaKey !== mediaKey) {
     card.dataset.mediaKey = mediaKey;
-    media.classList.toggle("media-empty", !run.video && !run.contact_sheet && !run.error);
-    media.textContent = run.error || "";
+    media.textContent = run.error || "waiting";
     if (run.video) {
       media.innerHTML = "";
-      media.classList.remove("media-empty");
       const video = document.createElement("video");
       video.src = mediaUrl(run.video);
       video.controls = true;
@@ -1779,7 +1777,6 @@ function updateRunCard(card, run) {
       media.appendChild(video);
     } else if (run.contact_sheet) {
       media.innerHTML = "";
-      media.classList.remove("media-empty");
       const img = document.createElement("img");
       img.src = mediaUrl(run.contact_sheet);
       img.alt = "contact sheet";
