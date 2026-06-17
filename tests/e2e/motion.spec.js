@@ -109,6 +109,37 @@ test("Camera Lab history excludes Motion runs", async ({ page }) => {
   await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
 });
 
+test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async ({ page }) => {
+  await mockConfig(page);
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ runs: [] }) });
+  });
+  await page.route("**/api/casting/library", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ clips: [] }) });
+  });
+
+  await page.goto("/#motion");
+  await expect(page.locator("#motionWorkspace")).toBeVisible();
+  await expect(page.locator("#motionTextTab")).toHaveClass(/active/);
+  await expect(page.locator("#motionTextPanel")).toBeVisible();
+  await expect(page.locator("#motionPrompt")).toBeVisible();
+
+  await page.locator("#motionScailTab").click();
+  await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
+  await expect(page.locator("#motionScailPanel")).toBeVisible();
+  await expect(page.locator("#motionTextPanel")).toBeHidden();
+
+  await page.locator("#motion3dTab").click();
+  await expect(page.locator("#motion3dTab")).toHaveClass(/active/);
+  await expect(page.locator("#motion3dPanel")).toBeVisible();
+  await expect(page.locator("#motionScailPanel")).toBeHidden();
+
+  await page.locator("#motionTextTab").click();
+  await expect(page.locator("#motionTextPanel")).toBeVisible();
+  await expect(page.locator("#motionPrompt")).toBeVisible();
+  await expect(page.locator(".motion-video-panel #motionResult")).toBeVisible();
+});
+
 test("Motion history restores motion guides and complete final setups", async ({ page }) => {
   await mockConfig(page);
   await page.route("**/api/history?limit=200", async (route) => {

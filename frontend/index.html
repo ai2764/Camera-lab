@@ -340,169 +340,187 @@
 
     <section id="motionWorkspace" class="motion-workspace" hidden>
       <div class="motion-stage-head">
-        <div>
+        <div class="motion-title-block">
           <div class="eyebrow">Motion</div>
-          <h2>Text to Motion</h2>
+          <div class="motion-subtabs" role="tablist" aria-label="Motion tools">
+            <button id="motionTextTab" class="motion-subtab active" type="button" role="tab" aria-selected="true" aria-controls="motionTextPanel">Text to Motion</button>
+            <button id="motionScailTab" class="motion-subtab" type="button" role="tab" aria-selected="false" aria-controls="motionScailPanel">SCAIL2</button>
+            <button id="motion3dTab" class="motion-subtab" type="button" role="tab" aria-selected="false" aria-controls="motion3dPanel">3D Motion</button>
+          </div>
         </div>
       </div>
-      <div class="motion-grid">
-        <section class="motion-workbench motion-guide-panel">
-          <div class="motion-panel-body">
-            <div class="motion-panel-head">
-            <div>
-              <div class="eyebrow">Step 1</div>
-              <h3>Motion Guide</h3>
-            </div>
-            <span id="motionGuideState" class="hint">waiting</span>
-            </div>
-            <label>
-              Motion prompt
-              <textarea id="motionPrompt" rows="4" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
-            </label>
-            <div class="grid-2">
+      <section id="motionTextPanel" class="motion-subpanel active" role="tabpanel" aria-labelledby="motionTextTab">
+        <div class="motion-grid">
+          <section class="motion-workbench motion-guide-panel">
+            <div class="motion-panel-body">
+              <div class="motion-panel-head">
+              <div>
+                <div class="eyebrow">Step 1</div>
+                <h3>Motion Guide</h3>
+              </div>
+              <span id="motionGuideState" class="hint">waiting</span>
+              </div>
               <label>
-                Duration
-                <input id="motionDuration" type="number" min="0.5" max="12" step="0.5" value="4">
+                Motion prompt
+                <textarea id="motionPrompt" rows="4" placeholder="A person walks forward, stops, and waves with the right hand."></textarea>
               </label>
-              <label>
-                Seed
-                <input id="motionSeed" type="number" min="1" max="2147000000" step="1" placeholder="Random">
-              </label>
-            </div>
-            <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
-            <div class="motion-upload-card">
-              <label class="motion-file-field">
-                <span>Upload guide video</span>
-                <input id="motionGuideInput" type="file" accept="video/*">
-                <span class="motion-file-control">
-                  <span class="motion-file-button">Choose video</span>
-                  <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
-                </span>
-              </label>
-            </div>
-            <details class="motion-settings">
-              <summary>Guide settings</summary>
-              <label class="check-row">
-                <input id="motionRewrite" type="checkbox">
-                <span>In-server rewrite</span>
-              </label>
-              <label>
-                HY-Motion CFG <span id="motionCfgReadout">5.0</span>
-                <input id="motionCfg" type="range" min="1" max="5" step="0.5" value="5">
-              </label>
-              <button id="motionCopyRewrite" type="button">Copy rewrite prompt</button>
-            </details>
-            <p id="motionStatus" class="hint">Runs are saved under tasks/camera_lab_runs.</p>
-          </div>
-          <div class="motion-preview-card">
-            <div class="motion-preview-head">
-              <span>Guide preview</span>
-            </div>
-            <video id="motionGuide" controls playsinline></video>
-            <div id="motionTrimPanel" class="motion-trim-panel">
-              <div class="motion-trim-readout">
-                <span>Start <b id="motionTrimStartReadout">0.00s</b></span>
-                <span>End <b id="motionTrimEndReadout">4.00s</b></span>
-                <span>Keep <b id="motionTrimDuration">4.00s</b></span>
-              </div>
-              <div class="motion-trim-inputs">
-                <label>
-                  Start
-                  <input id="motionTrimStart" type="number" min="0" step="0.05" value="0">
-                </label>
-                <label>
-                  End
-                  <input id="motionTrimEnd" type="number" min="0.05" step="0.05" value="4">
-                </label>
-              </div>
-              <div class="motion-trim-rails">
-                <input id="motionTrimStartRange" type="range" min="0" max="4" step="0.05" value="0" aria-label="Trim start">
-                <input id="motionTrimEndRange" type="range" min="0" max="4" step="0.05" value="4" aria-label="Trim end">
-              </div>
-              <div class="motion-trim-actions">
-                <button id="motionTrimSetStart" type="button">Set start</button>
-                <button id="motionTrimSetEnd" type="button">Set end</button>
-                <button id="motionTrimPlay" type="button">Play trim</button>
-                <button id="motionTrimReset" type="button">Reset</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="motion-workbench motion-video-panel">
-          <div class="motion-panel-body">
-            <div class="motion-panel-head">
-            <div>
-              <div class="eyebrow">Step 2</div>
-              <h3>Final Video</h3>
-            </div>
-            <span id="motionResultState" class="hint">waiting</span>
-            </div>
-            <div class="motion-reference-row">
-              <label class="motion-file-field">
-                <span>Reference image</span>
-                <input id="motionRefInput" type="file" accept="image/*">
-                <span class="motion-file-control">
-                  <span class="motion-file-button">Choose image</span>
-                  <span id="motionRefStatus" class="hint">No image uploaded</span>
-                </span>
-              </label>
-            </div>
-            <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
-            <details id="motionScailSettings" class="motion-settings" open>
-              <summary>SCAIL2 settings</summary>
               <div class="grid-2">
-              <label>
-                Preset
-                <select id="motionSizePreset">
-                  <option value="512x512">1:1 512x512</option>
-                  <option value="480x832" selected>9:16 480x832</option>
-                  <option value="720x1280">9:16 720x1280</option>
-                  <option value="832x480">16:9 832x480</option>
-                </select>
-              </label>
-              <label>
-                Steps
-                <input id="motionSteps" type="number" min="1" max="100" step="1" value="8">
-              </label>
+                <label>
+                  Duration
+                  <input id="motionDuration" type="number" min="0.5" max="12" step="0.5" value="4">
+                </label>
+                <label>
+                  Seed
+                  <input id="motionSeed" type="number" min="1" max="2147000000" step="1" placeholder="Random">
+                </label>
               </div>
-              <label class="size-text-row">
-                Frame size
-                <input id="motionCustomSizeInput" type="text" value="480x832" placeholder="480x832">
-              </label>
-              <label>
-                Scale <span id="motionSizeReadout">480x832 / 100%</span>
-                <input id="motionSizeScale" type="range" min="50" max="150" step="5" value="100">
-              </label>
-              <label>
-                Pose strength <span id="motionPoseReadout">1.00</span>
-                <input id="motionPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
-              </label>
-            </details>
-          </div>
-          <div class="motion-preview-stack">
-            <div class="motion-reference-preview-card">
-              <div class="motion-preview-head">
-                <span>Reference preview</span>
+              <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
+              <div class="motion-upload-card">
+                <label class="motion-file-field">
+                  <span>Upload guide video</span>
+                  <input id="motionGuideInput" type="file" accept="video/*">
+                  <span class="motion-file-control">
+                    <span class="motion-file-button">Choose video</span>
+                    <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+                  </span>
+                </label>
               </div>
-              <div id="motionRefPreviewWrap" class="source-preview motion-ref-thumb">
-                <img id="motionRefPreview" alt="motion reference preview">
-              </div>
+              <details class="motion-settings">
+                <summary>Guide settings</summary>
+                <label class="check-row">
+                  <input id="motionRewrite" type="checkbox">
+                  <span>In-server rewrite</span>
+                </label>
+                <label>
+                  HY-Motion CFG <span id="motionCfgReadout">5.0</span>
+                  <input id="motionCfg" type="range" min="1" max="5" step="0.5" value="5">
+                </label>
+                <button id="motionCopyRewrite" type="button">Copy rewrite prompt</button>
+              </details>
+              <p id="motionStatus" class="hint">Runs are saved under tasks/camera_lab_runs.</p>
             </div>
             <div class="motion-preview-card">
               <div class="motion-preview-head">
-                <span>Final preview</span>
+                <span>Guide preview</span>
               </div>
-              <video id="motionResult" controls playsinline></video>
+              <video id="motionGuide" controls playsinline></video>
+              <div id="motionTrimPanel" class="motion-trim-panel">
+                <div class="motion-trim-readout">
+                  <span>Start <b id="motionTrimStartReadout">0.00s</b></span>
+                  <span>End <b id="motionTrimEndReadout">4.00s</b></span>
+                  <span>Keep <b id="motionTrimDuration">4.00s</b></span>
+                </div>
+                <div class="motion-trim-inputs">
+                  <label>
+                    Start
+                    <input id="motionTrimStart" type="number" min="0" step="0.05" value="0">
+                  </label>
+                  <label>
+                    End
+                    <input id="motionTrimEnd" type="number" min="0.05" step="0.05" value="4">
+                  </label>
+                </div>
+                <div class="motion-trim-rails">
+                  <input id="motionTrimStartRange" type="range" min="0" max="4" step="0.05" value="0" aria-label="Trim start">
+                  <input id="motionTrimEndRange" type="range" min="0" max="4" step="0.05" value="4" aria-label="Trim end">
+                </div>
+                <div class="motion-trim-actions">
+                  <button id="motionTrimSetStart" type="button">Set start</button>
+                  <button id="motionTrimSetEnd" type="button">Set end</button>
+                  <button id="motionTrimPlay" type="button">Play trim</button>
+                  <button id="motionTrimReset" type="button">Reset</button>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-      <section class="motion-history-shell">
-        <div class="results-header">
-          <span>Motion Results</span>
+          </section>
+
+          <section class="motion-workbench motion-video-panel">
+            <div class="motion-panel-body">
+              <div class="motion-panel-head">
+              <div>
+                <div class="eyebrow">Step 2</div>
+                <h3>Final Video</h3>
+              </div>
+              <span id="motionResultState" class="hint">waiting</span>
+              </div>
+              <div class="motion-reference-row">
+                <label class="motion-file-field">
+                  <span>Reference image</span>
+                  <input id="motionRefInput" type="file" accept="image/*">
+                  <span class="motion-file-control">
+                    <span class="motion-file-button">Choose image</span>
+                    <span id="motionRefStatus" class="hint">No image uploaded</span>
+                  </span>
+                </label>
+              </div>
+              <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
+              <details id="motionScailSettings" class="motion-settings" open>
+                <summary>SCAIL2 settings</summary>
+                <div class="grid-2">
+                <label>
+                  Preset
+                  <select id="motionSizePreset">
+                    <option value="512x512">1:1 512x512</option>
+                    <option value="480x832" selected>9:16 480x832</option>
+                    <option value="720x1280">9:16 720x1280</option>
+                    <option value="832x480">16:9 832x480</option>
+                  </select>
+                </label>
+                <label>
+                  Steps
+                  <input id="motionSteps" type="number" min="1" max="100" step="1" value="8">
+                </label>
+                </div>
+                <label class="size-text-row">
+                  Frame size
+                  <input id="motionCustomSizeInput" type="text" value="480x832" placeholder="480x832">
+                </label>
+                <label>
+                  Scale <span id="motionSizeReadout">480x832 / 100%</span>
+                  <input id="motionSizeScale" type="range" min="50" max="150" step="5" value="100">
+                </label>
+                <label>
+                  Pose strength <span id="motionPoseReadout">1.00</span>
+                  <input id="motionPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
+                </label>
+              </details>
+            </div>
+            <div class="motion-preview-stack">
+              <div class="motion-reference-preview-card">
+                <div class="motion-preview-head">
+                  <span>Reference preview</span>
+                </div>
+                <div id="motionRefPreviewWrap" class="source-preview motion-ref-thumb">
+                  <img id="motionRefPreview" alt="motion reference preview">
+                </div>
+              </div>
+              <div class="motion-preview-card">
+                <div class="motion-preview-head">
+                  <span>Final preview</span>
+                </div>
+                <video id="motionResult" controls playsinline></video>
+              </div>
+            </div>
+          </section>
         </div>
-        <div id="motionResultsGrid" class="results-grid motion-results-grid"></div>
+        <section class="motion-history-shell">
+          <div class="results-header">
+            <span>Motion Results</span>
+          </div>
+          <div id="motionResultsGrid" class="results-grid motion-results-grid"></div>
+        </section>
+      </section>
+      <section id="motionScailPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
+        <div class="motion-placeholder-card">
+          <div class="eyebrow">SCAIL2</div>
+          <h3>SCAIL2</h3>
+        </div>
+      </section>
+      <section id="motion3dPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motion3dTab" hidden>
+        <div class="motion-placeholder-card">
+          <div class="eyebrow">3D Motion</div>
+          <h3>3D Motion</h3>
+        </div>
       </section>
     </section>
 
@@ -719,7 +737,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-history-setup-1"></script>
+  <script src="/static/app.js?v=motion-subtabs-1"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

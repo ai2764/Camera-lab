@@ -22,6 +22,7 @@ const state = {
   motionGuideDuration: 4,
   motionTrimPlaying: false,
   motionBatch: null,
+  motionSubtab: "text",
   audioPath: "",
   referencePaths: [""],
   referenceNames: [""],
@@ -401,7 +402,10 @@ function updateWorkflowFields() {
   $("motionWorkspace").hidden = !showMotionWorkspace;
   if (showPhotographyWorkspace) return;
   if (showCastingWorkspace) return;
-  if (showMotionWorkspace) return;
+  if (showMotionWorkspace) {
+    updateMotionSubtabs();
+    return;
+  }
   $("cameraMoveWrap").style.display = isDirector ? "none" : "block";
   $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
@@ -1966,6 +1970,7 @@ function restoreMotionReference(run) {
 function useMotionRun(run) {
   if (!run || !run.guide_video) return;
   setWorkspace("motion", { syncWorkflow: false });
+  setMotionSubtab("text");
   if (run.prompt) $("motionPrompt").value = run.prompt;
   setInputIfPresent("motionDuration", run.duration);
   setInputIfPresent("motionSeed", run.seed);
@@ -1989,6 +1994,26 @@ function useMotionRun(run) {
     $("motionStatus").textContent = `Motion guide loaded from ${run.batch_id || "result"}`;
   }
   updateMotionRunAvailability();
+}
+
+function setMotionSubtab(tab) {
+  state.motionSubtab = ["text", "scail", "3d"].includes(tab) ? tab : "text";
+  updateMotionSubtabs();
+}
+
+function updateMotionSubtabs() {
+  const tabs = [
+    ["text", "motionTextTab", "motionTextPanel"],
+    ["scail", "motionScailTab", "motionScailPanel"],
+    ["3d", "motion3dTab", "motion3dPanel"],
+  ];
+  for (const [name, tabId, panelId] of tabs) {
+    const active = state.motionSubtab === name;
+    $(tabId).classList.toggle("active", active);
+    $(tabId).setAttribute("aria-selected", active ? "true" : "false");
+    $(panelId).hidden = !active;
+    $(panelId).classList.toggle("active", active);
+  }
 }
 
 function savedFrameSeconds(value, fallback = 0) {
@@ -3410,6 +3435,9 @@ $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director
 $("castingWorkspaceTab").addEventListener("click", () => { setWorkspace("casting", { syncWorkflow: false }); refreshCastingLibrary(); });
 $("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));
 $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
+$("motionTextTab").addEventListener("click", () => setMotionSubtab("text"));
+$("motionScailTab").addEventListener("click", () => setMotionSubtab("scail"));
+$("motion3dTab").addEventListener("click", () => setMotionSubtab("3d"));
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);
 $("castingGenerateBtn").addEventListener("click", generateCasting);

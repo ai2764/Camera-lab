@@ -1776,10 +1776,6 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-stage-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
   padding: 10px 14px;
   border: 1px solid rgba(143,199,192,.22);
   border-radius: 6px;
@@ -1788,9 +1784,62 @@ body.motion-workspace-active .motion-workspace {
     rgba(13,14,12,.9);
 }
 
-.motion-stage-head h2 {
-  margin: 1px 0 0;
-  font-size: clamp(20px, 2vw, 26px);
+.motion-title-block {
+  display: grid;
+  gap: 7px;
+}
+
+.motion-subtabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(240,235,225,.14);
+  background: rgba(4,5,4,.62);
+}
+
+.motion-subtab {
+  min-width: 144px;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-right: 1px solid rgba(240,235,225,.12);
+  background: transparent;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.motion-subtab:last-child {
+  border-right: 0;
+}
+
+.motion-subtab.active {
+  background: var(--accent);
+  color: #0b0b09;
+}
+
+.motion-subpanel[hidden] {
+  display: none !important;
+}
+
+.motion-placeholder-panel {
+  min-height: 320px;
+  border: 1px solid rgba(240,235,225,.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(143,199,192,.045), transparent 36%),
+    rgba(12,12,10,.9);
+}
+
+.motion-placeholder-card {
+  padding: 18px 16px;
+}
+
+.motion-placeholder-card h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
 }
 
 .motion-grid {
@@ -2586,7 +2635,23 @@ body.motion-workspace-active .motion-workspace {
 }
 @media (max-width: 980px) {
   .motion-stage-head {
-    flex-direction: column;
+    padding: 10px 12px;
+  }
+
+  .motion-subtabs {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .motion-subtab {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(240,235,225,.12);
+  }
+
+  .motion-subtab:last-child {
+    border-bottom: 0;
   }
 
   .motion-grid {
