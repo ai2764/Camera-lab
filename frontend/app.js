@@ -2145,6 +2145,8 @@ function roundMotionTime(value) {
   return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
 }
 
+const MOTION_TRIM_GAP = 0.05;
+
 function motionGuideDurationFallback() {
   const videoDuration = Number($("motionGuide").duration);
   if (Number.isFinite(videoDuration) && videoDuration > 0) return videoDuration;
@@ -2169,21 +2171,32 @@ function setMotionTrimBounds(duration, reset = false) {
   updateMotionTrimDisplay();
 }
 
-function motionTrimValues() {
+function motionTrimValues(sourceId = "") {
   const max = motionGuideDurationFallback();
   let start = roundMotionTime($("motionTrimStart").value);
   let end = roundMotionTime($("motionTrimEnd").value);
-  start = Math.min(Math.max(0, start), Math.max(0, max - 0.05));
-  end = Math.min(Math.max(start + 0.05, end || max), max);
+  const startChanged = sourceId === "motionTrimStart" || sourceId === "motionTrimStartRange";
+  const endChanged = sourceId === "motionTrimEnd" || sourceId === "motionTrimEndRange";
+  if (!end) end = max;
+  if (startChanged) {
+    end = Math.min(Math.max(MOTION_TRIM_GAP, end), max);
+    start = Math.min(Math.max(0, start), Math.max(0, end - MOTION_TRIM_GAP));
+  } else if (endChanged) {
+    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
+    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+  } else {
+    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
+    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+  }
   return { start, end, duration: roundMotionTime(end - start) };
 }
 
 function updateMotionTrimDisplay(sourceId = "") {
-  const { start, end, duration } = motionTrimValues();
-  if (sourceId !== "motionTrimStart") $("motionTrimStart").value = String(start);
-  if (sourceId !== "motionTrimEnd") $("motionTrimEnd").value = String(end);
-  if (sourceId !== "motionTrimStartRange") $("motionTrimStartRange").value = String(start);
-  if (sourceId !== "motionTrimEndRange") $("motionTrimEndRange").value = String(end);
+  const { start, end, duration } = motionTrimValues(sourceId);
+  $("motionTrimStart").value = String(start);
+  $("motionTrimEnd").value = String(end);
+  $("motionTrimStartRange").value = String(start);
+  $("motionTrimEndRange").value = String(end);
   $("motionTrimStartReadout").textContent = `${start.toFixed(2)}s`;
   $("motionTrimEndReadout").textContent = `${end.toFixed(2)}s`;
   $("motionTrimDuration").textContent = `${duration.toFixed(2)}s`;
@@ -3359,7 +3372,8 @@ $("motionTrimSetStart").addEventListener("click", () => {
   updateMotionTrimDisplay("motionTrimStart");
 });
 $("motionTrimSetEnd").addEventListener("click", () => {
-  $("motionTrimEnd").value = String(roundMotionTime($("motionGuide").currentTime || motionGuideDurationFallback()));
+  const currentTime = Number($("motionGuide").currentTime);
+  $("motionTrimEnd").value = String(roundMotionTime(Number.isFinite(currentTime) ? currentTime : motionGuideDurationFallback()));
   updateMotionTrimDisplay("motionTrimEnd");
 });
 $("motionTrimPlay").addEventListener("click", playMotionTrim);

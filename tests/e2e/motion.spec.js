@@ -115,7 +115,7 @@ test("Motion tab generates guide before rendering final result", async ({ page }
     const payload = route.request().postDataJSON();
     expect(payload.batch_id).toBe("motion_e2e");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
-    expect(payload.guide_trim_start).toBe(0.5);
+    expect(payload.guide_trim_start).toBe(2.95);
     expect(payload.guide_trim_end).toBe(3);
     await route.fulfill({
       contentType: "application/json",
@@ -209,6 +209,18 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await page.locator("#motionTrimStart").fill("0.5");
   await page.locator("#motionTrimEnd").fill("3");
   await expect(page.locator("#motionTrimDuration")).toHaveText("2.50s");
+  await page.evaluate(() => {
+    document.querySelector("#motionGuide").currentTime = 3.5;
+  });
+  await page.locator("#motionTrimSetStart").click();
+  await expect(page.locator("#motionTrimStart")).toHaveValue("2.95");
+  await expect(page.locator("#motionTrimEnd")).toHaveValue("3");
+  await page.evaluate(() => {
+    document.querySelector("#motionGuide").currentTime = 1;
+  });
+  await page.locator("#motionTrimSetEnd").click();
+  await expect(page.locator("#motionTrimStart")).toHaveValue("2.95");
+  await expect(page.locator("#motionTrimEnd")).toHaveValue("3");
   await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
   await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
