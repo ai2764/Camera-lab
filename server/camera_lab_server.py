@@ -448,6 +448,67 @@ def object_info() -> dict[str, Any]:
     return OBJECT_INFO
 
 
+# folder type -> (loader class_type, filename input field) pairs. The union of
+# each loader's /object_info combo list is exactly what ComfyUI can load for that
+# folder, already merged across the install dir + extra_model_paths + subfolders.
+MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
+    "checkpoints": [("CheckpointLoaderSimple", "ckpt_name")],
+    "diffusion_models": [("UNETLoader", "unet_name"), ("UnetLoaderGGUF", "unet_name")],
+    "vae": [("VAELoader", "vae_name"), ("VAELoaderKJ", "vae_name")],
+    "latent_upscale_models": [("LatentUpscaleModelLoader", "model_name")],
+    "loras": [("LoraLoaderModelOnly", "lora_name")],
+    "text_encoders": [
+        ("CLIPLoader", "clip_name"),
+        ("DualCLIPLoader", "clip_name1"), ("DualCLIPLoader", "clip_name2"),
+        ("DualCLIPLoaderGGUF", "clip_name1"), ("DualCLIPLoaderGGUF", "clip_name2"),
+        ("LTXAVTextEncoderLoader", "text_encoder_name"), ("LTXAVTextEncoderLoader", "clip_name"),
+    ],
+}
+
+
+def available_models() -> dict[str, set[str]]:
+    """Model files ComfyUI can actually load, per folder, read from /object_info
+    loader combo lists. Location-agnostic: covers extra_model_paths and subfolders
+    so the preflight no longer depends on COMFY_MODELS being the real model dir.
+
+    A folder is omitted when its list is empty or unreachable, so callers treat it
+    as "unknown" (never a false "missing") — this absorbs ComfyUI dropping a custom
+    folder's combo list mid-session, and ComfyUI being down."""
+    try:
+        oi = object_info()
+    except Exception:
+        return {}
+    out: dict[str, set[str]] = {}
+    for folder, loaders in MODEL_FOLDER_LOADERS.items():
+        names: set[str] = set()
+        for node, field in loaders:
+            spec = oi.get(node, {}).get("input", {}) or {}
+            entry = {**spec.get("required", {}), **spec.get("optional", {})}.get(field)
+            if isinstance(entry, list) and entry and isinstance(entry[0], list):
+                names.update(str(x) for x in entry[0])
+        if names:
+            out[folder] = names
+    return out
+
+
+def model_listed(folder: str, name: str, avail: dict[str, set[str]] | None = None) -> bool:
+    """True only when ComfyUI definitely offers this model. Use for positive
+    overrides (apply the swap only when we are sure the target exists)."""
+    if avail is None:
+        avail = available_models()
+    return name in avail.get(folder, set())
+
+
+def model_missing(folder: str, name: str, avail: dict[str, set[str]] | None = None) -> bool:
+    """True only when we are confident the model is absent (folder known and
+    non-empty but the name is not in it). Unknown/empty folder -> False so we
+    never block on uncertainty. Use for availability hints / warnings."""
+    if avail is None:
+        avail = available_models()
+    bucket = avail.get(folder)
+    return bool(bucket) and name not in bucket
+
+
 def sync_photography_workflow(comfy_input_subdir: str, subject_image: str = "") -> Path:
     if not PHOTOGRAPHY_WORKFLOW_TEMPLATE.exists():
         raise FileNotFoundError(f"photography workflow template is missing: {PHOTOGRAPHY_WORKFLOW_TEMPLATE}")
@@ -1498,8 +1559,7 @@ def disable_prompt_enhancer(api: dict) -> None:
 
 
 def patch_ltx23_local_loras(api: dict) -> None:
-    local_lora = COMFY_MODELS / "loras" / LOCAL_LTX23_DISTILLED_LORA
-    if not local_lora.exists():
+    if not model_listed("loras", LOCAL_LTX23_DISTILLED_LORA):
         return
     for node in api.values():
         if node["class_type"] != "LoraLoaderModelOnly":
@@ -1604,11 +1664,15 @@ def patch_model_names(api: dict, run: dict) -> None:
 
 
 def ensure_model_exists(folder: str, name: str) -> None:
-    if not (COMFY_MODELS / folder / name).exists():
-        raise FileNotFoundError(f"Missing ComfyUI model: models/{folder}/{name}")
+    """Best-effort warning when ComfyUI clearly cannot see the model. Never raises:
+    ComfyUI's own /prompt validation is the authority, so submission keeps working
+    regardless of where models physically live (extra_model_paths / subfolders)."""
+    if model_missing(folder, name):
+        print(f"Camera Lab: warning - model may be missing: models/{folder}/{name}", flush=True)
 
 
 def workflow_status(workflow: dict) -> dict[str, Any]:
+    avail = available_models()
     if workflow.get("builder") == "ltx23_ttp_flf":
         missing: list[str] = []
         if not (TTP_TOOLSET_ROOT / "LTXVFirstLastFrameControl_TTP.py").exists():
@@ -1619,7 +1683,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
             ("loras", LOCAL_LTX23_DISTILLED_LORA),
             ("latent_upscale_models", LTX23_UPSCALER),
         ]:
-            if not (COMFY_MODELS / folder / name).exists():
+            if model_missing(folder, name, avail):
                 missing.append(f"models/{folder}/{name}")
         if missing:
             return {"available": False, "reason": "missing " + ", ".join(missing)}
@@ -1639,7 +1703,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
     for folder, name in required_models(expand_subgraphs(data)):
-        if not (COMFY_MODELS / folder / name).exists():
+        if model_missing(folder, name, avail):
             missing.append(f"models/{folder}/{name}")
     if missing:
         return {"available": False, "reason": "missing " + ", ".join(missing)}
