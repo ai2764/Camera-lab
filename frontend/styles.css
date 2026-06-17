@@ -1833,6 +1833,16 @@ body.motion-workspace-active .motion-workspace {
     rgba(12,12,10,.9);
 }
 
+.motion-3d-frame {
+  display: block;
+  width: 100%;
+  height: min(760px, calc(100vh - 145px));
+  min-height: 560px;
+  border: 0;
+  border-radius: 8px;
+  background: #0e1011;
+}
+
 .motion-placeholder-card {
   padding: 18px 16px;
 }

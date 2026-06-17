@@ -35,6 +35,7 @@ SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
 MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
+MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
 
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
@@ -3034,6 +3035,11 @@ def safe_media_path(raw: str) -> Path:
     return path
 
 
+def sanitize_3dmotion_video_name(name: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", name or "drive.webm")
+    return re.sub(r"\.[^.]+$", "", cleaned) or "drive"
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         return
@@ -3050,6 +3056,86 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
 
+    def proxy_comfy_request(self, method: str, parsed: urllib.parse.ParseResult) -> None:
+        suffix = parsed.path.removeprefix("/comfy")
+        target = MOTION_COMFY_URL.rstrip("/") + suffix
+        if parsed.query:
+            target += "?" + parsed.query
+        body = None
+        if method != "GET":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length) if length else b""
+        headers = {}
+        for key in ("Content-Type", "Accept", "Range"):
+            value = self.headers.get(key)
+            if value:
+                headers[key] = value
+        request = urllib.request.Request(target, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                self.send_response(response.status)
+                self.forward_proxy_headers(response.headers)
+                self.end_headers()
+                shutil.copyfileobj(response, self.wfile)
+        except urllib.error.HTTPError as exc:
+            self.send_response(exc.code)
+            self.forward_proxy_headers(exc.headers)
+            self.end_headers()
+            self.wfile.write(exc.read())
+
+    def forward_proxy_headers(self, headers: Any) -> None:
+        for key in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+            value = headers.get(key)
+            if value:
+                self.send_header(key, value)
+
+    def handle_3dmotion_drive_video(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        base_name = sanitize_3dmotion_video_name(query.get("name", ["drive.webm"])[0])
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_3DMOTION_DRIVE_BYTES:
+            raise ValueError("drive video is too large")
+        output_dir = MOTION_COMFY_INPUT / "3dmotion-scail"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        webm_path = output_dir / f"{base_name}.webm"
+        mp4_path = output_dir / f"{base_name}.mp4"
+        with webm_path.open("wb") as handle:
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                handle.write(chunk)
+                remaining -= len(chunk)
+        ffmpeg = os.environ.get("FFMPEG_PATH") or "ffmpeg"
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(webm_path),
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(mp4_path),
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+            raise RuntimeError(stderr or f"ffmpeg exited with code {exc.returncode}") from exc
+        finally:
+            webm_path.unlink(missing_ok=True)
+        if not mp4_path.exists():
+            raise RuntimeError("ffmpeg did not produce a drive video")
+        self.send_json({"path": f"3dmotion-scail/{base_name}.mp4"})
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
@@ -3057,6 +3143,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_file(WEB_DIR / "index.html")
             if parsed.path.startswith("/static/"):
                 return self.serve_file(WEB_DIR / parsed.path.removeprefix("/static/"))
+            if parsed.path.startswith("/comfy/"):
+                return self.proxy_comfy_request("GET", parsed)
             if parsed.path.startswith("/vendor/yedp/"):
                 name = Path(parsed.path.removeprefix("/vendor/yedp/")).name
                 if Path(name).suffix.lower() not in {".js", ".mjs", ".wasm"}:
@@ -3109,8 +3197,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_audio()
             if self.path == "/api/upload-video":
                 return self.handle_upload_video()
+            if self.path.startswith("/api/scail-drive-video"):
+                return self.handle_3dmotion_drive_video()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
+            if self.path.startswith("/comfy/"):
+                return self.proxy_comfy_request("POST", urllib.parse.urlparse(self.path))
             if self.path == "/api/photography-subject":
                 return self.handle_photography_subject()
             if self.path == "/api/photography-frames":
