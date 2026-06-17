@@ -124,7 +124,9 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motionTextPanel")).toBeVisible();
   await expect(page.locator("#motionPrompt")).toBeVisible();
   await expect(page.locator("#motionTextPanel #motionGuideInput")).toHaveCount(0);
-  await expect(page.locator("#motionTextPanel .motion-video-panel")).toHaveCount(0);
+  await expect(page.locator("#motionTextPanel .motion-video-panel")).toBeVisible();
+  await expect(page.locator("#motionTextPanel #motionRefInput")).toBeVisible();
+  await expect(page.locator("#motionTextPanel #motionResult")).toBeVisible();
 
   await page.locator("#motionScailTab").click();
   await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
@@ -142,6 +144,7 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await page.locator("#motionTextTab").click();
   await expect(page.locator("#motionTextPanel")).toBeVisible();
   await expect(page.locator("#motionPrompt")).toBeVisible();
+  await expect(page.locator("#motionTextPanel .motion-video-panel")).toBeVisible();
   await expect(page.locator("#motionScailPanel")).toBeHidden();
 });
 

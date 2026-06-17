@@ -1842,6 +1842,15 @@ body.motion-workspace-active .motion-workspace {
   font-size: 20px;
 }
 
+.motion-scail-mount {
+  display: contents;
+}
+
+.motion-scail-upload-strip {
+  max-width: 600px;
+  margin: 0 0 12px;
+}
+
 .motion-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

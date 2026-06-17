@@ -2015,6 +2015,15 @@ function updateMotionSubtabs() {
     $(panelId).hidden = !active;
     $(panelId).classList.toggle("active", active);
   }
+  moveMotionVideoPanel();
+}
+
+function moveMotionVideoPanel() {
+  const panel = document.querySelector(".motion-video-panel");
+  const target = $(state.motionSubtab === "scail" ? "motionScailMount" : "motionTextScailMount");
+  if (panel && target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
 }
 
 function savedFrameSeconds(value, fallback = 0) {

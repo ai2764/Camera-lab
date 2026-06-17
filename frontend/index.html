@@ -423,6 +423,7 @@
               </div>
             </div>
           </section>
+          <div id="motionTextScailMount" class="motion-scail-mount"></div>
         </div>
         <section class="motion-history-shell">
           <div class="results-header">
@@ -432,7 +433,20 @@
         </section>
       </section>
       <section id="motionScailPanel" class="motion-subpanel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
+        <div class="motion-scail-upload-strip">
+          <div class="motion-upload-card">
+            <label class="motion-file-field">
+              <span>Upload guide video</span>
+              <input id="motionGuideInput" type="file" accept="video/*">
+              <span class="motion-file-control">
+                <span class="motion-file-button">Choose video</span>
+                <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+              </span>
+            </label>
+          </div>
+        </div>
         <div class="motion-grid">
+          <div id="motionScailMount" class="motion-scail-mount">
           <section class="motion-workbench motion-video-panel">
             <div class="motion-panel-body">
               <div class="motion-panel-head">
@@ -441,16 +455,6 @@
                 <h3>Final Video</h3>
               </div>
               <span id="motionResultState" class="hint">waiting</span>
-              </div>
-              <div class="motion-upload-card">
-                <label class="motion-file-field">
-                  <span>Upload guide video</span>
-                  <input id="motionGuideInput" type="file" accept="video/*">
-                  <span class="motion-file-control">
-                    <span class="motion-file-button">Choose video</span>
-                    <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
-                  </span>
-                </label>
               </div>
               <div class="motion-reference-row">
                 <label class="motion-file-field">
@@ -515,6 +519,7 @@
               </div>
             </div>
           </section>
+          </div>
         </div>
       </section>
       <section id="motion3dPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motion3dTab" hidden>
@@ -738,7 +743,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-scail-seed-1"></script>
+  <script src="/static/app.js?v=motion-scail-step2-restore-1"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>
