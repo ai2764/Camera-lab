@@ -25,6 +25,8 @@ const state = {
   directorSelectedId: "",
   directorSelectionType: "image",
   directorDrag: null,
+  storyboardAiRefData: "",
+  storyboardGenerated: null,
   workspace: initialWorkspace(),
   cameraWorkflowId: "",
   directorWorkflowId: "",
@@ -35,11 +37,39 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const DIRECTOR_GLOBAL_PROMPT_KEY = "cameraLab.directorGlobalPrompt";
 const imageSlots = {
   source: { pathKey: "sourcePath", previewId: "sourcePreview", statusId: "sourceStatus", empty: "No image uploaded" },
   middle: { pathKey: "middlePath", previewId: "middlePreview", statusId: "middleStatus", empty: "No image uploaded" },
   end: { pathKey: "endPath", previewId: "endPreview", statusId: "endStatus", empty: "No image uploaded" },
 };
+
+function storageGet(key) {
+  try {
+    return window.localStorage.getItem(key) || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (_err) {
+    // Storage can be unavailable in private or locked-down browser contexts.
+  }
+}
+
+function rememberDirectorGlobalPrompt() {
+  storageSet(DIRECTOR_GLOBAL_PROMPT_KEY, $("directorGlobalPrompt").value);
+}
+
+function restoreDirectorGlobalPrompt() {
+  const saved = storageGet(DIRECTOR_GLOBAL_PROMPT_KEY);
+  if (saved && !$("directorGlobalPrompt").value.trim()) {
+    $("directorGlobalPrompt").value = saved;
+  }
+}
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -57,13 +87,16 @@ function fillSelect(el, items, labelKey = "label") {
     opt.value = item.id || item.path || item.slug;
     opt.textContent = item[labelKey] || item.name || item.id || item.path;
     if (item.available === false) {
-      opt.disabled = true;
+      if (el.id !== "workflowSelect") opt.disabled = true;
+      opt.dataset.available = "false";
+      opt.title = item.reason || "";
       opt.textContent += ` (unavailable: ${item.reason})`;
     }
     el.appendChild(opt);
   }
   const firstEnabled = [...el.options].find((opt) => !opt.disabled);
   if (firstEnabled) el.value = firstEnabled.value;
+  else if (el.options.length) el.value = el.options[0].value;
 }
 
 function currentMove() {
@@ -84,20 +117,20 @@ function isDirectorWorkflow() {
 function directorWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return workflow?.mode === "director_ref" && !opt.disabled;
+    return workflow?.mode === "director_ref";
   });
 }
 
 function cameraWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return workflow?.mode !== "director_ref" && !opt.disabled;
+    return workflow?.mode !== "director_ref";
   });
 }
 
 function workflowOptionById(id, mode) {
   if (!id) return null;
-  const option = [...$("workflowSelect").options].find((opt) => opt.value === id && !opt.disabled);
+  const option = [...$("workflowSelect").options].find((opt) => opt.value === id);
   if (!option) return null;
   const workflow = state.config?.workflows?.find((item) => item.id === option.value);
   if (mode && workflow?.mode !== mode) return null;
@@ -346,20 +379,20 @@ function drawCamera(ctx, x, y, targetX, targetY) {
 
 function updateWorkflowFields() {
   const wf = currentWorkflow();
-  if (!wf) return;
-  const isDirector = wf.mode === "director_ref";
-  const showDirectorWorkspace = state.workspace === "director" && isDirector;
+  const isDirector = wf?.mode === "director_ref";
+  const showDirectorWorkspace = state.workspace === "director";
   const showPhotographyWorkspace = state.workspace === "photography";
   const showCastingWorkspace = state.workspace === "casting";
-  const showSourceImage = wf.mode !== "t2v" && !isDirector;
-  const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
-  const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v";
+  const mode = wf?.mode || "";
+  const showSourceImage = mode && mode !== "t2v" && !isDirector;
+  const showMiddleImage = mode === "fml" || mode === "fml_native";
+  const showEndImage = mode === "flf" || mode === "fml" || mode === "fml_native" || mode === "flf_ia2v";
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
   document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
   document.body.classList.toggle("casting-workspace-active", showCastingWorkspace);
   $("cameraWorkspaceTab").classList.toggle("active", state.workspace === "camera");
-  $("directorWorkspaceTab").classList.toggle("active", showDirectorWorkspace);
+  $("directorWorkspaceTab").classList.toggle("active", state.workspace === "director");
   $("photographyWorkspaceTab").classList.toggle("active", showPhotographyWorkspace);
   $("castingWorkspaceTab").classList.toggle("active", showCastingWorkspace);
   if (showPhotographyWorkspace) return;
@@ -380,11 +413,11 @@ function updateWorkflowFields() {
   const audioWrap = $("audioUploadWrap");
   const audioTarget = $("audioUploadHome");
   if (audioWrap.parentElement !== audioTarget) audioTarget.appendChild(audioWrap);
-  $("audioUploadWrap").style.display = wf.mode === "ia2v" || wf.mode === "flf_ia2v" ? "block" : "none";
+  $("audioUploadWrap").style.display = mode === "ia2v" || mode === "flf_ia2v" ? "block" : "none";
   const runStrip = $("directorRunStrip");
   const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
-  $("promptTag").textContent = wf.mode.toUpperCase();
+  $("promptTag").textContent = mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : "Prompt";
   if (showDirectorWorkspace) renderDirectorEditor();
 }
@@ -533,6 +566,7 @@ function importShotPackToDirector(detail = {}) {
 
   setWorkspace("director");
   $("directorGlobalPrompt").value = prompt;
+  rememberDirectorGlobalPrompt();
   $("promptText").value = prompt;
   state.directorAudioSegments = [];
   state.directorSelectionType = "image";
@@ -568,15 +602,46 @@ function closeStoryboardImportModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-async function applyStoryboardImport() {
-  const file = $("storyboardImportInput").files[0];
-  if (!file) {
-    $("storyboardImportStatus").textContent = "Choose a 2x2 storyboard image first";
+function showStoryboardPreview(src, meta = "") {
+  const wrap = $("storyboardGeneratedPreviewWrap");
+  const img = $("storyboardGeneratedPreview");
+  if (!src) {
+    wrap.hidden = true;
+    img.removeAttribute("src");
+    $("storyboardGeneratedMeta").textContent = "";
     return;
   }
-  const prompts = parseBulkSegmentPrompts($("storyboardPromptText").value).slice(0, 4);
-  await splitStoryboardImage(file, prompts);
+  img.src = src;
+  $("storyboardGeneratedMeta").textContent = meta;
+  wrap.hidden = false;
+}
+
+async function applyStoryboardImport() {
+  const file = $("storyboardImportInput").files[0];
+  const generated = state.storyboardGenerated;
+  if (!file && !generated?.data) {
+    $("storyboardImportStatus").textContent = "Choose a storyboard image first";
+    return;
+  }
+  const grid = generated?.grid || storyboardGridSize();
+  const prompts = parseBulkSegmentPrompts($("storyboardPromptText").value);
+  if (file) {
+    await splitStoryboardImage(file, prompts, grid);
+  } else {
+    await splitStoryboardDataUrl(generated.data, generated.name || "ai_storyboard.png", prompts, grid);
+  }
   closeStoryboardImportModal();
+}
+
+function storyboardGridSize() {
+  const value = String($("storyboardGridSelect")?.value || "2x2").toLowerCase();
+  const match = value.match(/^(\d+)x(\d+)$/);
+  const cols = match ? Number(match[1]) : 2;
+  const rows = match ? Number(match[2]) : 2;
+  return {
+    cols: Math.max(1, Math.min(8, cols || 2)),
+    rows: Math.max(1, Math.min(8, rows || 2)),
+  };
 }
 
 function parseNumberList(value) {
@@ -644,16 +709,22 @@ function clampSegmentDuration(value) {
   return Math.max(0.5, Math.min(60, duration));
 }
 
-async function splitStoryboardImage(file, prompts = []) {
+async function splitStoryboardImage(file, prompts = [], grid = storyboardGridSize()) {
   if (!file) return;
-  $("runHint").textContent = "Splitting 2x2 storyboard...";
+  const cols = Math.max(1, Number(grid.cols) || 2);
+  const rows = Math.max(1, Number(grid.rows) || 2);
+  const shotCount = cols * rows;
+  const gridLabel = `${cols}x${rows}`;
+  $("runHint").textContent = `Splitting ${gridLabel} storyboard...`;
   const image = await loadImageFromFile(file);
   const uploads = [];
   const base = file.name.replace(/\.[^.]+$/, "") || "storyboard";
-  for (let index = 0; index < 4; index += 1) {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const blob = await cropImageBlob(image, col * image.naturalWidth / 2, row * image.naturalHeight / 2, image.naturalWidth / 2, image.naturalHeight / 2);
+  const panelWidth = image.naturalWidth / cols;
+  const panelHeight = image.naturalHeight / rows;
+  for (let index = 0; index < shotCount; index += 1) {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const blob = await cropImageBlob(image, col * panelWidth, row * panelHeight, panelWidth, panelHeight);
     const data = await blobToDataUrl(blob);
     const uploaded = await api("/api/upload-image", {
       method: "POST",
@@ -663,8 +734,14 @@ async function splitStoryboardImage(file, prompts = []) {
   }
   setDirectorSegmentsFromStoryboard(uploads, prompts);
   $("runHint").textContent = prompts.length
-    ? `2x2 storyboard imported with ${prompts.length} prompt(s)`
-    : "2x2 storyboard split into four timeline images";
+    ? `${gridLabel} storyboard imported with ${uploads.length} image(s) and ${Math.min(prompts.length, uploads.length)} prompt(s)`
+    : `${gridLabel} storyboard split into ${uploads.length} timeline images`;
+}
+
+async function splitStoryboardDataUrl(dataUrl, name, prompts = [], grid = storyboardGridSize()) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const file = new File([blob], name || "storyboard.png", { type: blob.type || "image/png" });
+  await splitStoryboardImage(file, prompts, grid);
 }
 
 function loadImageFromFile(file) {
@@ -1649,6 +1726,32 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, "\\$&");
 }
 
+function renderRunWorkingState(media, run) {
+  media.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "run-working-state";
+  box.innerHTML = `
+    <div class="run-working-orbit" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div class="run-working-copy">
+      <div class="run-working-kicker">${escapeHtml(run.status || "working")}</div>
+      <div class="run-working-title">ComfyUI is rendering</div>
+      <div class="run-working-subtitle">Frames are being prepared for this result.</div>
+    </div>
+    <div class="run-working-bars" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  `;
+  media.appendChild(box);
+}
+
 function updateRunCard(card, run) {
   card._run = run;
   card.dataset.pinned = run.pinned ? "true" : "false";
@@ -1686,7 +1789,6 @@ function updateRunCard(card, run) {
       : `status:${run.status}:${run.error || ""}`;
   if (card.dataset.mediaKey !== mediaKey) {
     card.dataset.mediaKey = mediaKey;
-    media.textContent = run.error || "waiting";
     if (run.video) {
       media.innerHTML = "";
       const video = document.createElement("video");
@@ -1701,6 +1803,16 @@ function updateRunCard(card, run) {
       img.src = mediaUrl(run.contact_sheet);
       img.alt = "contact sheet";
       media.appendChild(img);
+    } else if (run.status === "error" && run.error) {
+      media.innerHTML = "";
+      const errorBox = document.createElement("textarea");
+      errorBox.className = "run-error-text";
+      errorBox.readOnly = true;
+      errorBox.value = run.error;
+      errorBox.setAttribute("aria-label", "Run error details");
+      media.appendChild(errorBox);
+    } else {
+      renderRunWorkingState(media, run);
     }
   }
 
@@ -1708,7 +1820,8 @@ function updateRunCard(card, run) {
   const promptKey = run.prompt || "";
   if (card.dataset.promptKey !== promptKey) {
     card.dataset.promptKey = promptKey;
-    promptLine.textContent = promptKey;
+    promptLine.textContent = "";
+    promptLine.hidden = true;
   }
   renderDirectorSegments(card, run);
 }
@@ -1834,6 +1947,7 @@ function useRunTimeline(run) {
   }
   setWorkspace("director");
   $("directorGlobalPrompt").value = timeline.global_prompt || run.global_prompt || "";
+  rememberDirectorGlobalPrompt();
   $("directorGlobalReferenceStrength").value = timeline.global_reference_strength ?? run.global_reference_strength ?? 0.35;
   if (run.seed) useRunSeed(run.seed);
   const refs = Array.isArray(run.reference_images) ? run.reference_images.filter(Boolean) : [];
@@ -2052,6 +2166,129 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+async function loadAiSettings() {
+  const settings = await api("/api/ai-settings");
+  $("openRouterModel").value = settings.openrouter_model || "google/gemini-flash-latest";
+  $("kieImageModel").value = settings.kie_image_model || "nano-banana-2";
+  $("openRouterApiKey").value = "";
+  $("kieApiKey").value = "";
+  $("openRouterKeyStatus").textContent = settings.has_openrouter_api_key ? "Saved key available" : "No saved key";
+  $("kieKeyStatus").textContent = settings.has_kie_api_key ? "Saved key available" : "No saved key";
+  $("settingsStatus").textContent = "";
+}
+
+function openSettingsModal() {
+  $("settingsModal").classList.add("open");
+  $("settingsModal").setAttribute("aria-hidden", "false");
+  loadAiSettings().catch((err) => {
+    $("settingsStatus").textContent = err.message;
+  });
+}
+
+function closeSettingsModal() {
+  $("settingsModal").classList.remove("open");
+  $("settingsModal").setAttribute("aria-hidden", "true");
+}
+
+async function saveAiSettingsFromModal() {
+  const button = $("saveSettingsBtn");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const payload = {
+      openrouter_api_key: $("openRouterApiKey").value.trim(),
+      openrouter_model: $("openRouterModel").value.trim(),
+      kie_api_key: $("kieApiKey").value.trim(),
+      kie_image_model: $("kieImageModel").value.trim(),
+    };
+    const settings = await api("/api/ai-settings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    $("openRouterApiKey").value = "";
+    $("kieApiKey").value = "";
+    $("openRouterKeyStatus").textContent = settings.has_openrouter_api_key ? "Saved key available" : "No saved key";
+    $("kieKeyStatus").textContent = settings.has_kie_api_key ? "Saved key available" : "No saved key";
+    $("settingsStatus").textContent = "Settings saved";
+  } catch (err) {
+    $("settingsStatus").textContent = err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
+}
+
+async function selectStoryboardAiReference(file) {
+  state.storyboardAiRefData = "";
+  $("storyboardAiRefPreview").innerHTML = "";
+  if (!file) {
+    $("storyboardAiRefStatus").textContent = "No creative reference selected";
+    return;
+  }
+  state.storyboardAiRefData = await readFileAsDataUrl(file);
+  $("storyboardAiRefStatus").textContent = file.name;
+  const img = document.createElement("img");
+  img.src = state.storyboardAiRefData;
+  img.alt = "creative reference preview";
+  $("storyboardAiRefPreview").appendChild(img);
+}
+
+async function generateStoryboardAi() {
+  const refUrl = $("storyboardAiRefUrl").value.trim();
+  if (!state.storyboardAiRefData && !refUrl) throw new Error("Choose a creative reference image or paste a public image URL first");
+  const idea = $("storyboardAiIdea").value.trim();
+  if (!idea) throw new Error("Enter a video idea first");
+  const grid = storyboardGridSize();
+  const button = $("generateStoryboardAiBtn");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "Generating...";
+  $("storyboardAiStatus").textContent = "Preparing reference, writing script, generating storyboard, then preparing LTX prompts...";
+  try {
+    const result = await api("/api/storyboard-ai/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        reference_image_data: state.storyboardAiRefData,
+        reference_image_url: refUrl,
+        idea,
+        theme: $("storyboardAiTheme").value.trim(),
+        topic: $("storyboardAiTopic").value.trim(),
+        duration: Number($("storyboardAiDuration").value) || 20,
+        cols: grid.cols,
+        rows: grid.rows,
+        kie_aspect_ratio: $("storyboardKieAspectRatio").value,
+        kie_resolution: $("storyboardKieResolution").value,
+        kie_output_format: $("storyboardKieOutputFormat").value,
+      }),
+    });
+    state.storyboardGenerated = result.storyboard || null;
+    if (state.storyboardGenerated) state.storyboardGenerated.grid = result.grid;
+    if (result.grid?.label && $("storyboardGridSelect").value !== result.grid.label) {
+      $("storyboardGridSelect").value = result.grid.label;
+    }
+    $("storyboardAiScript").value = result.script || "";
+    $("storyboardPromptText").value = result.prompt_text || "";
+    $("storyboardImportInput").value = "";
+    $("storyboardImportStatus").textContent = state.storyboardGenerated?.name
+      ? `Generated storyboard: ${state.storyboardGenerated.name}`
+      : "Generated storyboard ready";
+    $("storyboardAiStatus").textContent = `Generated ${result.grid?.label || `${grid.cols}x${grid.rows}`} storyboard and LTX prompt block`;
+    if (state.storyboardGenerated?.data || state.storyboardGenerated?.url) {
+      showStoryboardPreview(
+        state.storyboardGenerated.data || state.storyboardGenerated.url,
+        `${result.grid?.label || `${grid.cols}x${grid.rows}`} / ${result.duration || $("storyboardAiDuration").value}s`
+      );
+    }
+  } catch (err) {
+    $("storyboardAiStatus").textContent = err.message;
+    throw err;
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
 }
 
 function readAudioDuration(file) {
@@ -2905,11 +3142,19 @@ async function loadConfig() {
   state.config = await api("/api/config");
   fillSelect($("workflowSelect"), state.config.workflows);
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
+  if (state.workspace === "director") {
+    const option = workflowOptionById(state.directorWorkflowId, "director_ref") || directorWorkflowOption();
+    if (option) $("workflowSelect").value = option.value;
+  } else if (state.workspace === "camera" && isDirectorWorkflow()) {
+    const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
+    if (option) $("workflowSelect").value = option.value;
+  }
   rememberCurrentWorkflow();
   $("negativePrompt").value = state.config.default_negative;
   $("comfyStatus").textContent = state.config.comfy.ok ? "ComfyUI: online" : "ComfyUI: offline";
   $("comfyStatus").className = `status-pill ${state.config.comfy.ok ? "ok" : "bad"}`;
   $("comfyStatus").title = state.config.comfy.reason || state.config.comfy.url || "";
+  restoreDirectorGlobalPrompt();
   renderCastingStatus();
   refreshCastingLibrary();
   updateWorkflowFields();
@@ -2940,6 +3185,13 @@ $("saveCustomVoiceBtn").addEventListener("click", saveCustomVoice);
 $("cancelCustomVoiceBtn").addEventListener("click", closeCustomVoiceModal);
 $("closeCastingVoiceBtn").addEventListener("click", closeCustomVoiceModal);
 document.querySelector("[data-close-casting-voice-modal]").addEventListener("click", closeCustomVoiceModal);
+$("settingsBtn").addEventListener("click", openSettingsModal);
+$("closeSettingsBtn").addEventListener("click", closeSettingsModal);
+$("cancelSettingsBtn").addEventListener("click", closeSettingsModal);
+$("saveSettingsBtn").addEventListener("click", saveAiSettingsFromModal);
+$("settingsModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-settings-modal]")) closeSettingsModal();
+});
 window.addEventListener("camera-lab:shot-pack-exported", (event) => importShotPackToDirector(event.detail || {}));
 $("moveSelect").addEventListener("change", resetPrompt);
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
@@ -2975,6 +3227,7 @@ $("customSizeInput").addEventListener("input", onCustomSizeInput);
 $("directorSizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }));
 $("directorSizeScale").addEventListener("input", updateSizeReadout);
 $("directorCustomSizeInput").addEventListener("input", onCustomSizeInput);
+$("directorGlobalPrompt").addEventListener("input", rememberDirectorGlobalPrompt);
 $("resetPromptsBtn").addEventListener("click", resetPrompt);
 $("refreshBtn").addEventListener("click", loadConfig);
 $("runBtn").addEventListener("click", startBatch);
@@ -3003,12 +3256,31 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && $("videoPreviewModal").classList.contains("open")) closeVideoPreview();
 });
 $("storyboardImportInput").addEventListener("change", () => {
-  $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";
+  state.storyboardGenerated = null;
+  const file = $("storyboardImportInput").files[0];
+  $("storyboardImportStatus").textContent = file?.name || "No storyboard selected";
+  if (!file) {
+    showStoryboardPreview("");
+    return;
+  }
+  readFileAsDataUrl(file)
+    .then((dataUrl) => showStoryboardPreview(dataUrl, `${storyboardGridSize().cols}x${storyboardGridSize().rows} manual import`))
+    .catch(() => showStoryboardPreview(""));
+});
+$("storyboardAiRefInput").addEventListener("change", () => {
+  selectStoryboardAiReference($("storyboardAiRefInput").files[0]).catch((err) => {
+    $("storyboardAiRefStatus").textContent = err.message;
+  });
+});
+$("generateStoryboardAiBtn").addEventListener("click", () => {
+  generateStoryboardAi().catch((err) => {
+    $("storyboardAiStatus").textContent = err.message;
+  });
 });
 $("applyStoryboardImportBtn").addEventListener("click", () => {
   applyStoryboardImport().catch((err) => {
     $("storyboardImportStatus").textContent = err.message;
-    $("runHint").textContent = `2x2 storyboard import failed: ${err.message}`;
+    $("runHint").textContent = `Storyboard import failed: ${err.message}`;
   });
 });
 $("globalAddRefBtn").addEventListener("click", addReferenceSlot);

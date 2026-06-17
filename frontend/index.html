@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=result-toolbar-icons-1">
+  <link rel="stylesheet" href="/static/styles.css?v=storyboard-flow-2">
 </head>
 <body>
   <header class="topbar">
@@ -18,7 +18,10 @@
       <button id="castingWorkspaceTab" class="workspace-tab" type="button">Casting</button>
       <button id="photographyWorkspaceTab" class="workspace-tab" type="button" hidden>Photography</button>
     </nav>
-    <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
+    <div class="topbar-actions">
+      <button id="settingsBtn" class="settings-button" type="button">Settings</button>
+      <div class="status-pill" id="comfyStatus">ComfyUI: checking</div>
+    </div>
   </header>
 
   <main class="layout">
@@ -85,6 +88,7 @@
             <option value="512x512">1:1 512x512</option>
             <option value="1280x720" selected>16:9 1280x720</option>
             <option value="720x1280">9:16 720x1280</option>
+            <option value="768x1024">3:4 768x1024</option>
             <option value="768x1152">2:3 768x1152</option>
             <option value="1152x768">3:2 1152x768</option>
           </select>
@@ -183,6 +187,7 @@
                       <option value="512x512">1:1 512x512</option>
                       <option value="1280x720" selected>16:9 1280x720</option>
                       <option value="720x1280">9:16 720x1280</option>
+                      <option value="768x1024">3:4 768x1024</option>
                       <option value="768x1152">2:3 768x1152</option>
                       <option value="1152x768">3:2 1152x768</option>
                     </select>
@@ -214,7 +219,7 @@
                 <div class="director-timeline-head">
                   <span>Image and text timeline</span>
                   <div class="timeline-tools">
-                    <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
+                    <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">Storyboard Import</button>
                     <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
                   </div>
                 </div>
@@ -245,15 +250,138 @@
           <div class="director-modal-head">
             <div>
               <div class="eyebrow">Timeline import</div>
-              <h2 id="storyboardImportTitle">2x2 Storyboard</h2>
+              <h2 id="storyboardImportTitle">Storyboard Import</h2>
             </div>
             <button id="closeStoryboardImportBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
           </div>
+          <div class="grid-2">
+            <label>
+              Grid
+              <select id="storyboardGridSelect">
+                <option value="2x2" selected>2x2 / 4 shots</option>
+                <option value="3x3">3x3 / 9 shots</option>
+                <option value="4x4">4x4 / 16 shots</option>
+              </select>
+            </label>
+            <label>
+              Video duration
+              <input id="storyboardAiDuration" type="number" min="4" max="600" step="1" value="20">
+            </label>
+          </div>
+          <section class="storyboard-ai-panel">
+            <div class="storyboard-ai-head">
+              <div>
+                <div class="eyebrow">AI Studio</div>
+                <h3>Generate storyboard</h3>
+              </div>
+            </div>
+            <div class="storyboard-ai-grid">
+              <label class="storyboard-file-field">
+                Creative reference image
+                <input id="storyboardAiRefInput" type="file" accept="image/*">
+                <span id="storyboardAiRefStatus" class="hint">No creative reference selected</span>
+              </label>
+              <div id="storyboardAiRefPreview" class="storyboard-ai-preview"></div>
+              <label class="storyboard-ai-wide">
+                Public image URL override
+                <input id="storyboardAiRefUrl" type="url" placeholder="Optional: https://.../reference.png">
+              </label>
+              <label>
+                Video idea
+                <textarea id="storyboardAiIdea" rows="4" placeholder="A short cinematic idea for the video"></textarea>
+              </label>
+              <label>
+                Theme
+                <select id="storyboardAiTheme">
+                  <option value="">Auto / infer from idea</option>
+                  <option value="romantic">Romantic</option>
+                  <option value="fashion editorial">Fashion editorial</option>
+                  <option value="luxury lifestyle">Luxury lifestyle</option>
+                  <option value="fitness gym">Fitness gym</option>
+                  <option value="beauty routine">Beauty routine</option>
+                  <option value="cinematic drama">Cinematic drama</option>
+                  <option value="mystery thriller">Mystery thriller</option>
+                  <option value="noir">Noir</option>
+                  <option value="sci-fi">Sci-fi</option>
+                  <option value="cyberpunk">Cyberpunk</option>
+                  <option value="fantasy">Fantasy</option>
+                  <option value="historical period">Historical period</option>
+                  <option value="summer vacation">Summer vacation</option>
+                  <option value="urban street">Urban street</option>
+                  <option value="cozy home">Cozy home</option>
+                  <option value="music video">Music video</option>
+                  <option value="dance performance">Dance performance</option>
+                  <option value="sports training">Sports training</option>
+                  <option value="travel vlog">Travel vlog</option>
+                  <option value="elegant restaurant">Elegant restaurant</option>
+                  <option value="wedding">Wedding</option>
+                  <option value="car commercial">Car commercial</option>
+                  <option value="product commercial">Product commercial</option>
+                  <option value="documentary">Documentary</option>
+                </select>
+              </label>
+              <label>
+                Topic
+                <input id="storyboardAiTopic" type="text" placeholder="optional story topic">
+              </label>
+              <label>
+                Nano Banana aspect ratio
+                <select id="storyboardKieAspectRatio">
+                  <option value="1:1" selected>1:1</option>
+                  <option value="auto">auto</option>
+                  <option value="2:3">2:3</option>
+                  <option value="3:2">3:2</option>
+                  <option value="3:4">3:4</option>
+                  <option value="4:3">4:3</option>
+                  <option value="4:5">4:5</option>
+                  <option value="5:4">5:4</option>
+                  <option value="9:16">9:16</option>
+                  <option value="16:9">16:9</option>
+                  <option value="21:9">21:9</option>
+                  <option value="1:4">1:4</option>
+                  <option value="4:1">4:1</option>
+                  <option value="1:8">1:8</option>
+                  <option value="8:1">8:1</option>
+                </select>
+              </label>
+              <label>
+                Nano Banana resolution
+                <select id="storyboardKieResolution">
+                  <option value="1K" selected>1K</option>
+                  <option value="2K">2K</option>
+                  <option value="4K">4K</option>
+                </select>
+              </label>
+              <label>
+                Nano Banana output
+                <select id="storyboardKieOutputFormat">
+                  <option value="png" selected>PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
+              </label>
+            </div>
+            <button id="generateStoryboardAiBtn" class="primary storyboard-generate-button" type="button">Generate storyboard</button>
+            <div id="storyboardAiStatus" class="hint">Generate will fill the storyboard image and batch prompts below.</div>
+            <details class="storyboard-ai-details">
+              <summary>Generated script</summary>
+              <textarea id="storyboardAiScript" rows="7" readonly></textarea>
+            </details>
+          </section>
           <label class="storyboard-file-field">
-            2x2 image
+            Storyboard image
             <input id="storyboardImportInput" type="file" accept="image/*">
             <span id="storyboardImportStatus" class="hint">No storyboard selected</span>
           </label>
+          <section id="storyboardGeneratedPreviewWrap" class="storyboard-generated-preview" hidden>
+            <div class="storyboard-generated-head">
+              <div>
+                <div class="eyebrow">Storyboard preview</div>
+                <h3>Generated image</h3>
+              </div>
+              <span id="storyboardGeneratedMeta" class="hint"></span>
+            </div>
+            <img id="storyboardGeneratedPreview" alt="generated storyboard preview">
+          </section>
           <label>
             Batch prompts
             <textarea id="storyboardPromptText" rows="8" placeholder="Optional. Each line can start with a duration, like 3s, close-up portrait. Supports Shot 1/Shot 2, S1/S2, numbered lines, blank lines, or | separators."></textarea>
@@ -261,6 +389,41 @@
           <div class="director-modal-actions">
             <button id="cancelStoryboardImportBtn" type="button">Cancel</button>
             <button id="applyStoryboardImportBtn" class="primary modal-primary" type="button">Add to timeline</button>
+          </div>
+        </section>
+      </div>
+      <div id="settingsModal" class="director-modal" aria-hidden="true">
+        <div class="director-modal-backdrop" data-close-settings-modal></div>
+        <section class="director-modal-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+          <div class="director-modal-head">
+            <div>
+              <div class="eyebrow">Studio settings</div>
+              <h2 id="settingsTitle">AI Providers</h2>
+            </div>
+            <button id="closeSettingsBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+          </div>
+          <label>
+            OpenRouter API key
+            <input id="openRouterApiKey" type="password" autocomplete="off" placeholder="Leave blank to keep saved key">
+            <span id="openRouterKeyStatus" class="hint"></span>
+          </label>
+          <label>
+            OpenRouter model
+            <input id="openRouterModel" type="text" value="google/gemini-flash-latest">
+          </label>
+          <label>
+            Kie API key
+            <input id="kieApiKey" type="password" autocomplete="off" placeholder="Leave blank to keep saved key">
+            <span id="kieKeyStatus" class="hint"></span>
+          </label>
+          <label>
+            Kie image model
+            <input id="kieImageModel" type="text" value="nano-banana-2">
+          </label>
+          <div id="settingsStatus" class="hint"></div>
+          <div class="director-modal-actions">
+            <button id="cancelSettingsBtn" type="button">Cancel</button>
+            <button id="saveSettingsBtn" class="primary modal-primary" type="button">Save settings</button>
           </div>
         </section>
       </div>
@@ -550,7 +713,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=storyboard-duration-prompts-1"></script>
+  <script src="/static/app.js?v=storyboard-flow-2"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>
