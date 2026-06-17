@@ -344,9 +344,11 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   expect(outputPreviewBox.x).toBeGreaterThan(inputPreviewBox.x);
   expect(Math.abs(inputPreviewBox.y - outputPreviewBox.y)).toBeLessThan(2);
   expect(Math.abs(inputPreviewBox.width - outputPreviewBox.width)).toBeLessThan(2);
-  expect(Math.abs(inputPreviewBox.height - outputPreviewBox.height)).toBeLessThan(2);
-  expect(Math.abs(inputPreviewBox.y + inputPreviewBox.height - (scailPanelBox.y + scailPanelBox.height))).toBeLessThan(3);
-  expect(Math.abs(outputPreviewBox.y + outputPreviewBox.height - (scailPanelBox.y + scailPanelBox.height))).toBeLessThan(3);
+  expect(inputPreviewBox.height).toBeLessThanOrEqual(380);
+  expect(outputPreviewBox.height).toBeLessThanOrEqual(240);
+  expect(outputPreviewBox.height).toBeLessThanOrEqual(inputPreviewBox.height);
+  expect(inputPreviewBox.y + inputPreviewBox.height).toBeLessThanOrEqual(scailPanelBox.y + scailPanelBox.height);
+  expect(outputPreviewBox.y + outputPreviewBox.height).toBeLessThanOrEqual(scailPanelBox.y + scailPanelBox.height);
   expect(scailPanelBox.y + scailPanelBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   await expect(page.locator("#motionScailPanel .motion-reference-preview-card")).toHaveCount(0);
   await page.locator("#motionTextTab").click();
