@@ -1973,6 +1973,7 @@ function useMotionRun(run) {
   if (run.prompt) $("motionPrompt").value = run.prompt;
   setInputIfPresent("motionDuration", run.duration);
   setInputIfPresent("motionSeed", run.seed);
+  setInputIfPresent("motionScailSeed", run.seed);
   setInputIfPresent("motionSteps", run.steps);
   setInputIfPresent("motionPoseStrength", run.pose_strength);
   setInputIfPresent("motionCfg", run.cfg_scale);
@@ -2243,7 +2244,7 @@ async function startBatch() {
   }
 }
 
-function motionPayload() {
+function motionPayload(seedInputId = "motionSeed") {
   const size = currentMotionSize();
   const duration = Number($("motionDuration").value);
   const steps = Number($("motionSteps").value);
@@ -2256,7 +2257,7 @@ function motionPayload() {
     width: size.width,
     height: size.height,
     steps: Number.isFinite(steps) && steps > 0 ? steps : 8,
-    seed: $("motionSeed").value.trim(),
+    seed: $(seedInputId).value.trim(),
     rewrite: $("motionRewrite").checked,
     pose_strength: Number.isFinite(poseStrength) ? poseStrength : 1,
     cfg_scale: Number.isFinite(cfgScale) ? cfgScale : 5,
@@ -2460,7 +2461,7 @@ async function startMotionGuide() {
 }
 
 async function startMotionFinal() {
-  const payload = motionPayload();
+  const payload = motionPayload("motionScailSeed");
   const run = currentMotionRun();
   const guideVideoPath = run.guide_video || state.motionGuideVideoPath;
   if (!guideVideoPath) {

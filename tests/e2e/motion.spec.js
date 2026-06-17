@@ -391,6 +391,7 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     const payload = route.request().postDataJSON();
     expect(payload.guide_video_path).toBe("C:\\mock\\guide-upload.mp4");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    expect(payload.seed).toBe("777");
     expect(payload.guide_trim_start).toBe(0);
     expect(payload.guide_trim_end).toBe(4);
     await route.fulfill({
@@ -444,6 +445,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await page.goto("/#motion");
   await expect(page.locator("#motionWorkspace")).toBeVisible();
   await page.locator("#motionScailTab").click();
+  await expect(page.locator("#motionScailSeed")).toBeVisible();
+  await page.locator("#motionScailSeed").fill("777");
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
   await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
   await expect(page.locator("#motionRefPreviewWrap")).toHaveClass(/has-image/);
