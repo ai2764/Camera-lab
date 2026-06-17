@@ -145,6 +145,8 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motion3dTab")).toHaveClass(/active/);
   await expect(page.locator("#motion3dPanel")).toBeVisible();
   await expect(page.frameLocator("#motion3dFrame").locator("h1")).toContainText("3D Motion Stage");
+  const motion3dFrameBox = await page.locator("#motion3dFrame").boundingBox();
+  expect(motion3dFrameBox.y + motion3dFrameBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   await expect(page.locator("#motionScailPanel")).toBeHidden();
 
   await page.locator("#motionTextTab").click();
