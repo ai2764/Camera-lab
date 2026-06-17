@@ -2377,6 +2377,27 @@ function playMotionTrim() {
   });
 }
 
+function setMotionTrimBoundaryFromPlayhead(boundary) {
+  const max = motionGuideDurationFallback();
+  const currentTime = Number($("motionGuide").currentTime);
+  const time = Math.min(roundMotionTime(Number.isFinite(currentTime) ? currentTime : 0), max);
+  let start = roundMotionTime($("motionTrimStart").value);
+  let end = roundMotionTime($("motionTrimEnd").value) || max;
+  if (boundary === "start") {
+    start = Math.min(time, Math.max(0, max - MOTION_TRIM_GAP));
+    if (end <= start) end = max;
+    $("motionTrimStart").value = String(start);
+    $("motionTrimEnd").value = String(end);
+    updateMotionTrimDisplay("motionTrimStart");
+  } else {
+    end = Math.max(time, MOTION_TRIM_GAP);
+    if (start >= end) start = 0;
+    $("motionTrimStart").value = String(start);
+    $("motionTrimEnd").value = String(end);
+    updateMotionTrimDisplay("motionTrimEnd");
+  }
+}
+
 function currentMotionRun() {
   return (state.motionBatch?.runs || [])[0] || {};
 }
@@ -3526,13 +3547,10 @@ $("motionGuide").addEventListener("pause", () => {
   state.motionTrimPlaying = false;
 });
 $("motionTrimSetStart").addEventListener("click", () => {
-  $("motionTrimStart").value = String(roundMotionTime($("motionGuide").currentTime || 0));
-  updateMotionTrimDisplay("motionTrimStart");
+  setMotionTrimBoundaryFromPlayhead("start");
 });
 $("motionTrimSetEnd").addEventListener("click", () => {
-  const currentTime = Number($("motionGuide").currentTime);
-  $("motionTrimEnd").value = String(roundMotionTime(Number.isFinite(currentTime) ? currentTime : motionGuideDurationFallback()));
-  updateMotionTrimDisplay("motionTrimEnd");
+  setMotionTrimBoundaryFromPlayhead("end");
 });
 $("motionTrimPlay").addEventListener("click", playMotionTrim);
 $("motionTrimReset").addEventListener("click", () => setMotionTrimBounds(motionGuideDurationFallback(), true));
