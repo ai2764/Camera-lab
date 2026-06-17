@@ -197,8 +197,10 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   expect(videoPanelBox.y).toBeGreaterThan(guidePanelBox.y);
   expect(guidePreviewBox.x).toBeGreaterThan(guideBodyBox.x);
   expect(finalPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
-  expect(Math.abs(refPreviewBox.x - finalPreviewBox.x)).toBeLessThan(12);
-  expect(refPreviewBox.y).toBeLessThan(finalPreviewBox.y);
+  expect(refPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
+  expect(finalPreviewBox.x).toBeGreaterThan(refPreviewBox.x);
+  expect(Math.abs(refPreviewBox.y - finalPreviewBox.y)).toBeLessThan(2);
+  expect(Math.abs(refPreviewBox.width - finalPreviewBox.width)).toBeLessThan(2);
   expect(Math.abs(refPreviewBox.height - finalPreviewBox.height)).toBeLessThan(2);
   expect(Math.abs(guidePreviewBox.width - guideBodyBox.width)).toBeLessThan(80);
   expect(guidePreviewBox.height).toBeGreaterThan(440);

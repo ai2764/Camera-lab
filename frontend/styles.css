@@ -1817,7 +1817,7 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-video-panel {
-  grid-template-columns: minmax(520px, 1fr) minmax(300px, 380px);
+  grid-template-columns: minmax(420px, 600px) minmax(0, 1fr);
 }
 
 .motion-guide-panel {
@@ -1893,7 +1893,7 @@ body.motion-workspace-active .motion-workspace {
 
 .motion-ref-thumb {
   width: 100%;
-  height: 156px;
+  height: 100%;
   max-height: none;
   aspect-ratio: unset;
   box-sizing: border-box;
@@ -2034,10 +2034,10 @@ body.motion-workspace-active .motion-workspace {
 .motion-preview-stack {
   grid-area: preview;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-self: start;
-  height: 520px;
+  height: 300px;
   margin: 16px 16px 16px 0;
 }
 
@@ -2607,6 +2607,8 @@ body.motion-workspace-active .motion-workspace {
   }
 
   .motion-preview-stack {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     height: 560px;
     margin: 0 12px 12px;
   }
