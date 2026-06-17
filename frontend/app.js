@@ -1970,7 +1970,6 @@ function restoreMotionReference(run) {
 function useMotionRun(run) {
   if (!run || !run.guide_video) return;
   setWorkspace("motion", { syncWorkflow: false });
-  setMotionSubtab("text");
   if (run.prompt) $("motionPrompt").value = run.prompt;
   setInputIfPresent("motionDuration", run.duration);
   setInputIfPresent("motionSeed", run.seed);
@@ -1982,6 +1981,7 @@ function useMotionRun(run) {
   restoreMotionSize(run);
   restoreMotionGuide(run);
   const finalVideo = motionFinalVideo(run);
+  setMotionSubtab(finalVideo ? "scail" : "text");
   if (finalVideo) {
     restoreMotionReference(run);
     const result = $("motionResult");

@@ -123,11 +123,16 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motionTextTab")).toHaveClass(/active/);
   await expect(page.locator("#motionTextPanel")).toBeVisible();
   await expect(page.locator("#motionPrompt")).toBeVisible();
+  await expect(page.locator("#motionTextPanel #motionGuideInput")).toHaveCount(0);
+  await expect(page.locator("#motionTextPanel .motion-video-panel")).toHaveCount(0);
 
   await page.locator("#motionScailTab").click();
   await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
   await expect(page.locator("#motionScailPanel")).toBeVisible();
   await expect(page.locator("#motionTextPanel")).toBeHidden();
+  await expect(page.locator("#motionScailPanel #motionGuideInput")).toBeVisible();
+  await expect(page.locator("#motionScailPanel #motionRefInput")).toBeVisible();
+  await expect(page.locator("#motionScailPanel #motionResult")).toBeVisible();
 
   await page.locator("#motion3dTab").click();
   await expect(page.locator("#motion3dTab")).toHaveClass(/active/);
@@ -137,7 +142,7 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await page.locator("#motionTextTab").click();
   await expect(page.locator("#motionTextPanel")).toBeVisible();
   await expect(page.locator("#motionPrompt")).toBeVisible();
-  await expect(page.locator(".motion-video-panel #motionResult")).toBeVisible();
+  await expect(page.locator("#motionScailPanel")).toBeHidden();
 });
 
 test("Motion history restores motion guides and complete final setups", async ({ page }) => {
@@ -167,6 +172,7 @@ test("Motion history restores motion guides and complete final setups", async ({
   const finalCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "A final setup motion." });
   await expect(finalCard.locator(".use-prompt-run")).toHaveText("Use Same Setup");
   await finalCard.locator(".use-prompt-run").click();
+  await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
   await expect(page.locator("#motionPrompt")).toHaveValue("A final setup motion.");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-final\.mp4/);
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final-setup\.mp4/);
@@ -296,24 +302,25 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await expect(page.locator("#motionWorkspace")).toBeVisible();
   await expect(page.locator(".motion-guide-panel #motionPrompt")).toBeVisible();
   await expect(page.locator(".motion-guide-panel #motionGuide")).toBeVisible();
-  await expect(page.locator(".motion-video-panel #motionRefInput")).toBeVisible();
-  await expect(page.locator(".motion-video-panel #motionResult")).toBeVisible();
+  await page.locator("#motionScailTab").click();
+  await expect(page.locator("#motionScailPanel .motion-video-panel #motionRefInput")).toBeVisible();
+  await expect(page.locator("#motionScailPanel .motion-video-panel #motionResult")).toBeVisible();
   await expect(page.locator("#motionScailSettings")).toHaveAttribute("open", "");
-  const guidePanelBox = await page.locator(".motion-guide-panel").boundingBox();
   const videoPanelBox = await page.locator(".motion-video-panel").boundingBox();
-  const guideBodyBox = await page.locator(".motion-guide-panel .motion-panel-body").boundingBox();
-  const guidePreviewBox = await page.locator(".motion-guide-panel .motion-preview-card").boundingBox();
   const finalBodyBox = await page.locator(".motion-video-panel .motion-panel-body").boundingBox();
   const refPreviewBox = await page.locator(".motion-reference-preview-card").boundingBox();
   const finalPreviewBox = await page.locator(".motion-video-panel .motion-preview-card").boundingBox();
-  expect(videoPanelBox.y).toBeGreaterThan(guidePanelBox.y);
-  expect(guidePreviewBox.x).toBeGreaterThan(guideBodyBox.x);
+  expect(videoPanelBox.width).toBeGreaterThan(900);
   expect(finalPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
   expect(refPreviewBox.x).toBeGreaterThan(finalBodyBox.x);
   expect(finalPreviewBox.x).toBeGreaterThan(refPreviewBox.x);
   expect(Math.abs(refPreviewBox.y - finalPreviewBox.y)).toBeLessThan(2);
   expect(Math.abs(refPreviewBox.width - finalPreviewBox.width)).toBeLessThan(2);
   expect(Math.abs(refPreviewBox.height - finalPreviewBox.height)).toBeLessThan(2);
+  await page.locator("#motionTextTab").click();
+  const guideBodyBox = await page.locator(".motion-guide-panel .motion-panel-body").boundingBox();
+  const guidePreviewBox = await page.locator(".motion-guide-panel .motion-preview-card").boundingBox();
+  expect(guidePreviewBox.x).toBeGreaterThan(guideBodyBox.x);
   expect(Math.abs(guidePreviewBox.width - guideBodyBox.width)).toBeLessThan(80);
   expect(guidePreviewBox.height).toBeGreaterThan(440);
 
@@ -343,6 +350,7 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   await expect(page.locator("#motionResultsGrid")).toContainText("A person walks forward and waves.");
   await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
+  await page.locator("#motionScailTab").click();
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
   await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
   await expect(page.locator("#motionRefPreviewWrap")).toHaveClass(/has-image/);
@@ -383,8 +391,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     const payload = route.request().postDataJSON();
     expect(payload.guide_video_path).toBe("C:\\mock\\guide-upload.mp4");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
-    expect(payload.guide_trim_start).toBe(1);
-    expect(payload.guide_trim_end).toBe(2.5);
+    expect(payload.guide_trim_start).toBe(0);
+    expect(payload.guide_trim_end).toBe(4);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -435,6 +443,7 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
 
   await page.goto("/#motion");
   await expect(page.locator("#motionWorkspace")).toBeVisible();
+  await page.locator("#motionScailTab").click();
   await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
   await expect(page.locator("#motionRefStatus")).toHaveText("ref.png");
   await expect(page.locator("#motionRefPreviewWrap")).toHaveClass(/has-image/);
@@ -442,10 +451,6 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide.mp4");
   await expect(page.locator("#motionGuideState")).toHaveText("uploaded");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-upload\.mp4/);
-  await expect(page.locator("#motionTrimPanel")).toBeVisible();
-  await page.locator("#motionTrimStart").fill("1");
-  await page.locator("#motionTrimEnd").fill("2.5");
-  await expect(page.locator("#motionTrimDuration")).toHaveText("1.50s");
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
 
   await page.locator("#motionRunBtn").click();

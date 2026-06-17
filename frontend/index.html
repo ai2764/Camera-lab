@@ -375,16 +375,6 @@
                 </label>
               </div>
               <button id="motionGuideBtn" class="primary" type="button">Generate Motion Guide</button>
-              <div class="motion-upload-card">
-                <label class="motion-file-field">
-                  <span>Upload guide video</span>
-                  <input id="motionGuideInput" type="file" accept="video/*">
-                  <span class="motion-file-control">
-                    <span class="motion-file-button">Choose video</span>
-                    <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
-                  </span>
-                </label>
-              </div>
               <details class="motion-settings">
                 <summary>Guide settings</summary>
                 <label class="check-row">
@@ -433,15 +423,34 @@
               </div>
             </div>
           </section>
-
+        </div>
+        <section class="motion-history-shell">
+          <div class="results-header">
+            <span>Motion Results</span>
+          </div>
+          <div id="motionResultsGrid" class="results-grid motion-results-grid"></div>
+        </section>
+      </section>
+      <section id="motionScailPanel" class="motion-subpanel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
+        <div class="motion-grid">
           <section class="motion-workbench motion-video-panel">
             <div class="motion-panel-body">
               <div class="motion-panel-head">
               <div>
-                <div class="eyebrow">Step 2</div>
+                <div class="eyebrow">SCAIL2</div>
                 <h3>Final Video</h3>
               </div>
               <span id="motionResultState" class="hint">waiting</span>
+              </div>
+              <div class="motion-upload-card">
+                <label class="motion-file-field">
+                  <span>Upload guide video</span>
+                  <input id="motionGuideInput" type="file" accept="video/*">
+                  <span class="motion-file-control">
+                    <span class="motion-file-button">Choose video</span>
+                    <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+                  </span>
+                </label>
               </div>
               <div class="motion-reference-row">
                 <label class="motion-file-field">
@@ -502,18 +511,6 @@
               </div>
             </div>
           </section>
-        </div>
-        <section class="motion-history-shell">
-          <div class="results-header">
-            <span>Motion Results</span>
-          </div>
-          <div id="motionResultsGrid" class="results-grid motion-results-grid"></div>
-        </section>
-      </section>
-      <section id="motionScailPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
-        <div class="motion-placeholder-card">
-          <div class="eyebrow">SCAIL2</div>
-          <h3>SCAIL2</h3>
         </div>
       </section>
       <section id="motion3dPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motion3dTab" hidden>
@@ -737,7 +734,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-subtabs-1"></script>
+  <script src="/static/app.js?v=motion-subtabs-scail-1"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>
