@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-test.skip("photography workspace supports camera keyframes and canny preview", async ({ page }) => {
+test("photography workspace supports camera keyframes and canny preview", async ({ page }) => {
   let uploadedSubject = "";
   let shotPackPayload = null;
   await page.route("**/api/photography-frames", async (route) => {
