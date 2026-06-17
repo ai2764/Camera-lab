@@ -18,6 +18,7 @@ import urllib.request
 import base64
 import copy
 import ctypes
+import warnings
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -32,6 +33,8 @@ RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
+VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
@@ -3319,16 +3322,49 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"path": str(path), "name": name})
 
     def handle_upload_video(self) -> None:
+        content_type = self.headers.get("Content-Type", "")
+        if content_type.startswith("multipart/form-data"):
+            return self.handle_upload_video_form(content_type)
         payload = self.read_json()
         name = safe_filename(payload.get("name") or "video.mp4")
         data_url = payload.get("data") or ""
         if "," in data_url:
             data_url = data_url.split(",", 1)[1]
-        suffix = Path(name).suffix.lower()
-        if suffix not in {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}:
-            raise ValueError("unsupported video file type")
         raw = base64.b64decode(data_url)
-        if len(raw) > 512 * 1024 * 1024:
+        self.save_uploaded_video(name, raw)
+
+    def handle_upload_video_form(self, content_type: str) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            import cgi
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": content_type,
+                "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+            },
+        )
+        item = None
+        for field_name in ("file", "video"):
+            if field_name in form:
+                item = form[field_name]
+                break
+        if isinstance(item, list):
+            item = item[0] if item else None
+        if item is None or not getattr(item, "file", None):
+            raise ValueError("video file is required")
+        name = safe_filename(getattr(item, "filename", "") or "video.mp4")
+        raw = item.file.read(MAX_VIDEO_UPLOAD_BYTES + 1)
+        self.save_uploaded_video(name, raw)
+
+    def save_uploaded_video(self, name: str, raw: bytes) -> None:
+        suffix = Path(name).suffix.lower()
+        if suffix not in VIDEO_UPLOAD_SUFFIXES:
+            raise ValueError("unsupported video file type")
+        if len(raw) > MAX_VIDEO_UPLOAD_BYTES:
             raise ValueError("video file is too large")
         upload_dir = UPLOAD_ROOT / "videos"
         upload_dir.mkdir(parents=True, exist_ok=True)

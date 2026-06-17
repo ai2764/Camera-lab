@@ -232,8 +232,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     });
   });
   await page.route("**/api/upload-video", async (route) => {
-    const payload = route.request().postDataJSON();
-    expect(payload.name).toBe("guide.mp4");
+    expect(route.request().headers()["content-type"]).toContain("multipart/form-data");
+    expect(route.request().postDataBuffer().toString("utf8")).toContain("guide.mp4");
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ path: "C:\\mock\\guide-upload.mp4", name: "guide.mp4" }),

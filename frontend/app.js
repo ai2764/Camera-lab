@@ -55,6 +55,16 @@ async function api(path, options = {}) {
   return data;
 }
 
+async function uploadFile(path, form) {
+  const res = await fetch(path, {
+    method: "POST",
+    body: form,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
 function fillSelect(el, items, labelKey = "label") {
   el.innerHTML = "";
   for (const item of items) {
@@ -2277,11 +2287,9 @@ async function startMotionFinal() {
 async function uploadMotionGuideVideo(file) {
   if (!file) return;
   $("motionGuideUploadStatus").textContent = "Uploading...";
-  const data = await readFileAsDataUrl(file);
-  const uploaded = await api("/api/upload-video", {
-    method: "POST",
-    body: JSON.stringify({ name: file.name, data }),
-  });
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const uploaded = await uploadFile("/api/upload-video", form);
   state.motionGuideVideoPath = uploaded.path;
   state.motionBatch = null;
   const video = $("motionGuide");
