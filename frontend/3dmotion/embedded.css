@@ -402,6 +402,146 @@
   min-height: 30px;
   color: #ffb3ad;
 }
+#root .video-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.028);
+}
+#root .video-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+#root .video-duration {
+  border: 1px solid #344047;
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: var(--cyan);
+  background: #111619;
+  font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
+  font-size: 11px;
+}
+#root .reference-picker {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px dashed #425057;
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(120, 208, 168, 0.04);
+  cursor: pointer;
+}
+#root .reference-picker:hover {
+  border-color: var(--green);
+}
+#root .reference-picker input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+#root .reference-picker-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+#root .reference-picker-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+#root .reference-picker-copy small,
+#root .video-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+#root .reference-picker-button {
+  border: 1px solid #3a474e;
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--green);
+  background: #151b1e;
+  font-weight: 700;
+}
+#root .video-settings {
+  display: grid;
+  grid-template-columns: minmax(112px, 1.2fr) minmax(74px, 0.8fr) minmax(58px, 0.55fr) minmax(84px, 0.75fr);
+  gap: 8px;
+}
+#root .advanced-drawer {
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.1);
+}
+#root .advanced-drawer summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#root .advanced-drawer[open] .video-slider-stack {
+  margin-top: 8px;
+}
+#root .video-settings label,
+#root .video-slider-stack label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+#root .video-settings input,
+#root .video-settings select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 7px;
+  color: var(--text);
+  background: #121619;
+  font: inherit;
+}
+#root .video-slider-stack {
+  display: grid;
+  gap: 8px;
+}
+#root .video-slider-stack input[type="range"] {
+  min-height: 24px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+#root .video-preview-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+#root .export-drawer {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+#root .export-drawer summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#root .export-drawer .download-stack {
+  margin-top: 8px;
+}
 #root .export-card p {
   margin: 10px 0 12px;
   color: var(--muted);
@@ -440,7 +580,7 @@
 #root .scail-preview {
   display: block;
   width: 100%;
-  height: 180px;
+  height: 130px;
   border: 1px solid #303940;
   border-radius: 7px;
   background: #070809;
@@ -521,6 +661,10 @@
   }
 #root .control-panel {
     max-height: none;
+  }
+#root .video-preview-stack,
+#root .video-settings {
+    grid-template-columns: 1fr;
   }
 #root .action-sidebar {
     max-height: 34vh;

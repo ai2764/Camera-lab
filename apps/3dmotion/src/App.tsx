@@ -1109,13 +1109,21 @@ export function App() {
           </div>
         </div>
 
-        <div className="export-card">
-          <div>
-            <p className="eyebrow">SCAIL-2</p>
-            <h2>Generate video</h2>
+        <section className="video-card" aria-label="SCAIL-2 video generation">
+          <div className="video-card-header">
+            <div>
+              <p className="eyebrow">Video</p>
+              <h2>Generate with SCAIL-2</h2>
+            </div>
+            <span className="video-duration">{duration.toFixed(2)}s</span>
           </div>
-          <label className="file-picker">
-            {scailReference ? scailReference.name : 'Choose reference image'}
+
+          <label className="reference-picker">
+            <span className="reference-picker-copy">
+              <strong>{scailReference ? scailReference.name : 'Reference image'}</strong>
+              <small>{scailReference ? 'Ready for the current take' : 'Choose the character or subject image'}</small>
+            </span>
+            <span className="reference-picker-button">Choose</span>
             <input
               type="file"
               accept="image/*"
@@ -1127,51 +1135,26 @@ export function App() {
               }}
             />
           </label>
-          <details className="settings-card" open>
-            <summary>SCAIL-2 settings</summary>
-            <div className="settings-grid">
-              <label>
-                Preset
-                <select
-                  value={scailSizePreset}
-                  onChange={(event) => {
-                    setScailSizePreset(event.target.value);
-                    setScailSizeText(event.target.value);
-                  }}
-                >
-                  {scailSizePresets.map((preset) => (
-                    <option key={preset.value} value={preset.value}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Steps
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="1"
-                  value={scailSteps}
-                  onChange={(event) => setScailSteps(Number(event.target.value))}
-                />
-              </label>
-              <label>
-                Seed
-                <input
-                  type="number"
-                  min="1"
-                  max="2147000000"
-                  step="1"
-                  value={scailSeedText}
-                  placeholder="Random"
-                  onChange={(event) => setScailSeedText(event.target.value)}
-                />
-              </label>
-            </div>
-            <label className="settings-field">
-              Frame size
+
+          <div className="video-settings">
+            <label>
+              Preset
+              <select
+                value={scailSizePreset}
+                onChange={(event) => {
+                  setScailSizePreset(event.target.value);
+                  setScailSizeText(event.target.value);
+                }}
+              >
+                {scailSizePresets.map((preset) => (
+                  <option key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Size
               <input
                 type="text"
                 value={scailSizeText}
@@ -1184,35 +1167,65 @@ export function App() {
                 }}
               />
             </label>
-            <label className="settings-field">
-              <span className="settings-label-row">
-                Scale
-                <span>{`${scailSize.width}x${scailSize.height} / ${scailSizeScale}%`}</span>
-              </span>
+            <label>
+              Steps
               <input
-                type="range"
-                min="50"
-                max="150"
-                step="5"
-                value={scailSizeScale}
-                onChange={(event) => setScailSizeScale(Number(event.target.value))}
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={scailSteps}
+                onChange={(event) => setScailSteps(Number(event.target.value))}
               />
             </label>
-            <label className="settings-field">
-              <span className="settings-label-row">
-                Pose strength
-                <span>{scailPoseStrength.toFixed(2)}</span>
-              </span>
+            <label>
+              Seed
               <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={scailPoseStrength}
-                onChange={(event) => setScailPoseStrength(Number(event.target.value))}
+                type="number"
+                min="1"
+                max="2147000000"
+                step="1"
+                value={scailSeedText}
+                placeholder="Random"
+                onChange={(event) => setScailSeedText(event.target.value)}
               />
             </label>
+          </div>
+
+          <details className="advanced-drawer">
+            <summary>Advanced settings</summary>
+            <div className="video-slider-stack">
+              <label className="settings-field">
+                <span className="settings-label-row">
+                  Scale
+                  <span>{`${scailSize.width}x${scailSize.height} / ${scailSizeScale}%`}</span>
+                </span>
+                <input
+                  type="range"
+                  min="50"
+                  max="150"
+                  step="5"
+                  value={scailSizeScale}
+                  onChange={(event) => setScailSizeScale(Number(event.target.value))}
+                />
+              </label>
+              <label className="settings-field">
+                <span className="settings-label-row">
+                  Pose strength
+                  <span>{scailPoseStrength.toFixed(2)}</span>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={scailPoseStrength}
+                  onChange={(event) => setScailPoseStrength(Number(event.target.value))}
+                />
+              </label>
+            </div>
           </details>
+
           <button
             className="primary-button wide"
             type="button"
@@ -1220,16 +1233,17 @@ export function App() {
             disabled={!scailReference || isGeneratingScail || isRecordingTake || isExporting}
           >
             <Video size={16} />
-            {isGeneratingScail ? 'Generating' : 'Generate With SCAIL-2'}
+            {isGeneratingScail ? 'Generating' : 'Generate video'}
           </button>
-          <small>{scailStatus}</small>
+          <small className="video-status">{scailStatus}</small>
+
           {(exports.rgb || scailOutput) && (
-            <div className="scail-result-stack">
+            <div className="video-preview-stack">
               {exports.rgb && (
                 <div className="scail-result">
                   <div className="preview-heading">
                     <Film size={14} />
-                    <span>Guide video</span>
+                    <span>Motion guide</span>
                   </div>
                   <video className="scail-preview" src={exports.rgb} controls playsInline preload="metadata">
                     <a href={exports.rgb}>Open guide video</a>
@@ -1240,7 +1254,7 @@ export function App() {
                 <div className="scail-result">
                   <div className="preview-heading">
                     <Video size={14} />
-                    <span>Result video</span>
+                    <span>Final video</span>
                   </div>
                   <video className="scail-preview" src={scailOutput.url} controls playsInline preload="metadata">
                     <a href={scailOutput.url}>Open result video</a>
@@ -1253,45 +1267,27 @@ export function App() {
               )}
             </div>
           )}
-        </div>
 
-        <div className="export-card">
-          <div>
-            <p className="eyebrow">Exports</p>
-            <h2>RGB + mask</h2>
-          </div>
-          <p>
-            Record the visible canvas and a synchronized mask pass. Files download as WebM; convert to MP4 before SCAIL-2 if
-            your runner requires it.
-          </p>
-          {exports.rgb && (
-            <div className="scail-result export-preview">
-              <div className="preview-heading">
-                <Film size={14} />
-                <span>Recorded preview</span>
-              </div>
-              <video className="scail-preview" src={exports.rgb} controls playsInline preload="metadata">
-                <a href={exports.rgb}>Open recorded video</a>
-              </video>
+          <details className="export-drawer">
+            <summary>RGB + mask exports</summary>
+            <div className="download-stack">
+              <button className="download-button" type="button" disabled={!exports.rgb} onClick={() => setIsPreviewOpen(true)}>
+                <Video size={16} />
+                Open preview
+              </button>
+              <button className="download-button" type="button" disabled={!exports.rgb} onClick={() => exports.rgb && downloadUrl(exports.rgb, 'rendered_v2.webm')}>
+                <Film size={16} />
+                rendered_v2.webm
+                <Download size={15} />
+              </button>
+              <button className="download-button" type="button" disabled={!exports.mask} onClick={() => exports.mask && downloadUrl(exports.mask, 'rendered_mask_v2.webm')}>
+                <Film size={16} />
+                rendered_mask_v2.webm
+                <Download size={15} />
+              </button>
             </div>
-          )}
-          <div className="download-stack">
-            <button className="download-button" type="button" disabled={!exports.rgb} onClick={() => setIsPreviewOpen(true)}>
-              <Video size={16} />
-              Open preview
-            </button>
-            <button className="download-button" type="button" disabled={!exports.rgb} onClick={() => exports.rgb && downloadUrl(exports.rgb, 'rendered_v2.webm')}>
-              <Film size={16} />
-              rendered_v2.webm
-              <Download size={15} />
-            </button>
-            <button className="download-button" type="button" disabled={!exports.mask} onClick={() => exports.mask && downloadUrl(exports.mask, 'rendered_mask_v2.webm')}>
-              <Film size={16} />
-              rendered_mask_v2.webm
-              <Download size={15} />
-            </button>
-          </div>
-        </div>
+          </details>
+        </section>
       </aside>
       {isPreviewOpen && exports.rgb && (
         <div className="preview-window" role="dialog" aria-label="Recorded video preview">

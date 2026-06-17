@@ -151,12 +151,19 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motion3dPanel .clip-button").filter({ hasText: "Chest_Open" })).toBeVisible();
   await expect(page.locator("#motion3dPanel .stage-wrap canvas:not(.mask-canvas)")).toBeVisible();
   await expect(page.locator("#motion3dPanel .timeline-list")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .video-card")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .reference-picker")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .advanced-drawer")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .export-drawer")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .export-card")).toHaveCount(0);
   const motion3dPanelBox = await page.locator("#motion3dPanel").boundingBox();
   const motion3dSidebarBox = await page.locator("#motion3dPanel .action-sidebar").boundingBox();
   const motion3dCanvasBox = await page.locator("#motion3dPanel .stage-wrap canvas:not(.mask-canvas)").boundingBox();
+  const motion3dVideoBox = await page.locator("#motion3dPanel .video-card").boundingBox();
   expect(motion3dPanelBox.y + motion3dPanelBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   expect(motion3dSidebarBox.y + motion3dSidebarBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   expect(motion3dCanvasBox.y + motion3dCanvasBox.height).toBeLessThanOrEqual(page.viewportSize().height);
+  expect(motion3dVideoBox.y + motion3dVideoBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   await expect(page.locator("#motionScailPanel")).toBeHidden();
 
   await page.locator("#motionTextTab").click();
