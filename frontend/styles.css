@@ -1833,15 +1833,6 @@ body.motion-workspace-active .motion-workspace {
     rgba(12,12,10,.9);
 }
 
-.motion-3d-frame {
-  display: block;
-  width: 100%;
-  height: max(420px, min(760px, calc(100vh - 210px)));
-  border: 0;
-  border-radius: 8px;
-  background: #0e1011;
-}
-
 .motion-placeholder-card {
   padding: 18px 16px;
 }
@@ -1849,6 +1840,167 @@ body.motion-workspace-active .motion-workspace {
 .motion-placeholder-card h3 {
   margin: 2px 0 0;
   font-size: 20px;
+}
+
+.motion-3d-native {
+  display: grid;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(300px, 430px);
+  gap: 12px;
+  height: max(420px, min(760px, calc(100vh - 210px)));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.motion-3d-sidebar,
+.motion-3d-stage-panel,
+.motion-3d-control-panel {
+  min-height: 0;
+  border: 1px solid rgba(240,235,225,.12);
+  border-radius: 8px;
+  background: rgba(15,17,17,.88);
+}
+
+.motion-3d-sidebar,
+.motion-3d-control-panel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.motion-3d-panel-head,
+.motion-3d-toolbar,
+.motion-3d-tools,
+.motion-3d-timebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.motion-3d-panel-head button,
+.motion-3d-tools button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.motion-3d-action-list {
+  display: grid;
+  gap: 6px;
+}
+
+.motion-3d-action-list button {
+  justify-content: flex-start;
+  min-height: 32px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.motion-3d-stage-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.motion-3d-toolbar {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(240,235,225,.1);
+}
+
+.motion-3d-toolbar h3,
+.motion-3d-card h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.motion-3d-canvas-wrap {
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.03), transparent 36%),
+    #111515;
+}
+
+.motion-3d-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.motion-3d-timebar {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(240,235,225,.1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.motion-3d-rail {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(143,199,192,.24);
+  border-radius: 999px;
+  background: #070807;
+}
+
+.motion-3d-rail > div {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+}
+
+.motion-3d-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(240,235,225,.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+
+.motion-3d-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.motion-3d-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 70px 32px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(240,235,225,.1);
+  border-radius: 7px;
+  background: rgba(0,0,0,.16);
+}
+
+.motion-3d-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-3d-row small {
+  color: var(--muted);
+}
+
+.motion-3d-row input {
+  min-width: 0;
+}
+
+.motion-3d-preview {
+  display: none;
+  width: 100%;
+  height: 180px;
+  border: 1px solid rgba(240,235,225,.12);
+  border-radius: 7px;
+  background: #050504;
+  object-fit: contain;
+}
+
+.motion-3d-preview[src] {
+  display: block;
 }
 
 .motion-scail-mount {

@@ -23,6 +23,18 @@ const state = {
   motionTrimPlaying: false,
   motionBatch: null,
   motionSubtab: "text",
+  motion3d: {
+    initialized: false,
+    playing: false,
+    time: 0,
+    duration: 3,
+    timeline: [],
+    animationFrame: 0,
+    lastTick: 0,
+    refPath: "",
+    guideUrl: "",
+    generating: false,
+  },
   audioPath: "",
   referencePaths: [""],
   referenceNames: [""],
@@ -48,6 +60,28 @@ const imageSlots = {
   end: { pathKey: "endPath", previewId: "endPreview", statusId: "endStatus", empty: "No image uploaded" },
   motion_ref: { pathKey: "motionRefPath", previewId: "motionRefPreview", statusId: "motionRefStatus", empty: "No image uploaded" },
 };
+
+const motion3dActions = [
+  ["idle", "Idle loop", 3],
+  ["walk_forward", "Walk forward", 2.4],
+  ["run_forward", "Run forward", 1.6],
+  ["turn_left", "Turn left", 1.4],
+  ["turn_right", "Turn right", 1.4],
+  ["step_left", "Step left", 1.2],
+  ["step_right", "Step right", 1.2],
+  ["wave_right", "Wave right", 2.2],
+  ["point_forward", "Point forward", 1.8],
+  ["raise_hands", "Raise hands", 2],
+  ["crouch", "Crouch", 1.6],
+  ["dance_loop", "Dance loop", 3],
+  ["hit_react", "Hit react", 1.2],
+  ["climb_up", "Climb up", 2.6],
+  ["farm_harvest", "Farm harvest", 2.4],
+].map(([id, label, duration]) => ({ id, label, duration }));
+
+function motion3dId() {
+  return `m3d_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -2015,6 +2049,7 @@ function updateMotionSubtabs() {
   moveMotionVideoPanel();
   moveMotionGuidePreview();
   moveMotionPreviewCards();
+  if (state.motionSubtab === "3d") initMotion3d();
 }
 
 function moveMotionGuidePreview() {
@@ -2045,6 +2080,351 @@ function moveMotionPreviewCards() {
   const referenceTarget = $(inScail ? "motionHiddenPreviewParking" : "motionTextReferenceMount");
   if (referenceCard && referenceTarget && referenceCard.parentElement !== referenceTarget) {
     referenceTarget.appendChild(referenceCard);
+  }
+}
+
+function initMotion3d() {
+  if (state.motion3d.initialized) {
+    resizeMotion3dCanvas();
+    renderMotion3d();
+    return;
+  }
+  state.motion3d.initialized = true;
+  state.motion3d.timeline = [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }];
+  renderMotion3dActions();
+  renderMotion3dTimeline();
+  resizeMotion3dCanvas();
+  renderMotion3d();
+}
+
+function motion3dTotalDuration() {
+  return Math.max(0.5, ...state.motion3d.timeline.map((item) => item.start + item.duration));
+}
+
+function renderMotion3dActions() {
+  const root = $("motion3dActionLibrary");
+  if (!root) return;
+  root.innerHTML = "";
+  for (const action of motion3dActions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `+ ${action.label}`;
+    button.addEventListener("click", () => addMotion3dAction(action));
+    root.appendChild(button);
+  }
+}
+
+function relayoutMotion3dTimeline(items) {
+  let cursor = 0;
+  return items.map((item) => {
+    const next = { ...item, start: cursor };
+    cursor += next.duration;
+    return next;
+  });
+}
+
+function addMotion3dAction(action) {
+  const timeline = state.motion3d.timeline.filter((item) => item.clip !== "idle" || state.motion3d.timeline.length > 1);
+  timeline.push({ id: motion3dId(), clip: action.id, label: action.label, start: 0, duration: action.duration });
+  state.motion3d.timeline = relayoutMotion3dTimeline(timeline);
+  state.motion3d.time = 0;
+  renderMotion3dTimeline();
+  renderMotion3d();
+}
+
+function resetMotion3dTimeline() {
+  state.motion3d.timeline = [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }];
+  state.motion3d.time = 0;
+  state.motion3d.playing = false;
+  renderMotion3dTimeline();
+  renderMotion3d();
+}
+
+function renderMotion3dTimeline() {
+  const root = $("motion3dTimeline");
+  if (!root) return;
+  state.motion3d.duration = motion3dTotalDuration();
+  $("motion3dClipCount").textContent = `${state.motion3d.timeline.length} clip${state.motion3d.timeline.length === 1 ? "" : "s"}`;
+  $("motion3dDuration").textContent = `${state.motion3d.duration.toFixed(2)}s`;
+  root.innerHTML = "";
+  state.motion3d.timeline.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "motion-3d-row";
+    row.innerHTML = `
+      <span class="row-index">${String(index + 1).padStart(2, "0")}</span>
+      <div><strong>${escapeHtml(item.label)}</strong><small>${item.start.toFixed(1)}s - ${(item.start + item.duration).toFixed(1)}s</small></div>
+      <input type="number" min="0.1" step="0.1" value="${Number(item.duration.toFixed(2))}" aria-label="Clip duration">
+      <button type="button" aria-label="Delete clip">x</button>
+    `;
+    row.querySelector("input").addEventListener("input", (event) => {
+      const duration = Math.max(0.1, Number(event.target.value) || item.duration);
+      state.motion3d.timeline = relayoutMotion3dTimeline(state.motion3d.timeline.map((clip) => clip.id === item.id ? { ...clip, duration } : clip));
+      renderMotion3dTimeline();
+      renderMotion3d();
+    });
+    row.querySelector("button").addEventListener("click", () => {
+      const next = state.motion3d.timeline.filter((clip) => clip.id !== item.id);
+      state.motion3d.timeline = relayoutMotion3dTimeline(next.length ? next : [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }]);
+      renderMotion3dTimeline();
+      renderMotion3d();
+    });
+    root.appendChild(row);
+  });
+  updateMotion3dTimebar();
+}
+
+function resizeMotion3dCanvas() {
+  const canvas = $("motion3dCanvas");
+  if (!canvas) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(320, Math.floor(rect.width));
+  const height = Math.max(260, Math.floor(rect.height));
+  if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
+}
+
+function activeMotion3dClip() {
+  const time = state.motion3d.time;
+  return state.motion3d.timeline.find((item) => time >= item.start && time <= item.start + item.duration) || state.motion3d.timeline.at(-1);
+}
+
+function drawMotion3dLimb(ctx, x, y, length, angle, width, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, length);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function renderMotion3d() {
+  const canvas = $("motion3dCanvas");
+  if (!canvas) return;
+  resizeMotion3dCanvas();
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  const cssW = w / dpr;
+  const cssH = h / dpr;
+  const gradient = ctx.createLinearGradient(0, 0, 0, cssH);
+  gradient.addColorStop(0, "#121718");
+  gradient.addColorStop(1, "#0b0d0d");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  ctx.strokeStyle = "rgba(143,199,192,.15)";
+  ctx.lineWidth = 1;
+  const horizon = cssH * 0.72;
+  for (let i = -8; i <= 8; i += 1) {
+    const x = cssW / 2 + i * 42;
+    ctx.beginPath();
+    ctx.moveTo(x, horizon);
+    ctx.lineTo(x + i * 25, cssH);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 8; i += 1) {
+    const y = horizon + i * 24;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssW, y);
+    ctx.stroke();
+  }
+
+  const clip = activeMotion3dClip();
+  const local = clip ? state.motion3d.time - clip.start : 0;
+  const progress = clip ? local / Math.max(clip.duration, 0.1) : 0;
+  const phase = progress * Math.PI * 2;
+  const swing = Math.sin(phase);
+  const bounce = Math.abs(Math.sin(phase)) * 10;
+  const cx = cssW / 2;
+  const feetY = cssH * 0.76;
+  const scale = Math.min(cssW, cssH) / 390;
+  const torsoY = feetY - 145 * scale - bounce;
+  let arm = swing * 0.55;
+  let leg = -swing * 0.48;
+  let lean = 0;
+  if (clip?.clip === "wave_right") arm = -1.8 + Math.sin(phase * 2) * 0.45;
+  if (clip?.clip === "raise_hands") arm = -2.2;
+  if (clip?.clip === "crouch") lean = 0.28;
+  if (clip?.clip === "dance_loop") { arm = Math.sin(phase * 1.5) * 1.2; leg = Math.cos(phase) * 0.7; }
+
+  ctx.shadowColor = "rgba(0,0,0,.5)";
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.ellipse(cx + 20 * scale, feetY + 10, 70 * scale, 16 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const joint = (x, y, r, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const blue = "#285aa5";
+  const orange = "#d66f29";
+  drawMotion3dLimb(ctx, cx - 22 * scale, torsoY + 80 * scale, 62 * scale, 0.12 + leg, 18 * scale, blue);
+  drawMotion3dLimb(ctx, cx + 22 * scale, torsoY + 80 * scale, 62 * scale, -0.12 - leg, 18 * scale, orange);
+  drawMotion3dLimb(ctx, cx - 30 * scale, torsoY + 138 * scale, 55 * scale, -0.14 - leg * .8, 15 * scale, blue);
+  drawMotion3dLimb(ctx, cx + 30 * scale, torsoY + 138 * scale, 55 * scale, 0.14 + leg * .8, 15 * scale, orange);
+  ctx.save();
+  ctx.translate(cx, torsoY + 64 * scale);
+  ctx.rotate(lean);
+  ctx.fillStyle = orange;
+  ctx.fillRect(-32 * scale, -48 * scale, 64 * scale, 92 * scale);
+  ctx.fillStyle = blue;
+  ctx.fillRect(-6 * scale, -48 * scale, 16 * scale, 92 * scale);
+  drawMotion3dLimb(ctx, -38 * scale, -28 * scale, 58 * scale, 0.4 - arm * .4, 16 * scale, blue);
+  drawMotion3dLimb(ctx, 38 * scale, -28 * scale, 58 * scale, -0.4 + arm, 16 * scale, orange);
+  ctx.fillStyle = orange;
+  ctx.beginPath();
+  ctx.ellipse(0, -74 * scale, 22 * scale, 28 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  joint(cx - 28 * scale, torsoY + 198 * scale, 8 * scale, blue);
+  joint(cx + 28 * scale, torsoY + 198 * scale, 8 * scale, orange);
+  ctx.restore();
+  updateMotion3dTimebar();
+}
+
+function updateMotion3dTimebar() {
+  if (!$("motion3dTime")) return;
+  const duration = motion3dTotalDuration();
+  $("motion3dTime").textContent = `${state.motion3d.time.toFixed(2)}s`;
+  $("motion3dDuration").textContent = `${duration.toFixed(2)}s`;
+  $("motion3dRailFill").style.width = `${Math.min(100, Math.max(0, (state.motion3d.time / duration) * 100))}%`;
+  $("motion3dPlay").textContent = state.motion3d.playing ? "Pause" : "Play";
+}
+
+function tickMotion3d(now) {
+  if (!state.motion3d.playing) return;
+  const elapsed = state.motion3d.lastTick ? (now - state.motion3d.lastTick) / 1000 : 0;
+  state.motion3d.lastTick = now;
+  state.motion3d.time += elapsed;
+  const duration = motion3dTotalDuration();
+  if (state.motion3d.time > duration) state.motion3d.time = 0;
+  renderMotion3d();
+  state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+}
+
+function toggleMotion3dPlayback() {
+  state.motion3d.playing = !state.motion3d.playing;
+  state.motion3d.lastTick = 0;
+  if (state.motion3d.playing) state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+  else cancelAnimationFrame(state.motion3d.animationFrame);
+  updateMotion3dTimebar();
+}
+
+function resetMotion3dPlayhead() {
+  state.motion3d.playing = false;
+  state.motion3d.time = 0;
+  cancelAnimationFrame(state.motion3d.animationFrame);
+  renderMotion3d();
+}
+
+function currentMotion3dSize() {
+  const base = parseSizeText($("motion3dSizeText").value);
+  return { width: align8(base.width), height: align8(base.height) };
+}
+
+async function uploadMotion3dReference(file) {
+  if (!file) return;
+  $("motion3dRefStatus").textContent = "Uploading...";
+  const data = await readFileAsDataUrl(file);
+  const uploaded = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, data }),
+  });
+  state.motion3d.refPath = uploaded.path;
+  $("motion3dRefStatus").textContent = uploaded.name;
+  $("motion3dGenerate").disabled = false;
+  $("motion3dStatus").textContent = "Reference image ready.";
+}
+
+function recordMotion3dGuide() {
+  return new Promise((resolve, reject) => {
+    const canvas = $("motion3dCanvas");
+    if (!canvas?.captureStream || typeof MediaRecorder === "undefined") {
+      reject(new Error("Browser recording is unavailable"));
+      return;
+    }
+    const stream = canvas.captureStream(24);
+    const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm" });
+    const chunks = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+    recorder.onerror = () => reject(new Error("Motion guide recording failed"));
+    const previousPlaying = state.motion3d.playing;
+    state.motion3d.playing = true;
+    state.motion3d.time = 0;
+    state.motion3d.lastTick = 0;
+    recorder.start();
+    state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+    window.setTimeout(() => {
+      state.motion3d.playing = previousPlaying;
+      cancelAnimationFrame(state.motion3d.animationFrame);
+      recorder.stop();
+      renderMotion3d();
+    }, Math.min(12000, motion3dTotalDuration() * 1000));
+  });
+}
+
+async function generateMotion3dScail() {
+  if (!state.motion3d.refPath || state.motion3d.generating) return;
+  state.motion3d.generating = true;
+  $("motion3dGenerate").disabled = true;
+  $("motion3dStatus").textContent = "Recording motion guide...";
+  try {
+    const blob = await recordMotion3dGuide();
+    const form = new FormData();
+    form.append("file", blob, `motion3d_${Date.now()}.webm`);
+    $("motion3dStatus").textContent = "Uploading guide video...";
+    const uploaded = await uploadFile("/api/upload-video", form);
+    state.motion3d.guideUrl = mediaUrl(uploaded.path);
+    const size = currentMotion3dSize();
+    const payload = {
+      prompt: "3D motion guide driving video",
+      reference_path: state.motion3d.refPath,
+      guide_video_path: uploaded.path,
+      guide_trim_start: 0,
+      guide_trim_end: motion3dTotalDuration(),
+      width: size.width,
+      height: size.height,
+      steps: Math.max(1, Number($("motion3dSteps").value) || 8),
+      seed: $("motion3dSeed").value.trim(),
+      pose_strength: Math.max(0, Math.min(1, Number($("motion3dPoseStrength").value) || 1)),
+    };
+    $("motion3dStatus").textContent = "Submitting SCAIL2 job...";
+    const batch = await api("/api/text-to-motion-video-final", { method: "POST", body: JSON.stringify(payload) });
+    state.motionBatch = batch;
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+    $("motion3dStatus").textContent = "SCAIL2 job queued.";
+  } catch (err) {
+    $("motion3dStatus").textContent = err.message;
+  } finally {
+    state.motion3d.generating = false;
+    $("motion3dGenerate").disabled = !state.motion3d.refPath;
   }
 }
 
@@ -3491,6 +3871,36 @@ $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photo
 $("motionTextTab").addEventListener("click", () => setMotionSubtab("text"));
 $("motionScailTab").addEventListener("click", () => setMotionSubtab("scail"));
 $("motion3dTab").addEventListener("click", () => setMotionSubtab("3d"));
+$("motion3dPlay").addEventListener("click", toggleMotion3dPlayback);
+$("motion3dResetView").addEventListener("click", resetMotion3dPlayhead);
+$("motion3dResetTimeline").addEventListener("click", resetMotion3dTimeline);
+$("motion3dRecord").addEventListener("click", () => {
+  recordMotion3dGuide().then((blob) => {
+    const url = URL.createObjectURL(blob);
+    $("motion3dPreview").src = url;
+    $("motion3dStatus").textContent = "Recorded preview ready.";
+  }).catch((err) => {
+    $("motion3dStatus").textContent = err.message;
+  });
+});
+$("motion3dRefInput").addEventListener("change", () => uploadMotion3dReference($("motion3dRefInput").files[0]).catch((err) => {
+  state.motion3d.refPath = "";
+  $("motion3dRefStatus").textContent = err.message;
+  $("motion3dGenerate").disabled = true;
+}));
+$("motion3dSizePreset").addEventListener("change", () => {
+  $("motion3dSizeText").value = $("motion3dSizePreset").value;
+});
+$("motion3dPoseStrength").addEventListener("input", () => {
+  $("motion3dPoseReadout").textContent = Number($("motion3dPoseStrength").value).toFixed(2);
+});
+$("motion3dGenerate").addEventListener("click", generateMotion3dScail);
+window.addEventListener("resize", () => {
+  if (state.workspace === "motion" && state.motionSubtab === "3d") {
+    resizeMotion3dCanvas();
+    renderMotion3d();
+  }
+});
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);
 $("castingGenerateBtn").addEventListener("click", generateCasting);
