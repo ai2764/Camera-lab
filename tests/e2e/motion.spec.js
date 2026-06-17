@@ -155,6 +155,9 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motion3dPanel .reference-picker")).toBeVisible();
   await expect(page.locator("#motion3dPanel .advanced-drawer")).toBeVisible();
   await expect(page.locator("#motion3dPanel .export-drawer")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .stage-results")).toBeVisible();
+  await expect(page.locator("#motion3dPanel .stage-results")).toContainText("Generated videos");
+  await expect(page.locator("#motion3dPanel .stage-result-card")).toHaveCount(0);
   await expect(page.locator("#motion3dPanel .export-card")).toHaveCount(0);
   const motion3dPanelBox = await page.locator("#motion3dPanel").boundingBox();
   const motion3dSidebarBox = await page.locator("#motion3dPanel .action-sidebar").boundingBox();

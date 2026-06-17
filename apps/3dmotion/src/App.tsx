@@ -57,6 +57,11 @@ type ImportedClipMeta = {
   duration: number;
 };
 
+type ScailGeneratedVideo = ComfyOutputVideo & {
+  id: string;
+  createdAt: number;
+};
+
 const clipLabels: Record<ClipName, string> = {
   idle: 'Idle',
   walk_forward: 'Walk Forward',
@@ -842,7 +847,7 @@ export function App() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [scailReference, setScailReference] = useState<File | null>(null);
   const [scailStatus, setScailStatus] = useState('Choose a reference image, then generate with local SCAIL-2.');
-  const [scailOutput, setScailOutput] = useState<ComfyOutputVideo | null>(null);
+  const [scailOutputs, setScailOutputs] = useState<ScailGeneratedVideo[]>([]);
   const [isGeneratingScail, setIsGeneratingScail] = useState(false);
   const [scailSizePreset, setScailSizePreset] = useState(defaultScailSizePreset);
   const [scailSizeText, setScailSizeText] = useState(defaultScailSizePreset);
@@ -929,7 +934,6 @@ export function App() {
   async function generateScailVideo() {
     if (!stageApi.current || !scailReference || isGeneratingScail || isRecordingTake || isExporting) return;
     setIsGeneratingScail(true);
-    setScailOutput(null);
     setScailStatus('Exporting the current motion guide...');
     try {
       const timestamp = Date.now();
@@ -962,7 +966,7 @@ export function App() {
       setScailStatus(`Submitting SCAIL-2 job (${frameCount} frames, ${scailSize.width}x${scailSize.height})...`);
       const promptId = await scailClient.queuePrompt(prompt);
       const output = await waitForScailOutput(promptId, setScailStatus);
-      setScailOutput(output);
+      setScailOutputs((items) => [{ ...output, id: `${timestamp}-${items.length}`, createdAt: timestamp }, ...items]);
       setScailStatus('SCAIL-2 video is ready.');
     } catch (error) {
       setScailStatus(error instanceof Error ? error.message : 'SCAIL-2 generation failed.');
@@ -1067,6 +1071,34 @@ export function App() {
           </div>
           <span>{duration.toFixed(2)}s</span>
         </div>
+
+        <div className="stage-results">
+          <div className="stage-results-header">
+            <p className="eyebrow">Generated videos</p>
+            <span>{scailOutputs.length} saved</span>
+          </div>
+          {scailOutputs.length > 0 ? (
+            <div className="stage-result-strip">
+              {scailOutputs.map((item, index) => (
+                <article className="stage-result-card" key={item.id}>
+                  <div className="preview-heading">
+                    <Video size={14} />
+                    <span>{index === 0 ? 'Latest final' : `Final ${scailOutputs.length - index}`}</span>
+                  </div>
+                  <video className="stage-result-video" src={item.url} controls playsInline preload="metadata">
+                    <a href={item.url}>Open generated video</a>
+                  </video>
+                  <button className="download-button" type="button" onClick={() => downloadUrl(item.url, item.filename)}>
+                    <Download size={15} />
+                    {item.filename}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="stage-results-empty">Generated final videos appear here.</div>
+          )}
+        </div>
       </section>
 
       <aside className="control-panel">
@@ -1130,7 +1162,6 @@ export function App() {
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 setScailReference(file);
-                setScailOutput(null);
                 setScailStatus(file ? 'Reference image ready.' : 'Choose a reference image, then generate with local SCAIL-2.');
               }}
             />
@@ -1237,34 +1268,17 @@ export function App() {
           </button>
           <small className="video-status">{scailStatus}</small>
 
-          {(exports.rgb || scailOutput) && (
+          {exports.rgb && (
             <div className="video-preview-stack">
-              {exports.rgb && (
-                <div className="scail-result">
-                  <div className="preview-heading">
-                    <Film size={14} />
-                    <span>Motion guide</span>
-                  </div>
-                  <video className="scail-preview" src={exports.rgb} controls playsInline preload="metadata">
-                    <a href={exports.rgb}>Open guide video</a>
-                  </video>
+              <div className="scail-result">
+                <div className="preview-heading">
+                  <Film size={14} />
+                  <span>Motion guide</span>
                 </div>
-              )}
-              {scailOutput && (
-                <div className="scail-result">
-                  <div className="preview-heading">
-                    <Video size={14} />
-                    <span>Final video</span>
-                  </div>
-                  <video className="scail-preview" src={scailOutput.url} controls playsInline preload="metadata">
-                    <a href={scailOutput.url}>Open result video</a>
-                  </video>
-                  <button className="download-button" type="button" onClick={() => downloadUrl(scailOutput.url, scailOutput.filename)}>
-                    <Download size={15} />
-                    {scailOutput.filename}
-                  </button>
-                </div>
-              )}
+                <video className="scail-preview" src={exports.rgb} controls playsInline preload="metadata">
+                  <a href={exports.rgb}>Open guide video</a>
+                </video>
+              </div>
             </div>
           )}
 
