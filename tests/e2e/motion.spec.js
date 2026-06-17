@@ -338,12 +338,16 @@ test("Motion tab generates guide before rendering final result", async ({ page }
   const finalBodyBox = await page.locator(".motion-video-panel .motion-panel-body").boundingBox();
   const inputPreviewBox = await page.locator("#motionScailPreviewRow #motionGuidePreviewCard").boundingBox();
   const outputPreviewBox = await page.locator("#motionScailPreviewRow #motionResultPreviewCard").boundingBox();
+  const scailPanelBox = await page.locator("#motionScailPanel").boundingBox();
   expect(videoPanelBox.width).toBeLessThan(760);
   expect(finalBodyBox.width).toBeLessThan(720);
   expect(outputPreviewBox.x).toBeGreaterThan(inputPreviewBox.x);
   expect(Math.abs(inputPreviewBox.y - outputPreviewBox.y)).toBeLessThan(2);
   expect(Math.abs(inputPreviewBox.width - outputPreviewBox.width)).toBeLessThan(2);
   expect(Math.abs(inputPreviewBox.height - outputPreviewBox.height)).toBeLessThan(2);
+  expect(Math.abs(inputPreviewBox.y + inputPreviewBox.height - (scailPanelBox.y + scailPanelBox.height))).toBeLessThan(3);
+  expect(Math.abs(outputPreviewBox.y + outputPreviewBox.height - (scailPanelBox.y + scailPanelBox.height))).toBeLessThan(3);
+  expect(scailPanelBox.y + scailPanelBox.height).toBeLessThanOrEqual(page.viewportSize().height);
   await expect(page.locator("#motionScailPanel .motion-reference-preview-card")).toHaveCount(0);
   await page.locator("#motionTextTab").click();
   const guideBodyBox = await page.locator(".motion-guide-panel .motion-panel-body").boundingBox();

@@ -2021,25 +2021,43 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-scail-upload-strip {
+  grid-area: upload;
   max-width: 600px;
   margin: 0 0 12px;
 }
 
+#motionScailPanel {
+  display: grid;
+  grid-template-columns: minmax(460px, 600px) minmax(0, 1fr);
+  grid-template-areas:
+    "upload previews"
+    "controls previews";
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px 16px;
+  height: min(660px, calc(100vh - 220px));
+  min-height: 520px;
+  max-height: calc(100vh - 220px);
+}
+
 .motion-scail-preview-row {
+  grid-area: previews;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 0 12px;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
   align-items: stretch;
 }
 
 .motion-scail-preview-row .motion-preview-slot {
   display: block;
+  min-height: 0;
 }
 
 .motion-scail-preview-row .motion-preview-card {
   grid-area: auto;
-  height: 430px;
+  height: 100%;
   align-self: stretch;
   margin: 0;
 }
@@ -2076,15 +2094,27 @@ body.motion-workspace-active .motion-workspace {
 }
 
 #motionScailPanel .motion-grid {
+  grid-area: controls;
   grid-template-columns: minmax(0, 640px);
+  min-height: 0;
+}
+
+#motionScailPanel .motion-scail-mount {
+  min-height: 0;
+  overflow: hidden;
 }
 
 #motionScailPanel .motion-video-panel {
   display: block;
   max-width: 640px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 #motionScailPanel .motion-video-panel .motion-panel-body {
+  height: 100%;
+  min-height: 0;
   border-right: 0;
 }
 
@@ -2879,6 +2909,27 @@ body.motion-workspace-active .motion-workspace {
 
   .motion-grid {
     grid-template-columns: 1fr;
+  }
+
+  #motionScailPanel {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "previews"
+      "upload"
+      "controls";
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .motion-scail-preview-row {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .motion-scail-preview-row .motion-preview-card {
+    height: 360px;
   }
 
   .motion-workbench,
