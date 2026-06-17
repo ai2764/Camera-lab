@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=motion-trim-editor-2">
+  <link rel="stylesheet" href="/static/styles.css?v=motion-step2-preview-stack-1">
 </head>
 <body>
   <header class="topbar">
@@ -447,12 +447,9 @@
                   <span id="motionRefStatus" class="hint">No image uploaded</span>
                 </span>
               </label>
-              <div id="motionRefPreviewWrap" class="source-preview motion-ref-thumb">
-                <img id="motionRefPreview" alt="motion reference preview">
-              </div>
             </div>
             <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
-            <details class="motion-settings">
+            <details id="motionScailSettings" class="motion-settings" open>
               <summary>SCAIL2 settings</summary>
               <div class="grid-2">
               <label>
@@ -483,11 +480,21 @@
               </label>
             </details>
           </div>
-          <div class="motion-preview-card">
-            <div class="motion-preview-head">
-              <span>Final preview</span>
+          <div class="motion-preview-stack">
+            <div class="motion-reference-preview-card">
+              <div class="motion-preview-head">
+                <span>Reference preview</span>
+              </div>
+              <div id="motionRefPreviewWrap" class="source-preview motion-ref-thumb">
+                <img id="motionRefPreview" alt="motion reference preview">
+              </div>
             </div>
-            <video id="motionResult" controls playsinline></video>
+            <div class="motion-preview-card">
+              <div class="motion-preview-head">
+                <span>Final preview</span>
+              </div>
+              <video id="motionResult" controls playsinline></video>
+            </div>
           </div>
         </section>
       </div>

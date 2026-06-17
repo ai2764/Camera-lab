@@ -1883,11 +1883,7 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-reference-row {
-  display: grid;
-  grid-template-columns: minmax(280px, 420px) 142px;
-  gap: 12px;
-  align-items: stretch;
-  justify-content: start;
+  display: block;
   margin-bottom: 12px;
 }
 
@@ -1896,17 +1892,18 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-ref-thumb {
-  width: 142px;
-  height: 112px;
+  width: 100%;
+  height: 156px;
   max-height: none;
   aspect-ratio: unset;
   box-sizing: border-box;
   margin: 0;
+  border: 0;
 }
 
 .motion-ref-thumb img {
   object-fit: contain;
-  padding: 6px;
+  padding: 8px;
 }
 
 .motion-actions-row {
@@ -2034,6 +2031,33 @@ body.motion-workspace-active .motion-workspace {
   box-shadow: none;
 }
 
+.motion-preview-stack {
+  grid-area: preview;
+  display: grid;
+  gap: 12px;
+  align-self: start;
+  margin: 16px 16px 16px 0;
+}
+
+.motion-preview-stack .motion-preview-card {
+  grid-area: auto;
+}
+
+.motion-reference-preview-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  height: 196px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0b0b09;
+}
+
+.motion-reference-preview-card .source-preview:not(.has-image)::before {
+  content: "upload image";
+}
+
 .motion-guide-panel .motion-preview-card {
   grid-template-rows: auto minmax(260px, 1fr) auto;
   height: 520px;
@@ -2041,6 +2065,7 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .motion-video-panel .motion-preview-card {
+  margin: 0;
   height: 300px;
 }
 
@@ -2572,6 +2597,10 @@ body.motion-workspace-active .motion-workspace {
   }
 
   .motion-preview-card {
+    margin: 0 12px 12px;
+  }
+
+  .motion-preview-stack {
     margin: 0 12px 12px;
   }
 
