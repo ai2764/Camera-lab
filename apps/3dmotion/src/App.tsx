@@ -24,6 +24,7 @@ import { makeId } from './id';
 import { makeImportedClipId, normalizeImportedClipName, type ImportedClipId } from './importedClips';
 import { type ClipName, type MotionClipId, type TimelineAction } from './motionTypes';
 import { prepareScailDriveVideo } from './scailDriveVideo';
+import { waitForRecordingWarmup } from './recordingWarmup';
 import { makeScailSeed, resolveScailSize, scailSizePresets } from './scailSettings';
 import { buildScailPrompt, makeScailFrameCount } from './scailWorkflow';
 import { getRecordTakeControl } from './takeControls';
@@ -45,7 +46,7 @@ type StageApi = {
   play: () => void;
   pause: () => void;
   reset: () => void;
-  startCameraTake: () => void;
+  startCameraTake: () => Promise<void>;
   stopCameraTake: () => CameraKeyframe[];
   clearCameraTake: () => void;
   exportTake: (duration: number, cameraTake?: CameraKeyframe[]) => Promise<ExportUrls>;
@@ -90,6 +91,7 @@ const scailFps = 24;
 const defaultScailSizePreset = '480x832';
 const defaultScailPrompt = 'a pirate character following the source motion, cinematic, detailed, high quality, smooth motion';
 const defaultScailNegative = 'blurry, low quality, distorted, deformed, watermark, static';
+const recordingWarmupFrames = 3;
 const nodeMotionGuide = {
   basePath: `${import.meta.env.BASE_URL}mesh2motion/human-base-animations.glb`,
   addonPath: `${import.meta.env.BASE_URL}mesh2motion/human-addon-animations.glb`,
@@ -715,6 +717,14 @@ function useStage(
     }
     animate();
 
+    function makeCameraKeyframe(time: number): CameraKeyframe {
+      return {
+        time,
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      };
+    }
+
     apiRef.current = {
       play: () => {
         playing = true;
@@ -730,14 +740,22 @@ function useStage(
         currentImportedClip = null;
         onTime(0);
       },
-      startCameraTake: () => {
+      startCameraTake: async () => {
         playhead = 0;
         cameraTake = [];
         cameraTakeStart = 0;
+        recordingCameraTake = false;
+        playing = false;
+        onPlaying(false);
+        onTime(0);
+        clock.getDelta();
+        await waitForRecordingWarmup(requestAnimationFrame, recordingWarmupFrames);
+        if (disposed) return;
+        cameraTake = [makeCameraKeyframe(0)];
         recordingCameraTake = true;
         playing = true;
+        clock.getDelta();
         onPlaying(true);
-        onTime(0);
       },
       stopCameraTake: () => {
         recordingCameraTake = false;
@@ -747,18 +765,26 @@ function useStage(
         recordingCameraTake = false;
         cameraTake = [];
       },
-      exportTake: (duration: number, recordedCameraTake?: CameraKeyframe[]) => {
+      exportTake: async (duration: number, recordedCameraTake?: CameraKeyframe[]) => {
         playhead = 0;
         exportStopAt = duration;
         currentImportedClip = null;
-        exporting = true;
-        playing = true;
         replayCameraTake = recordedCameraTake && recordedCameraTake.length > 0 ? recordedCameraTake : null;
-        onPlaying(true);
+        exporting = false;
+        playing = false;
+        onTime(0);
+        onPlaying(false);
+        clock.getDelta();
+        await waitForRecordingWarmup(requestAnimationFrame, recordingWarmupFrames);
+        if (disposed) throw new Error('3D stage was closed before export started.');
         rgbRecorder = createRecorder(renderer.domElement, 'rendered_v2.webm');
         maskRecorder = createRecorder(maskRenderer.domElement, 'rendered_mask_v2.webm');
         rgbRecorder.start();
         maskRecorder.start();
+        exporting = true;
+        playing = true;
+        clock.getDelta();
+        onPlaying(true);
         return new Promise((resolve) => {
           exportResolve = (urls) => {
             replayCameraTake = null;
@@ -929,7 +955,7 @@ export function App() {
     setExports({});
     setIsPreviewOpen(false);
     setCameraTake([]);
-    stageApi.current.startCameraTake();
+    await stageApi.current.startCameraTake();
     setIsRecordingTake(true);
   }
 
