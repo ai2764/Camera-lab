@@ -1,0 +1,397 @@
+{
+  "id": "49fbd9ce-342c-4413-82b6-296fb9633dc5",
+  "revision": 0,
+  "last_node_id": 17,
+  "last_link_id": 18,
+  "nodes": [
+    {
+      "id": 10,
+      "type": "HYMotionEncodeText",
+      "pos": [
+        -6565.941374418181,
+        -4301.481225643217
+      ],
+      "size": [
+        333.33333333333337,
+        88
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "llm",
+          "type": "HYMOTION_LLM",
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "conditioning",
+          "type": "HYMOTION_COND",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HYMotionEncodeText"
+      },
+      "widgets_values": [
+        "A person walks forward, stops, and waves with the right hand."
+      ]
+    },
+    {
+      "id": 4,
+      "type": "HYMotionLoadNetwork",
+      "pos": [
+        -6548.704719711344,
+        -4475.961645852683
+      ],
+      "size": [
+        390.2604166666667,
+        58
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "network",
+          "type": "HYMOTION_NET",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HYMotionLoadNetwork"
+      },
+      "widgets_values": [
+        "HY-Motion-1.0"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "HYMotionPreview",
+      "pos": [
+        -5640.4826293693795,
+        -4348.929179995935
+      ],
+      "size": [
+        270,
+        106
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "motion_data",
+          "type": "HYMOTION_DATA",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HYMotionPreview"
+      },
+      "widgets_values": [
+        0,
+        1,
+        512
+      ]
+    },
+    {
+      "id": 5,
+      "type": "HYMotionGenerate",
+      "pos": [
+        -6314.182393858043,
+        -4134.953790139952
+      ],
+      "size": [
+        385.1041666666667,
+        174
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network",
+          "type": "HYMOTION_NET",
+          "link": 3
+        },
+        {
+          "name": "conditioning",
+          "type": "HYMOTION_COND",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "motion_data",
+          "type": "HYMOTION_DATA",
+          "links": [
+            5,
+            15,
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HYMotionGenerate"
+      },
+      "widgets_values": [
+        4.0,
+        42,
+        "fixed",
+        5.0,
+        1
+      ]
+    },
+    {
+      "id": 15,
+      "type": "HYMotionLoadLLM",
+      "pos": [
+        -6988.391343044315,
+        -4249.018255104544
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "llm",
+          "type": "HYMOTION_LLM",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HYMotionLoadLLM"
+      },
+      "widgets_values": [
+        "Qwen3-8B-bnb-4bit",
+        "bnb-4bit",
+        false
+      ]
+    },
+    {
+      "id": 16,
+      "type": "CreateVideo",
+      "pos": [
+        -5280.4826293693795,
+        -4348.929179995935
+      ],
+      "size": [
+        230,
+        54
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 56,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 17
+        },
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "localized_name": "fps",
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "VIDEO",
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "slot_index": 0,
+          "links": [
+            18
+          ]
+        }
+      ],
+      "title": "Create cleaned cropped video",
+      "properties": {
+        "Node name for S&R": "CreateVideo",
+        "widget_ue_connectable": {
+          "fps": true
+        }
+      },
+      "widgets_values": [
+        30
+      ],
+      "color": "#30382f",
+      "bgcolor": "#43503f"
+    },
+    {
+      "id": 17,
+      "type": "SaveVideo",
+      "pos": [
+        -4920.4826293693795,
+        -4348.929179995935
+      ],
+      "size": [
+        420,
+        518
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 57,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO",
+          "link": 18
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMBO",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "codec",
+          "name": "codec",
+          "type": "COMBO",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "title": "RESULT / SAVE MP4",
+      "properties": {
+        "Node name for S&R": "SaveVideo",
+        "widget_ue_connectable": {
+          "filename_prefix": true,
+          "format": true,
+          "codec": true
+        }
+      },
+      "widgets_values": [
+        "motion/guide",
+        "mp4",
+        "h264"
+      ],
+      "color": "#5B7C4A",
+      "bgcolor": "#34452f"
+    }
+  ],
+  "links": [
+    [
+      3,
+      4,
+      0,
+      5,
+      0,
+      "HYMOTION_NET"
+    ],
+    [
+      5,
+      5,
+      0,
+      6,
+      0,
+      "HYMOTION_DATA"
+    ],
+    [
+      10,
+      10,
+      0,
+      5,
+      1,
+      "HYMOTION_COND"
+    ],
+    [
+      16,
+      15,
+      0,
+      10,
+      0,
+      "HYMOTION_LLM"
+    ],
+    [
+      17,
+      6,
+      0,
+      16,
+      0,
+      "IMAGE"
+    ],
+    [
+      18,
+      16,
+      0,
+      17,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6322176000000004,
+      "offset": [
+        7746.162240916091,
+        4768.056897697251
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "frontendVersion": "1.37.2",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

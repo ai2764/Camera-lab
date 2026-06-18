@@ -1,6 +1,7 @@
 function initialWorkspace() {
   if (window.location.hash === "#director") return "director";
   if (window.location.hash === "#casting") return "casting";
+  if (window.location.hash === "#motion") return "motion";
   return "camera";
 }
 
@@ -16,6 +17,24 @@ const state = {
   sourcePath: "",
   middlePath: "",
   endPath: "",
+  motionRefPath: "",
+  motionGuideVideoPath: "",
+  motionGuideDuration: 4,
+  motionTrimPlaying: false,
+  motionBatch: null,
+  motionSubtab: "text",
+  motion3d: {
+    initialized: false,
+    playing: false,
+    time: 0,
+    duration: 3,
+    timeline: [],
+    animationFrame: 0,
+    lastTick: 0,
+    refPath: "",
+    guideUrl: "",
+    generating: false,
+  },
   audioPath: "",
   referencePaths: [""],
   referenceNames: [""],
@@ -39,11 +58,44 @@ const imageSlots = {
   source: { pathKey: "sourcePath", previewId: "sourcePreview", statusId: "sourceStatus", empty: "No image uploaded" },
   middle: { pathKey: "middlePath", previewId: "middlePreview", statusId: "middleStatus", empty: "No image uploaded" },
   end: { pathKey: "endPath", previewId: "endPreview", statusId: "endStatus", empty: "No image uploaded" },
+  motion_ref: { pathKey: "motionRefPath", previewId: "motionRefPreview", statusId: "motionRefStatus", empty: "No image uploaded" },
 };
+
+const motion3dActions = [
+  ["idle", "Idle loop", 3],
+  ["walk_forward", "Walk forward", 2.4],
+  ["run_forward", "Run forward", 1.6],
+  ["turn_left", "Turn left", 1.4],
+  ["turn_right", "Turn right", 1.4],
+  ["step_left", "Step left", 1.2],
+  ["step_right", "Step right", 1.2],
+  ["wave_right", "Wave right", 2.2],
+  ["point_forward", "Point forward", 1.8],
+  ["raise_hands", "Raise hands", 2],
+  ["crouch", "Crouch", 1.6],
+  ["dance_loop", "Dance loop", 3],
+  ["hit_react", "Hit react", 1.2],
+  ["climb_up", "Climb up", 2.6],
+  ["farm_harvest", "Farm harvest", 2.4],
+].map(([id, label, duration]) => ({ id, label, duration }));
+
+function motion3dId() {
+  return `m3d_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function uploadFile(path, form) {
+  const res = await fetch(path, {
+    method: "POST",
+    body: form,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || res.statusText);
@@ -185,6 +237,22 @@ function updateSizeReadout() {
   $("sourcePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("middlePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("endPreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
+}
+
+function currentMotionSize() {
+  const scale = Number($("motionSizeScale").value) / 100;
+  const base = parseSizeText($("motionCustomSizeInput").value);
+  return {
+    width: align8(base.width * scale),
+    height: align8(base.height * scale),
+    scale: Math.round(scale * 100),
+  };
+}
+
+function updateMotionSizeReadout() {
+  const size = currentMotionSize();
+  $("motionSizeReadout").textContent = `${size.width}x${size.height} / ${size.scale}%`;
+  $("motionRefPreviewWrap").style.aspectRatio = `${size.width} / ${size.height}`;
 }
 
 function resetPrompt() {
@@ -351,6 +419,7 @@ function updateWorkflowFields() {
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
   const showPhotographyWorkspace = state.workspace === "photography";
   const showCastingWorkspace = state.workspace === "casting";
+  const showMotionWorkspace = state.workspace === "motion";
   const showSourceImage = wf.mode !== "t2v" && !isDirector;
   const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
   const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v";
@@ -358,12 +427,19 @@ function updateWorkflowFields() {
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
   document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
   document.body.classList.toggle("casting-workspace-active", showCastingWorkspace);
+  document.body.classList.toggle("motion-workspace-active", showMotionWorkspace);
   $("cameraWorkspaceTab").classList.toggle("active", state.workspace === "camera");
   $("directorWorkspaceTab").classList.toggle("active", showDirectorWorkspace);
   $("photographyWorkspaceTab").classList.toggle("active", showPhotographyWorkspace);
   $("castingWorkspaceTab").classList.toggle("active", showCastingWorkspace);
+  $("motionWorkspaceTab").classList.toggle("active", showMotionWorkspace);
+  $("motionWorkspace").hidden = !showMotionWorkspace;
   if (showPhotographyWorkspace) return;
   if (showCastingWorkspace) return;
+  if (showMotionWorkspace) {
+    updateMotionSubtabs();
+    return;
+  }
   $("cameraMoveWrap").style.display = isDirector ? "none" : "block";
   $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
@@ -1593,42 +1669,69 @@ function renderBatch(batch) {
 }
 
 function upsertRuns(runs, newestFirst = false) {
-  const tpl = $("resultTemplate");
   for (const run of runs) {
+    if (isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
     const grid = resultsGridForRun(run);
-    let card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
-    if (!card) {
-      const node = tpl.content.cloneNode(true);
-      card = node.querySelector(".result-card");
-      card.dataset.runKey = runKey(run);
-      card.querySelector(".use-prompt-run").addEventListener("click", () => {
-        if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
-        else useRunPrompt(card.dataset.prompt || "");
-      });
-      card.querySelector(".use-seed-run").addEventListener("click", () => {
-        useRunSeed(card.dataset.seed);
-      });
-      card.querySelector(".preview-run").addEventListener("click", () => {
-        openVideoPreview(card._run || {});
-      });
-      card.querySelector(".last-frame-run").addEventListener("click", () => {
-        captureRunLastFrame(card).catch((err) => {
-          $("runHint").textContent = `Last frame failed: ${err.message}`;
-        });
-      });
-      card.querySelector(".pin-run").addEventListener("click", () => {
-        const action = card.dataset.pinned === "true" ? "unpin" : "pin";
-        updateHistoryState(card.dataset.runKey, action);
-      });
-      card.querySelector(".delete-run").addEventListener("click", () => {
-        updateHistoryState(card.dataset.runKey, "delete");
-      });
-      if (newestFirst) grid.prepend(node);
-      else grid.appendChild(node);
-    }
+    const card = ensureRunCard(grid, run, newestFirst);
     updateRunCard(card, run);
   }
+}
+
+function upsertMotionRuns(runs, newestFirst = false) {
+  const grid = $("motionResultsGrid");
+  if (!grid) return;
+  for (const run of runs) {
+    if (!isMotionRun(run)) continue;
+    if (state.hiddenRunKeys.has(runKey(run))) continue;
+    const displayRun = motionDisplayRun(run);
+    const card = ensureRunCard(grid, displayRun, newestFirst);
+    updateRunCard(card, displayRun);
+  }
+}
+
+function ensureRunCard(grid, run, newestFirst = false) {
+  const tpl = $("resultTemplate");
+  let card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
+  if (!card) {
+    const node = tpl.content.cloneNode(true);
+    card = node.querySelector(".result-card");
+    card.dataset.runKey = runKey(run);
+    card.querySelector(".use-prompt-run").addEventListener("click", () => {
+      if (card._run && isMotionRun(card._run)) useMotionRun(card._run);
+      else if (card._run && isDirectorRun(card._run)) useRunTimeline(card._run);
+      else useRunPrompt(card.dataset.prompt || "");
+    });
+    card.querySelector(".use-seed-run").addEventListener("click", () => {
+      useRunSeed(card.dataset.seed);
+    });
+    card.querySelector(".preview-run").addEventListener("click", () => {
+      openVideoPreview(card._run || {});
+    });
+    card.querySelector(".last-frame-run").addEventListener("click", () => {
+      captureRunLastFrame(card).catch((err) => {
+        $("runHint").textContent = `Last frame failed: ${err.message}`;
+      });
+    });
+    card.querySelector(".pin-run").addEventListener("click", () => {
+      const action = card.dataset.pinned === "true" ? "unpin" : "pin";
+      updateHistoryState(card.dataset.runKey, action);
+    });
+    card.querySelector(".delete-run").addEventListener("click", () => {
+      updateHistoryState(card.dataset.runKey, "delete");
+    });
+    if (newestFirst) grid.prepend(node);
+    else grid.appendChild(node);
+  }
+  return card;
+}
+
+function motionDisplayRun(run) {
+  return {
+    ...run,
+    motion_result_video: run.video || "",
+    video: run.video || run.guide_video || "",
+  };
 }
 
 function resultsGridForRun(run) {
@@ -1638,6 +1741,11 @@ function resultsGridForRun(run) {
 function isDirectorRun(run) {
   const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
   return raw.includes("director");
+}
+
+function isMotionRun(run) {
+  const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
+  return raw.includes("motion");
 }
 
 function runKey(run) {
@@ -1666,10 +1774,16 @@ function updateRunCard(card, run) {
   card.querySelector(".run-status").textContent = `${run.status} ${elapsedText(run)}`;
   const usePromptButton = card.querySelector(".use-prompt-run");
   const directorRun = isDirectorRun(run);
-  usePromptButton.textContent = directorRun ? "Use Timeline" : "Use Prompt";
-  usePromptButton.disabled = directorRun
-    ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
-    : !run.prompt;
+  const motionRun = isMotionRun(run);
+  const motionFinalRun = motionRun && Boolean(motionFinalVideo(run));
+  usePromptButton.textContent = motionRun
+    ? (motionFinalRun ? "Use Same Setup" : "Use Motion")
+    : directorRun ? "Use Timeline" : "Use Prompt";
+  usePromptButton.disabled = motionRun
+    ? !run.guide_video
+    : directorRun
+      ? !(run.director_timeline && Array.isArray(run.director_timeline.segments) && run.director_timeline.segments.length)
+      : !run.prompt;
   card.querySelector(".use-seed-run").disabled = !run.seed;
   card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
@@ -1747,6 +1861,7 @@ function closeVideoPreview() {
 
 function runModeLabel(run) {
   const raw = String(run.workflow_mode || run.workflow_id || "").toLowerCase();
+  if (raw.includes("motion")) return "MOTION";
   if (raw.includes("director")) return "DIR";
   if (raw.includes("ia2v")) return "IA2V";
   if (raw.includes("fml") || raw.includes("fmf")) return "FML";
@@ -1817,8 +1932,502 @@ function useRunPrompt(prompt) {
   $("runHint").textContent = "Prompt copied from result";
 }
 
+function setInputIfPresent(id, value) {
+  if (value === undefined || value === null || value === "") return;
+  $(id).value = String(value);
+}
+
 function fileNameFromPath(path) {
   return String(path || "").split(/[\\/]/).pop() || "";
+}
+
+function motionFinalVideo(run) {
+  if (run.motion_result_video) return run.motion_result_video;
+  if (run.video && run.video !== run.guide_video) return run.video;
+  return "";
+}
+
+function motionReferencePath(run) {
+  return run.reference_image || run.reference_path || run.source_path || "";
+}
+
+function restoreMotionSize(run) {
+  const width = Number(run.width);
+  const height = Number(run.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+  const size = `${Math.round(width)}x${Math.round(height)}`;
+  $("motionCustomSizeInput").value = size;
+  const preset = [...$("motionSizePreset").options].find((option) => option.value === size);
+  if (preset) $("motionSizePreset").value = size;
+  $("motionSizeScale").value = "100";
+  updateMotionSizeReadout();
+}
+
+function restoreMotionTrim(run) {
+  const start = Number(run.guide_trim_start ?? run.trim_start);
+  const end = Number(run.guide_trim_end ?? run.trim_end);
+  if (Number.isFinite(start)) {
+    $("motionTrimStart").value = String(Math.max(0, start));
+    $("motionTrimStartRange").value = $("motionTrimStart").value;
+  }
+  if (Number.isFinite(end) && end > 0) {
+    $("motionTrimEnd").value = String(end);
+    $("motionTrimEndRange").value = $("motionTrimEnd").value;
+  }
+  updateMotionTrimDisplay();
+}
+
+function restoreMotionGuide(run) {
+  if (!run.guide_video) return false;
+  state.motionBatch = null;
+  state.motionGuideVideoPath = run.guide_video;
+  const guide = $("motionGuide");
+  guide.pause();
+  guide.src = mediaUrl(run.guide_video);
+  $("motionGuideUploadStatus").textContent = fileNameFromPath(run.guide_video);
+  $("motionGuideState").textContent = "ready";
+  setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
+  restoreMotionTrim(run);
+  return true;
+}
+
+function restoreMotionReference(run) {
+  const referencePath = motionReferencePath(run);
+  state.motionRefPath = referencePath;
+  setImagePreview("motion_ref", referencePath ? mediaUrl(referencePath) : "");
+  $("motionRefStatus").textContent = referencePath ? fileNameFromPath(referencePath) : imageSlots.motion_ref.empty;
+}
+
+function useMotionRun(run) {
+  if (!run || !run.guide_video) return;
+  setWorkspace("motion", { syncWorkflow: false });
+  if (run.prompt) $("motionPrompt").value = run.prompt;
+  setInputIfPresent("motionDuration", run.duration);
+  setInputIfPresent("motionSeed", run.seed);
+  setInputIfPresent("motionScailSeed", run.seed);
+  setInputIfPresent("motionSteps", run.steps);
+  setInputIfPresent("motionPoseStrength", run.pose_strength);
+  setInputIfPresent("motionCfg", run.cfg_scale);
+  $("motionPoseReadout").textContent = Number($("motionPoseStrength").value).toFixed(2);
+  $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
+  restoreMotionSize(run);
+  restoreMotionGuide(run);
+  const finalVideo = motionFinalVideo(run);
+  setMotionSubtab(finalVideo ? "scail" : "text");
+  if (finalVideo) {
+    restoreMotionReference(run);
+    const result = $("motionResult");
+    result.pause();
+    result.src = mediaUrl(finalVideo);
+    $("motionResultState").textContent = "ready";
+    $("motionStatus").textContent = `Setup restored from ${run.batch_id || "result"}`;
+  } else {
+    clearMotionResult();
+    $("motionStatus").textContent = `Motion guide loaded from ${run.batch_id || "result"}`;
+  }
+  updateMotionRunAvailability();
+}
+
+function setMotionSubtab(tab) {
+  state.motionSubtab = ["text", "scail", "3d"].includes(tab) ? tab : "text";
+  updateMotionSubtabs();
+}
+
+function updateMotionSubtabs() {
+  const tabs = [
+    ["text", "motionTextTab", "motionTextPanel"],
+    ["scail", "motionScailTab", "motionScailPanel"],
+    ["3d", "motion3dTab", "motion3dPanel"],
+  ];
+  for (const [name, tabId, panelId] of tabs) {
+    const active = state.motionSubtab === name;
+    $(tabId).classList.toggle("active", active);
+    $(tabId).setAttribute("aria-selected", active ? "true" : "false");
+    $(panelId).hidden = !active;
+    $(panelId).classList.toggle("active", active);
+  }
+  moveMotionVideoPanel();
+  moveMotionGuidePreview();
+  moveMotionPreviewCards();
+  if (state.motionSubtab === "3d") {
+    window.setTimeout(() => window.dispatchEvent(new Event("resize")), 0);
+  }
+}
+
+function moveMotionGuidePreview() {
+  const panel = $("motionGuidePreviewCard");
+  const target = $(state.motionSubtab === "scail" ? "motionScailGuideMount" : "motionTextGuideMount");
+  if (panel && target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function moveMotionVideoPanel() {
+  const panel = document.querySelector(".motion-video-panel");
+  const target = $(state.motionSubtab === "scail" ? "motionScailMount" : "motionTextScailMount");
+  if (panel && target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function moveMotionPreviewCards() {
+  const inScail = state.motionSubtab === "scail";
+  const resultCard = $("motionResultPreviewCard");
+  const resultTarget = $(inScail ? "motionScailResultMount" : "motionTextResultMount");
+  if (resultCard && resultTarget && resultCard.parentElement !== resultTarget) {
+    resultTarget.appendChild(resultCard);
+  }
+
+  const referenceCard = $("motionReferencePreviewCard");
+  const referenceTarget = $(inScail ? "motionHiddenPreviewParking" : "motionTextReferenceMount");
+  if (referenceCard && referenceTarget && referenceCard.parentElement !== referenceTarget) {
+    referenceTarget.appendChild(referenceCard);
+  }
+}
+
+function initMotion3d() {
+  if (state.motion3d.initialized) {
+    resizeMotion3dCanvas();
+    renderMotion3d();
+    return;
+  }
+  state.motion3d.initialized = true;
+  state.motion3d.timeline = [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }];
+  renderMotion3dActions();
+  renderMotion3dTimeline();
+  resizeMotion3dCanvas();
+  renderMotion3d();
+}
+
+function motion3dTotalDuration() {
+  return Math.max(0.5, ...state.motion3d.timeline.map((item) => item.start + item.duration));
+}
+
+function renderMotion3dActions() {
+  const root = $("motion3dActionLibrary");
+  if (!root) return;
+  root.innerHTML = "";
+  for (const action of motion3dActions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `+ ${action.label}`;
+    button.addEventListener("click", () => addMotion3dAction(action));
+    root.appendChild(button);
+  }
+}
+
+function relayoutMotion3dTimeline(items) {
+  let cursor = 0;
+  return items.map((item) => {
+    const next = { ...item, start: cursor };
+    cursor += next.duration;
+    return next;
+  });
+}
+
+function addMotion3dAction(action) {
+  const timeline = state.motion3d.timeline.filter((item) => item.clip !== "idle" || state.motion3d.timeline.length > 1);
+  timeline.push({ id: motion3dId(), clip: action.id, label: action.label, start: 0, duration: action.duration });
+  state.motion3d.timeline = relayoutMotion3dTimeline(timeline);
+  state.motion3d.time = 0;
+  renderMotion3dTimeline();
+  renderMotion3d();
+}
+
+function resetMotion3dTimeline() {
+  state.motion3d.timeline = [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }];
+  state.motion3d.time = 0;
+  state.motion3d.playing = false;
+  renderMotion3dTimeline();
+  renderMotion3d();
+}
+
+function renderMotion3dTimeline() {
+  const root = $("motion3dTimeline");
+  if (!root) return;
+  state.motion3d.duration = motion3dTotalDuration();
+  $("motion3dClipCount").textContent = `${state.motion3d.timeline.length} clip${state.motion3d.timeline.length === 1 ? "" : "s"}`;
+  $("motion3dDuration").textContent = `${state.motion3d.duration.toFixed(2)}s`;
+  root.innerHTML = "";
+  state.motion3d.timeline.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "motion-3d-row";
+    row.innerHTML = `
+      <span class="row-index">${String(index + 1).padStart(2, "0")}</span>
+      <div><strong>${escapeHtml(item.label)}</strong><small>${item.start.toFixed(1)}s - ${(item.start + item.duration).toFixed(1)}s</small></div>
+      <input type="number" min="0.1" step="0.1" value="${Number(item.duration.toFixed(2))}" aria-label="Clip duration">
+      <button type="button" aria-label="Delete clip">x</button>
+    `;
+    row.querySelector("input").addEventListener("input", (event) => {
+      const duration = Math.max(0.1, Number(event.target.value) || item.duration);
+      state.motion3d.timeline = relayoutMotion3dTimeline(state.motion3d.timeline.map((clip) => clip.id === item.id ? { ...clip, duration } : clip));
+      renderMotion3dTimeline();
+      renderMotion3d();
+    });
+    row.querySelector("button").addEventListener("click", () => {
+      const next = state.motion3d.timeline.filter((clip) => clip.id !== item.id);
+      state.motion3d.timeline = relayoutMotion3dTimeline(next.length ? next : [{ id: motion3dId(), clip: "idle", label: "Idle loop", start: 0, duration: 3 }]);
+      renderMotion3dTimeline();
+      renderMotion3d();
+    });
+    root.appendChild(row);
+  });
+  updateMotion3dTimebar();
+}
+
+function resizeMotion3dCanvas() {
+  const canvas = $("motion3dCanvas");
+  if (!canvas) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(320, Math.floor(rect.width));
+  const height = Math.max(260, Math.floor(rect.height));
+  if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
+}
+
+function activeMotion3dClip() {
+  const time = state.motion3d.time;
+  return state.motion3d.timeline.find((item) => time >= item.start && time <= item.start + item.duration) || state.motion3d.timeline.at(-1);
+}
+
+function drawMotion3dLimb(ctx, x, y, length, angle, width, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, length);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function renderMotion3d() {
+  const canvas = $("motion3dCanvas");
+  if (!canvas) return;
+  resizeMotion3dCanvas();
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  const cssW = w / dpr;
+  const cssH = h / dpr;
+  const gradient = ctx.createLinearGradient(0, 0, 0, cssH);
+  gradient.addColorStop(0, "#121718");
+  gradient.addColorStop(1, "#0b0d0d");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  ctx.strokeStyle = "rgba(143,199,192,.15)";
+  ctx.lineWidth = 1;
+  const horizon = cssH * 0.72;
+  for (let i = -8; i <= 8; i += 1) {
+    const x = cssW / 2 + i * 42;
+    ctx.beginPath();
+    ctx.moveTo(x, horizon);
+    ctx.lineTo(x + i * 25, cssH);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 8; i += 1) {
+    const y = horizon + i * 24;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssW, y);
+    ctx.stroke();
+  }
+
+  const clip = activeMotion3dClip();
+  const local = clip ? state.motion3d.time - clip.start : 0;
+  const progress = clip ? local / Math.max(clip.duration, 0.1) : 0;
+  const phase = progress * Math.PI * 2;
+  const swing = Math.sin(phase);
+  const bounce = Math.abs(Math.sin(phase)) * 10;
+  const cx = cssW / 2;
+  const feetY = cssH * 0.76;
+  const scale = Math.min(cssW, cssH) / 390;
+  const torsoY = feetY - 145 * scale - bounce;
+  let arm = swing * 0.55;
+  let leg = -swing * 0.48;
+  let lean = 0;
+  if (clip?.clip === "wave_right") arm = -1.8 + Math.sin(phase * 2) * 0.45;
+  if (clip?.clip === "raise_hands") arm = -2.2;
+  if (clip?.clip === "crouch") lean = 0.28;
+  if (clip?.clip === "dance_loop") { arm = Math.sin(phase * 1.5) * 1.2; leg = Math.cos(phase) * 0.7; }
+
+  ctx.shadowColor = "rgba(0,0,0,.5)";
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.ellipse(cx + 20 * scale, feetY + 10, 70 * scale, 16 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const joint = (x, y, r, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const blue = "#285aa5";
+  const orange = "#d66f29";
+  drawMotion3dLimb(ctx, cx - 22 * scale, torsoY + 80 * scale, 62 * scale, 0.12 + leg, 18 * scale, blue);
+  drawMotion3dLimb(ctx, cx + 22 * scale, torsoY + 80 * scale, 62 * scale, -0.12 - leg, 18 * scale, orange);
+  drawMotion3dLimb(ctx, cx - 30 * scale, torsoY + 138 * scale, 55 * scale, -0.14 - leg * .8, 15 * scale, blue);
+  drawMotion3dLimb(ctx, cx + 30 * scale, torsoY + 138 * scale, 55 * scale, 0.14 + leg * .8, 15 * scale, orange);
+  ctx.save();
+  ctx.translate(cx, torsoY + 64 * scale);
+  ctx.rotate(lean);
+  ctx.fillStyle = orange;
+  ctx.fillRect(-32 * scale, -48 * scale, 64 * scale, 92 * scale);
+  ctx.fillStyle = blue;
+  ctx.fillRect(-6 * scale, -48 * scale, 16 * scale, 92 * scale);
+  drawMotion3dLimb(ctx, -38 * scale, -28 * scale, 58 * scale, 0.4 - arm * .4, 16 * scale, blue);
+  drawMotion3dLimb(ctx, 38 * scale, -28 * scale, 58 * scale, -0.4 + arm, 16 * scale, orange);
+  ctx.fillStyle = orange;
+  ctx.beginPath();
+  ctx.ellipse(0, -74 * scale, 22 * scale, 28 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  joint(cx - 28 * scale, torsoY + 198 * scale, 8 * scale, blue);
+  joint(cx + 28 * scale, torsoY + 198 * scale, 8 * scale, orange);
+  ctx.restore();
+  updateMotion3dTimebar();
+}
+
+function updateMotion3dTimebar() {
+  if (!$("motion3dTime")) return;
+  const duration = motion3dTotalDuration();
+  $("motion3dTime").textContent = `${state.motion3d.time.toFixed(2)}s`;
+  $("motion3dDuration").textContent = `${duration.toFixed(2)}s`;
+  $("motion3dRailFill").style.width = `${Math.min(100, Math.max(0, (state.motion3d.time / duration) * 100))}%`;
+  $("motion3dPlay").textContent = state.motion3d.playing ? "Pause" : "Play";
+}
+
+function tickMotion3d(now) {
+  if (!state.motion3d.playing) return;
+  const elapsed = state.motion3d.lastTick ? (now - state.motion3d.lastTick) / 1000 : 0;
+  state.motion3d.lastTick = now;
+  state.motion3d.time += elapsed;
+  const duration = motion3dTotalDuration();
+  if (state.motion3d.time > duration) state.motion3d.time = 0;
+  renderMotion3d();
+  state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+}
+
+function toggleMotion3dPlayback() {
+  state.motion3d.playing = !state.motion3d.playing;
+  state.motion3d.lastTick = 0;
+  if (state.motion3d.playing) state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+  else cancelAnimationFrame(state.motion3d.animationFrame);
+  updateMotion3dTimebar();
+}
+
+function resetMotion3dPlayhead() {
+  state.motion3d.playing = false;
+  state.motion3d.time = 0;
+  cancelAnimationFrame(state.motion3d.animationFrame);
+  renderMotion3d();
+}
+
+function currentMotion3dSize() {
+  const base = parseSizeText($("motion3dSizeText").value);
+  return { width: align8(base.width), height: align8(base.height) };
+}
+
+async function uploadMotion3dReference(file) {
+  if (!file) return;
+  $("motion3dRefStatus").textContent = "Uploading...";
+  const data = await readFileAsDataUrl(file);
+  const uploaded = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, data }),
+  });
+  state.motion3d.refPath = uploaded.path;
+  $("motion3dRefStatus").textContent = uploaded.name;
+  $("motion3dGenerate").disabled = false;
+  $("motion3dStatus").textContent = "Reference image ready.";
+}
+
+function recordMotion3dGuide() {
+  return new Promise((resolve, reject) => {
+    const canvas = $("motion3dCanvas");
+    if (!canvas?.captureStream || typeof MediaRecorder === "undefined") {
+      reject(new Error("Browser recording is unavailable"));
+      return;
+    }
+    const stream = canvas.captureStream(24);
+    const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm" });
+    const chunks = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+    recorder.onerror = () => reject(new Error("Motion guide recording failed"));
+    const previousPlaying = state.motion3d.playing;
+    state.motion3d.playing = true;
+    state.motion3d.time = 0;
+    state.motion3d.lastTick = 0;
+    recorder.start();
+    state.motion3d.animationFrame = requestAnimationFrame(tickMotion3d);
+    window.setTimeout(() => {
+      state.motion3d.playing = previousPlaying;
+      cancelAnimationFrame(state.motion3d.animationFrame);
+      recorder.stop();
+      renderMotion3d();
+    }, Math.min(12000, motion3dTotalDuration() * 1000));
+  });
+}
+
+async function generateMotion3dScail() {
+  if (!state.motion3d.refPath || state.motion3d.generating) return;
+  state.motion3d.generating = true;
+  $("motion3dGenerate").disabled = true;
+  $("motion3dStatus").textContent = "Recording motion guide...";
+  try {
+    const blob = await recordMotion3dGuide();
+    const form = new FormData();
+    form.append("file", blob, `motion3d_${Date.now()}.webm`);
+    $("motion3dStatus").textContent = "Uploading guide video...";
+    const uploaded = await uploadFile("/api/upload-video", form);
+    state.motion3d.guideUrl = mediaUrl(uploaded.path);
+    const size = currentMotion3dSize();
+    const payload = {
+      prompt: "3D motion guide driving video",
+      reference_path: state.motion3d.refPath,
+      guide_video_path: uploaded.path,
+      guide_trim_start: 0,
+      guide_trim_end: motion3dTotalDuration(),
+      width: size.width,
+      height: size.height,
+      steps: Math.max(1, Number($("motion3dSteps").value) || 8),
+      seed: $("motion3dSeed").value.trim(),
+      pose_strength: Math.max(0, Math.min(1, Number($("motion3dPoseStrength").value) || 1)),
+    };
+    $("motion3dStatus").textContent = "Submitting SCAIL2 job...";
+    const batch = await api("/api/text-to-motion-video-final", { method: "POST", body: JSON.stringify(payload) });
+    state.motionBatch = batch;
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+    $("motion3dStatus").textContent = "SCAIL2 job queued.";
+  } catch (err) {
+    $("motion3dStatus").textContent = err.message;
+  } finally {
+    state.motion3d.generating = false;
+    $("motion3dGenerate").disabled = !state.motion3d.refPath;
+  }
 }
 
 function savedFrameSeconds(value, fallback = 0) {
@@ -1949,6 +2558,7 @@ function updateElapsed() {
   if (!state.activeBatch) return;
   $("queueText").textContent = `${state.activeBatch.batch_id} / ${state.activeBatch.status} ${elapsedText(state.activeBatch)}`;
   for (const run of state.activeBatch.runs || []) {
+    if (isMotionRun(run)) continue;
     const grid = resultsGridForRun(run);
     const card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
     if (card) card.querySelector(".run-status").textContent = `${run.status} ${elapsedText(run)}`;
@@ -1990,8 +2600,10 @@ async function loadHistory({ replace = true } = {}) {
   if (replace) {
     $("resultsGrid").innerHTML = "";
     $("directorResultsGrid").innerHTML = "";
+    $("motionResultsGrid").innerHTML = "";
   }
   upsertRuns(data.runs || [], false);
+  upsertMotionRuns(data.runs || [], false);
 }
 
 function startHistoryRefresh() {
@@ -2010,7 +2622,7 @@ async function updateHistoryState(key, action) {
   });
   if (action === "delete") {
     state.hiddenRunKeys.add(key);
-    const card = document.querySelector(`#resultsGrid .result-card[data-run-key="${cssEscape(key)}"], #directorResultsGrid .result-card[data-run-key="${cssEscape(key)}"]`);
+    const card = document.querySelector(`#resultsGrid .result-card[data-run-key="${cssEscape(key)}"], #directorResultsGrid .result-card[data-run-key="${cssEscape(key)}"], #motionResultsGrid .result-card[data-run-key="${cssEscape(key)}"]`);
     if (card) card.remove();
     const recycled = result.recycled || [];
     const canceled = result.cancel || [];
@@ -2043,6 +2655,335 @@ async function startBatch() {
     $("runBtn").disabled = false;
     $("runBtn").textContent = "Queue Run";
   }
+}
+
+function motionPayload(seedInputId = "motionSeed") {
+  const size = currentMotionSize();
+  const duration = Number($("motionDuration").value);
+  const steps = Number($("motionSteps").value);
+  const poseStrength = Number($("motionPoseStrength").value);
+  const cfgScale = Number($("motionCfg").value);
+  return {
+    prompt: $("motionPrompt").value.trim(),
+    reference_path: state.motionRefPath,
+    duration: Number.isFinite(duration) && duration > 0 ? duration : 4,
+    width: size.width,
+    height: size.height,
+    steps: Number.isFinite(steps) && steps > 0 ? steps : 8,
+    seed: $(seedInputId).value.trim(),
+    rewrite: $("motionRewrite").checked,
+    pose_strength: Number.isFinite(poseStrength) ? poseStrength : 1,
+    cfg_scale: Number.isFinite(cfgScale) ? cfgScale : 5,
+  };
+}
+
+function roundMotionTime(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
+}
+
+const MOTION_TRIM_GAP = 0.05;
+
+function motionGuideDurationFallback() {
+  const videoDuration = Number($("motionGuide").duration);
+  if (Number.isFinite(videoDuration) && videoDuration > 0) return videoDuration;
+  const inputDuration = Number($("motionDuration").value);
+  if (Number.isFinite(inputDuration) && inputDuration > 0) return inputDuration;
+  return state.motionGuideDuration || 4;
+}
+
+function setMotionTrimBounds(duration, reset = false) {
+  const max = Math.max(0.05, roundMotionTime(duration || motionGuideDurationFallback()));
+  state.motionGuideDuration = max;
+  for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
+    const input = $(id);
+    input.max = String(max);
+  }
+  if (reset || Number($("motionTrimEnd").value) <= 0) {
+    $("motionTrimStart").value = "0";
+    $("motionTrimStartRange").value = "0";
+    $("motionTrimEnd").value = String(max);
+    $("motionTrimEndRange").value = String(max);
+  }
+  updateMotionTrimDisplay();
+}
+
+function motionTrimValues(sourceId = "") {
+  const max = motionGuideDurationFallback();
+  let start = roundMotionTime($("motionTrimStart").value);
+  let end = roundMotionTime($("motionTrimEnd").value);
+  const startChanged = sourceId === "motionTrimStart" || sourceId === "motionTrimStartRange";
+  const endChanged = sourceId === "motionTrimEnd" || sourceId === "motionTrimEndRange";
+  if (!end) end = max;
+  if (startChanged) {
+    end = Math.min(Math.max(MOTION_TRIM_GAP, end), max);
+    start = Math.min(Math.max(0, start), Math.max(0, end - MOTION_TRIM_GAP));
+  } else if (endChanged) {
+    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
+    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+  } else {
+    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
+    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+  }
+  return { start, end, duration: roundMotionTime(end - start) };
+}
+
+function updateMotionTrimDisplay(sourceId = "") {
+  const { start, end, duration } = motionTrimValues(sourceId);
+  $("motionTrimStart").value = String(start);
+  $("motionTrimEnd").value = String(end);
+  $("motionTrimStartRange").value = String(start);
+  $("motionTrimEndRange").value = String(end);
+  $("motionTrimStartReadout").textContent = `${start.toFixed(2)}s`;
+  $("motionTrimEndReadout").textContent = `${end.toFixed(2)}s`;
+  $("motionTrimDuration").textContent = `${duration.toFixed(2)}s`;
+}
+
+function motionTrimPayload() {
+  const { start, end } = motionTrimValues();
+  return {
+    guide_trim_start: start,
+    guide_trim_end: end,
+  };
+}
+
+function playMotionTrim() {
+  const video = $("motionGuide");
+  if (!video.getAttribute("src")) return;
+  const { start } = motionTrimValues();
+  state.motionTrimPlaying = true;
+  video.currentTime = start;
+  const promise = video.play();
+  if (promise?.catch) promise.catch(() => {
+    state.motionTrimPlaying = false;
+  });
+}
+
+function setMotionTrimBoundaryFromPlayhead(boundary) {
+  const max = motionGuideDurationFallback();
+  const currentTime = Number($("motionGuide").currentTime);
+  const time = Math.min(roundMotionTime(Number.isFinite(currentTime) ? currentTime : 0), max);
+  let start = roundMotionTime($("motionTrimStart").value);
+  let end = roundMotionTime($("motionTrimEnd").value) || max;
+  if (boundary === "start") {
+    start = Math.min(time, Math.max(0, max - MOTION_TRIM_GAP));
+    if (end <= start) end = max;
+    $("motionTrimStart").value = String(start);
+    $("motionTrimEnd").value = String(end);
+    updateMotionTrimDisplay("motionTrimStart");
+  } else {
+    end = Math.max(time, MOTION_TRIM_GAP);
+    if (start >= end) start = 0;
+    $("motionTrimStart").value = String(start);
+    $("motionTrimEnd").value = String(end);
+    updateMotionTrimDisplay("motionTrimEnd");
+  }
+}
+
+function currentMotionRun() {
+  return (state.motionBatch?.runs || [])[0] || {};
+}
+
+function hasMotionGuideVideo() {
+  return Boolean(currentMotionRun().guide_video || state.motionGuideVideoPath);
+}
+
+function updateMotionRunAvailability() {
+  $("motionRunBtn").disabled = !(hasMotionGuideVideo() && state.motionRefPath);
+}
+
+function clearMotionVideos() {
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = "No video uploaded";
+  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
+  for (const id of ["motionGuide", "motionResult"]) {
+    const video = $(id);
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  $("motionGuideState").textContent = "waiting";
+  $("motionResultState").textContent = "waiting";
+  $("motionRunBtn").disabled = true;
+}
+
+function clearMotionResult() {
+  const video = $("motionResult");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  $("motionResultState").textContent = "waiting";
+}
+
+function renderMotionBatch(batch) {
+  state.motionBatch = batch;
+  upsertMotionRuns(batch.runs || [], true);
+  const run = (batch.runs || [])[0] || {};
+  $("motionStatus").textContent = `${batch.batch_id} / ${run.status || batch.status} ${elapsedText(run)}`;
+  if (run.error) $("motionStatus").textContent = run.error;
+  if (run.guide_video) {
+    const guideSrc = mediaUrl(run.guide_video);
+    if ($("motionGuide").getAttribute("src") !== guideSrc) {
+      $("motionGuide").src = guideSrc;
+    }
+    setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
+    $("motionGuideState").textContent = "ready";
+    updateMotionRunAvailability();
+  } else if (run.status === "running_motion") {
+    $("motionGuideState").textContent = "rendering";
+    $("motionRunBtn").disabled = true;
+  }
+  if (run.video) {
+    const resultSrc = mediaUrl(run.video);
+    if ($("motionResult").getAttribute("src") !== resultSrc) {
+      $("motionResult").src = resultSrc;
+    }
+    $("motionResultState").textContent = "ready";
+  } else if (run.status === "running_video") {
+    $("motionResultState").textContent = "rendering";
+    $("motionRunBtn").disabled = true;
+  }
+  if (["done", "guide_done", "error"].includes(run.status || batch.status) && run.guide_video) {
+    updateMotionRunAvailability();
+  }
+}
+
+async function pollMotion() {
+  if (!state.motionBatch) return;
+  try {
+    const batch = await api(`/api/batches/${state.motionBatch.batch_id}`);
+    renderMotionBatch(batch);
+    if (!["done", "error"].includes(batch.status)) {
+      state.pollTimer = setTimeout(pollMotion, 5000);
+    } else {
+      await loadHistory({ replace: false });
+    }
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
+    state.pollTimer = setTimeout(pollMotion, 5000);
+  }
+}
+
+async function startMotionGuide() {
+  const payload = motionPayload();
+  if (!payload.prompt) {
+    $("motionStatus").textContent = "Prompt is required";
+    return;
+  }
+  $("motionGuideBtn").disabled = true;
+  $("motionGuideBtn").textContent = "Generating...";
+  $("motionRunBtn").disabled = true;
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = "No video uploaded";
+  clearMotionVideos();
+  try {
+    const batch = await api("/api/text-to-motion-guide", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
+  } finally {
+    $("motionGuideBtn").disabled = false;
+    $("motionGuideBtn").textContent = "Generate Motion Guide";
+  }
+}
+
+async function startMotionFinal() {
+  const payload = motionPayload("motionScailSeed");
+  const run = currentMotionRun();
+  const guideVideoPath = run.guide_video || state.motionGuideVideoPath;
+  if (!guideVideoPath) {
+    $("motionStatus").textContent = "Generate or upload a motion guide first";
+    return;
+  }
+  if (!payload.reference_path) {
+    $("motionStatus").textContent = "Reference image is required";
+    return;
+  }
+  $("motionRunBtn").disabled = true;
+  $("motionRunBtn").textContent = "Rendering...";
+  clearMotionResult();
+  try {
+    const endpoint = state.motionBatch && run.guide_video ? "/api/text-to-motion-final" : "/api/text-to-motion-video-final";
+    const body = endpoint === "/api/text-to-motion-final"
+      ? { ...payload, ...motionTrimPayload(), batch_id: state.motionBatch.batch_id, run_id: run.run_id }
+      : { ...payload, ...motionTrimPayload(), guide_video_path: guideVideoPath };
+    const batch = await api(endpoint, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    renderMotionBatch(batch);
+    if (state.clockTimer) clearInterval(state.clockTimer);
+    state.clockTimer = setInterval(updateElapsed, 1000);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(pollMotion, 1500);
+  } catch (err) {
+    $("motionStatus").textContent = err.message;
+    $("motionRunBtn").disabled = false;
+  } finally {
+    $("motionRunBtn").textContent = "Render Final Video";
+  }
+}
+
+async function uploadMotionGuideVideo(file) {
+  if (!file) return;
+  $("motionGuideUploadStatus").textContent = "Uploading...";
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  state.motionGuideVideoPath = uploaded.path;
+  state.motionBatch = null;
+  const video = $("motionGuide");
+  video.pause();
+  video.src = mediaUrl(uploaded.path);
+  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
+  $("motionGuideState").textContent = "uploaded";
+  $("motionGuideUploadStatus").textContent = uploaded.name;
+  clearMotionResult();
+  $("motionStatus").textContent = "Guide video uploaded. Ready for SCAIL2.";
+  updateMotionRunAvailability();
+}
+
+function fillPythonFormatTemplate(template, text) {
+  return String(template || "")
+    .replaceAll("{{", "\u0000")
+    .replaceAll("}}", "\u0001")
+    .replace("{}", text)
+    .replaceAll("\u0000", "{")
+    .replaceAll("\u0001", "}");
+}
+
+async function copyMotionRewritePrompt() {
+  const text = $("motionPrompt").value.trim();
+  if (!text) {
+    $("motionStatus").textContent = "Prompt is required";
+    return;
+  }
+  const template = state.config?.motion_rewrite_prompt_format || "";
+  if (!template) {
+    $("motionStatus").textContent = "Rewrite template is unavailable";
+    return;
+  }
+  const filled = fillPythonFormatTemplate(template, text);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(filled);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = filled;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  $("motionStatus").textContent = "Copied";
 }
 
 function readFileAsDataUrl(file) {
@@ -2103,22 +3044,19 @@ function populateAudioLibrary() {
 
 async function uploadImage(file, kind) {
   if (!file) return;
-  const status = kind === "source" ? $("sourceStatus") : kind === "middle" ? $("middleStatus") : $("endStatus");
+  const slot = imageSlots[kind];
+  if (!slot) throw new Error("unknown image slot");
+  const status = $(slot.statusId);
   status.textContent = "Uploading...";
   const data = await readFileAsDataUrl(file);
   const uploaded = await api("/api/upload-image", {
     method: "POST",
     body: JSON.stringify({ name: file.name, data }),
   });
-  if (kind === "source") {
-    state.sourcePath = uploaded.path;
-  } else if (kind === "middle") {
-    state.middlePath = uploaded.path;
-  } else {
-    state.endPath = uploaded.path;
-  }
+  state[slot.pathKey] = uploaded.path;
   setImagePreview(kind, mediaUrl(uploaded.path));
   status.textContent = uploaded.name;
+  if (kind === "motion_ref") updateMotionRunAvailability();
 }
 
 // --- Casting tab ---
@@ -2914,6 +3852,7 @@ async function loadConfig() {
   refreshCastingLibrary();
   updateWorkflowFields();
   updateSizeReadout();
+  updateMotionSizeReadout();
   resetPrompt();
   await loadHistory();
   startHistoryRefresh();
@@ -2929,7 +3868,11 @@ $("workflowSelect").addEventListener("change", () => {
 $("cameraWorkspaceTab").addEventListener("click", () => setWorkspace("camera"));
 $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director"));
 $("castingWorkspaceTab").addEventListener("click", () => { setWorkspace("casting", { syncWorkflow: false }); refreshCastingLibrary(); });
+$("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));
 $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
+$("motionTextTab").addEventListener("click", () => setMotionSubtab("text"));
+$("motionScailTab").addEventListener("click", () => setMotionSubtab("scail"));
+$("motion3dTab").addEventListener("click", () => setMotionSubtab("3d"));
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);
 $("castingGenerateBtn").addEventListener("click", generateCasting);
@@ -2954,6 +3897,45 @@ $("endInput").addEventListener("change", () => uploadImage($("endInput").files[0
   state.endPath = "";
   $("endStatus").textContent = err.message;
 }));
+$("motionRefInput").addEventListener("change", () => uploadImage($("motionRefInput").files[0], "motion_ref").catch((err) => {
+  state.motionRefPath = "";
+  $("motionRefStatus").textContent = err.message;
+  updateMotionRunAvailability();
+}));
+$("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($("motionGuideInput").files[0]).catch((err) => {
+  state.motionGuideVideoPath = "";
+  $("motionGuideUploadStatus").textContent = err.message;
+  updateMotionRunAvailability();
+}));
+for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
+  $(id).addEventListener("input", () => {
+    if (id === "motionTrimStartRange") $("motionTrimStart").value = $("motionTrimStartRange").value;
+    if (id === "motionTrimEndRange") $("motionTrimEnd").value = $("motionTrimEndRange").value;
+    updateMotionTrimDisplay(id);
+  });
+}
+$("motionGuide").addEventListener("loadedmetadata", () => {
+  setMotionTrimBounds($("motionGuide").duration || motionGuideDurationFallback(), true);
+});
+$("motionGuide").addEventListener("timeupdate", () => {
+  if (!state.motionTrimPlaying) return;
+  const { end } = motionTrimValues();
+  if ($("motionGuide").currentTime >= end) {
+    $("motionGuide").pause();
+    state.motionTrimPlaying = false;
+  }
+});
+$("motionGuide").addEventListener("pause", () => {
+  state.motionTrimPlaying = false;
+});
+$("motionTrimSetStart").addEventListener("click", () => {
+  setMotionTrimBoundaryFromPlayhead("start");
+});
+$("motionTrimSetEnd").addEventListener("click", () => {
+  setMotionTrimBoundaryFromPlayhead("end");
+});
+$("motionTrimPlay").addEventListener("click", playMotionTrim);
+$("motionTrimReset").addEventListener("click", () => setMotionTrimBounds(motionGuideDurationFallback(), true));
 $("swapSourceEndBtn").addEventListener("click", () => swapImageSlots("source", "end"));
 $("swapSourceMiddleBtn").addEventListener("click", () => swapImageSlots("source", "middle"));
 $("swapMiddleEndBtn").addEventListener("click", () => swapImageSlots("middle", "end"));
@@ -2972,12 +3954,32 @@ $("audioLibrarySelect").addEventListener("change", () => {
 $("sizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "sizePreset", scaleId: "sizeScale", sizeId: "customSizeInput" }));
 $("sizeScale").addEventListener("input", updateSizeReadout);
 $("customSizeInput").addEventListener("input", onCustomSizeInput);
+$("motionSizePreset").addEventListener("change", () => {
+  $("motionCustomSizeInput").value = $("motionSizePreset").value;
+  updateMotionSizeReadout();
+});
+$("motionSizeScale").addEventListener("input", updateMotionSizeReadout);
+$("motionCustomSizeInput").addEventListener("input", updateMotionSizeReadout);
+$("motionPoseStrength").addEventListener("input", () => {
+  $("motionPoseReadout").textContent = Number($("motionPoseStrength").value).toFixed(2);
+});
+$("motionCfg").addEventListener("input", () => {
+  $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
+});
+$("motionDuration").addEventListener("input", () => {
+  if (!hasMotionGuideVideo()) setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
+});
 $("directorSizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }));
 $("directorSizeScale").addEventListener("input", updateSizeReadout);
 $("directorCustomSizeInput").addEventListener("input", onCustomSizeInput);
 $("resetPromptsBtn").addEventListener("click", resetPrompt);
 $("refreshBtn").addEventListener("click", loadConfig);
 $("runBtn").addEventListener("click", startBatch);
+$("motionGuideBtn").addEventListener("click", startMotionGuide);
+$("motionRunBtn").addEventListener("click", startMotionFinal);
+$("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt().catch((err) => {
+  $("motionStatus").textContent = err.message;
+}));
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
 $("addDirectorAudioBtn").addEventListener("click", openDirectorAudioModal);
 $("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);

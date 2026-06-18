@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.worktrees/
+tools/blender-*/
+tools/*.zip
+*.log
+.env
+.env.*

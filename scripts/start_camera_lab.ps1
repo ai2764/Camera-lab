@@ -29,7 +29,9 @@ if (Test-Path $envPath) {
         $name, $value = $line.Split("=", 2)
         $name = $name.Trim()
         $value = $value.Trim().Trim('"').Trim("'")
-        if ($name -and !(Get-Item "Env:$name" -ErrorAction SilentlyContinue)) {
+        # .env is the source of truth for the start script: override stale session
+        # vars (e.g. a COMFYUI_URL left from an earlier run) so .env edits apply.
+        if ($name) {
             Set-Item "Env:$name" $value
         }
     }
