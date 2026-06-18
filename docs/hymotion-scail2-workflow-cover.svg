@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">HY-Motion and SCAIL2 Workflow Cover</title>
+  <desc id="desc">A 16:9 presentation cover for the HY-Motion plus SCAIL2 video generation workflow.</desc>
+  <defs>
+    <radialGradient id="hotspot" cx="58%" cy="44%" r="62%">
+      <stop offset="0" stop-color="#263333"/>
+      <stop offset="0.48" stop-color="#101a1c"/>
+      <stop offset="1" stop-color="#050909"/>
+    </radialGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#93f6d7"/>
+      <stop offset="1" stop-color="#37b8d6"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7d46f"/>
+      <stop offset="1" stop-color="#ec9753"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c1acff"/>
+      <stop offset="1" stop-color="#659cff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#182321" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#0d1118" stop-opacity="0.88"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowTeal" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L14,8 L2,14 Z" fill="#8ef7d5"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L14,8 L2,14 Z" fill="#f5c96c"/>
+    </marker>
+    <style>
+      .title { font: 900 86px "Segoe UI", Arial, sans-serif; fill: #fbf6e7; }
+      .subtitle { font: 500 27px "Segoe UI", Arial, sans-serif; fill: #aebdb8; }
+      .eyebrow { font: 850 17px "Segoe UI", Arial, sans-serif; fill: #8ef7d5; letter-spacing: 2.4px; }
+      .label { font: 850 24px "Segoe UI", Arial, sans-serif; fill: #fff4df; }
+      .small { font: 650 17px "Segoe UI", Arial, sans-serif; fill: #aab9b4; }
+      .mono { font: 750 16px "Cascadia Mono", Consolas, monospace; fill: #d9e8df; }
+      .chip { font: 850 15px "Segoe UI", Arial, sans-serif; fill: #07100f; }
+      .panel { fill: url(#glass); stroke: #2b3d3a; stroke-width: 1.5; }
+      .node { fill: #090f10; stroke: #344843; stroke-width: 1.2; }
+      .grid { stroke: #38534e; stroke-width: 1; opacity: 0.22; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#hotspot)"/>
+  <g>
+    <path class="grid" d="M0 120H1920M0 240H1920M0 360H1920M0 480H1920M0 600H1920M0 720H1920M0 840H1920M0 960H1920"/>
+    <path class="grid" d="M120 0V1080M240 0V1080M360 0V1080M480 0V1080M600 0V1080M720 0V1080M840 0V1080M960 0V1080M1080 0V1080M1200 0V1080M1320 0V1080M1440 0V1080M1560 0V1080M1680 0V1080M1800 0V1080"/>
+  </g>
+
+  <g opacity="0.42" filter="url(#glow)">
+    <circle cx="1298" cy="344" r="212" fill="#1a776f"/>
+    <circle cx="1534" cy="594" r="250" fill="#7b5520"/>
+    <circle cx="940" cy="681" r="180" fill="#39497f"/>
+  </g>
+
+  <g transform="translate(92 88)">
+    <text class="eyebrow" x="0" y="0">CAMERA LAB LOCAL VIDEO PIPELINE</text>
+    <text class="title" x="0" y="92">HY-Motion + SCAIL2</text>
+    <text class="subtitle" x="4" y="142">Text-guided motion synthesis into reference-driven final video rendering</text>
+  </g>
+
+  <g transform="translate(94 812)">
+    <rect x="0" y="0" width="718" height="96" rx="28" fill="#0a1112" stroke="#2c3f3b"/>
+    <text class="mono" x="34" y="38">Stage A: HY-Motion creates the guide video</text>
+    <text class="mono" x="34" y="67">Stage B: SCAIL2 drives the final video from image + guide</text>
+  </g>
+
+  <g transform="translate(420 330)" filter="url(#shadow)">
+    <rect class="panel" x="0" y="0" width="1080" height="360" rx="36"/>
+    <g transform="translate(62 82)">
+      <rect class="node" x="0" y="0" width="205" height="196" rx="26"/>
+      <rect x="28" y="28" width="88" height="30" rx="15" fill="url(#teal)"/>
+      <text class="chip" x="48" y="49">INPUT</text>
+      <text class="label" x="28" y="96">Text Prompt</text>
+      <text class="small" x="28" y="130">Motion intent</text>
+      <text class="small" x="28" y="156">Duration</text>
+      <text class="small" x="28" y="182">Seed</text>
+    </g>
+
+    <g transform="translate(354 82)">
+      <rect class="node" x="0" y="0" width="205" height="196" rx="26"/>
+      <rect x="28" y="28" width="120" height="30" rx="15" fill="url(#teal)"/>
+      <text class="chip" x="48" y="49">STAGE A</text>
+      <text class="label" x="28" y="96">HY-Motion</text>
+      <text class="small" x="28" y="130">Encode text</text>
+      <text class="small" x="28" y="156">Generate motion</text>
+      <text class="small" x="28" y="182">Save guide</text>
+    </g>
+
+    <g transform="translate(646 82)">
+      <rect class="node" x="0" y="0" width="205" height="196" rx="26"/>
+      <rect x="28" y="28" width="120" height="30" rx="15" fill="url(#amber)"/>
+      <text class="chip" x="48" y="49">STAGE B</text>
+      <text class="label" x="28" y="96">SCAIL2</text>
+      <text class="small" x="28" y="130">Reference image</text>
+      <text class="small" x="28" y="156">Guide video</text>
+      <text class="small" x="28" y="182">WanSCAILToVideo</text>
+    </g>
+
+    <g transform="translate(886 82)">
+      <rect class="node" x="0" y="0" width="132" height="196" rx="26"/>
+      <rect x="24" y="26" width="84" height="30" rx="15" fill="url(#violet)"/>
+      <text class="chip" x="42" y="47">FINAL</text>
+      <rect x="26" y="82" width="80" height="96" rx="12" fill="#0f1719" stroke="#4a6460"/>
+      <path d="M45 116 L45 144 L76 130 Z" fill="#f9f1de"/>
+    </g>
+
+    <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-width="5">
+      <path d="M282 180 C315 180 315 180 350 180" stroke="#8ef7d5" marker-end="url(#arrowTeal)"/>
+      <path d="M574 180 C607 180 607 180 642 180" stroke="#8ef7d5" marker-end="url(#arrowTeal)"/>
+      <path d="M866 180 C878 180 878 180 884 180" stroke="#f5c96c" marker-end="url(#arrowAmber)"/>
+    </g>
+  </g>
+
+  <g transform="translate(1330 110)" filter="url(#shadow)">
+    <rect x="0" y="0" width="452" height="120" rx="30" fill="#091011" stroke="#2f4540"/>
+    <text class="eyebrow" x="34" y="42">BACKEND ORCHESTRATION</text>
+    <text class="mono" x="34" y="78">Python server → ComfyUI HTTP → outputs</text>
+  </g>
+
+  <g transform="translate(1238 756)" filter="url(#shadow)">
+    <rect x="0" y="0" width="548" height="150" rx="32" fill="#091011" stroke="#2f4540"/>
+    <text class="eyebrow" x="34" y="44">WORKFLOW TEMPLATES</text>
+    <text class="mono" x="34" y="84">hymotion_guide.api.json</text>
+    <text class="mono" x="34" y="116">scail2_video.api.json</text>
+  </g>
+
+  <g transform="translate(92 994)">
+    <text class="small" x="0" y="0">Camera Lab Motion Tab / Local ComfyUI Workflow Cover</text>
+  </g>
+</svg>
