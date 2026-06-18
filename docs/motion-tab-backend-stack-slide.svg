@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Camera Lab Motion Backend Technology Stack</title>
+  <desc id="desc">Backend-focused architecture diagram for Camera Lab Motion tab, covering API endpoints, Python orchestration, workflow builders, media processing, ComfyUI, storage, and result serving.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07100f"/>
+      <stop offset="0.52" stop-color="#0b1518"/>
+      <stop offset="1" stop-color="#11141d"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16231f"/>
+      <stop offset="1" stop-color="#111923"/>
+    </linearGradient>
+    <linearGradient id="api" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7ff1d2"/>
+      <stop offset="1" stop-color="#42b5cf"/>
+    </linearGradient>
+    <linearGradient id="worker" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5cb66"/>
+      <stop offset="1" stop-color="#ee9851"/>
+    </linearGradient>
+    <linearGradient id="asset" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b7a6ff"/>
+      <stop offset="1" stop-color="#75a7ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.9" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowApi" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#7ff1d2"/>
+    </marker>
+    <marker id="arrowWorker" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#f5cb66"/>
+    </marker>
+    <marker id="arrowAsset" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#9eb8ff"/>
+    </marker>
+    <style>
+      .title { font: 800 60px "Segoe UI", Arial, sans-serif; fill: #f8f4e8; }
+      .subtitle { font: 500 22px "Segoe UI", Arial, sans-serif; fill: #aab9b5; }
+      .eyebrow { font: 800 15px "Segoe UI", Arial, sans-serif; fill: #8ef7d5; letter-spacing: 1.8px; }
+      .panel-title { font: 800 30px "Segoe UI", Arial, sans-serif; fill: #fff9eb; }
+      .section-title { font: 800 21px "Segoe UI", Arial, sans-serif; fill: #fff3d5; }
+      .body { font: 560 18px "Segoe UI", Arial, sans-serif; fill: #d5ded9; }
+      .small { font: 600 15px "Segoe UI", Arial, sans-serif; fill: #a9b7b4; }
+      .mono { font: 700 15px "Cascadia Mono", Consolas, monospace; fill: #dce8e0; }
+      .chip { font: 800 14px "Segoe UI", Arial, sans-serif; fill: #08100f; }
+      .panel { fill: url(#core); stroke: #2b3d3a; stroke-width: 1.5; }
+      .node { fill: #0a1112; stroke: #2a3b38; stroke-width: 1.2; }
+      .node-soft { fill: #10171a; stroke: #354945; stroke-width: 1.2; }
+      .rule { stroke: #2e403d; stroke-width: 1.2; }
+      .grid { stroke: #314743; stroke-width: 1; opacity: 0.28; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <g>
+    <path class="grid" d="M0 120H1920M0 240H1920M0 360H1920M0 480H1920M0 600H1920M0 720H1920M0 840H1920M0 960H1920"/>
+    <path class="grid" d="M120 0V1080M240 0V1080M360 0V1080M480 0V1080M600 0V1080M720 0V1080M840 0V1080M960 0V1080M1080 0V1080M1200 0V1080M1320 0V1080M1440 0V1080M1560 0V1080M1680 0V1080M1800 0V1080"/>
+  </g>
+
+  <g transform="translate(76 62)">
+    <text class="eyebrow" x="0" y="0">BACKEND-CENTERED VIEW</text>
+    <text class="title" x="0" y="72">Camera Lab Motion Backend Stack</text>
+    <text class="subtitle" x="4" y="112">The Motion tab is mostly a local orchestration layer: browser requests enter Python, Python prepares media and workflows, ComfyUI renders, Camera Lab serves results.</text>
+  </g>
+
+  <g transform="translate(70 220)" filter="url(#shadow)">
+    <rect class="panel" x="0" y="0" width="355" height="645" rx="26"/>
+    <rect x="28" y="30" width="112" height="32" rx="16" fill="url(#api)"/>
+    <text class="chip" x="52" y="52">CLIENT</text>
+    <text class="panel-title" x="28" y="112">Motion UI</text>
+    <text class="small" x="30" y="144">Thin browser layer, backend-owned work</text>
+    <line class="rule" x1="28" y1="174" x2="327" y2="174"/>
+
+    <g transform="translate(28 205)">
+      <rect class="node" x="0" y="0" width="299" height="86" rx="16"/>
+      <text class="section-title" x="20" y="34">Text to Motion</text>
+      <text class="small" x="20" y="62">Prompt, duration, seed, trim values</text>
+    </g>
+    <g transform="translate(28 313)">
+      <rect class="node" x="0" y="0" width="299" height="86" rx="16"/>
+      <text class="section-title" x="20" y="34">SCAIL2</text>
+      <text class="small" x="20" y="62">Guide video, reference image, render params</text>
+    </g>
+    <g transform="translate(28 421)">
+      <rect class="node" x="0" y="0" width="299" height="106" rx="16"/>
+      <text class="section-title" x="20" y="34">3D Motion</text>
+      <text class="small" x="20" y="62">RGB and mask capture</text>
+      <text class="small" x="20" y="86">Drive video for SCAIL2</text>
+    </g>
+    <g transform="translate(28 555)">
+      <text class="mono" x="0" y="0">frontend/app.js</text>
+      <text class="mono" x="0" y="28">apps/3dmotion</text>
+    </g>
+  </g>
+
+  <g transform="translate(515 184)" filter="url(#shadow)">
+    <rect class="panel" x="0" y="0" width="625" height="735" rx="30"/>
+    <rect x="34" y="34" width="154" height="34" rx="17" fill="url(#api)"/>
+    <text class="chip" x="65" y="57">PYTHON BE</text>
+    <text class="panel-title" x="34" y="118">Camera Lab Server</text>
+    <text class="small" x="36" y="150">server/camera_lab_server.py</text>
+    <line class="rule" x1="34" y1="184" x2="591" y2="184"/>
+
+    <g transform="translate(34 215)">
+      <rect class="node-soft" x="0" y="0" width="557" height="118" rx="18"/>
+      <text class="section-title" x="24" y="36">API Layer</text>
+      <text class="mono" x="24" y="67">/api/text-to-motion-guide</text>
+      <text class="mono" x="280" y="67">/api/text-to-motion-final</text>
+      <text class="mono" x="24" y="95">/api/text-to-motion-video-final</text>
+      <text class="mono" x="312" y="95">/api/batches/{id}</text>
+    </g>
+
+    <g transform="translate(34 360)">
+      <rect class="node-soft" x="0" y="0" width="263" height="136" rx="18"/>
+      <text class="section-title" x="22" y="36">Media Prep</text>
+      <text class="small" x="22" y="66">Upload image and video</text>
+      <text class="small" x="22" y="92">Trim guide video with FFmpeg</text>
+      <text class="small" x="22" y="118">Copy files into ComfyUI input</text>
+    </g>
+
+    <g transform="translate(328 360)">
+      <rect class="node-soft" x="0" y="0" width="263" height="136" rx="18"/>
+      <text class="section-title" x="22" y="36">Batch Runtime</text>
+      <text class="small" x="22" y="66">Create run folders</text>
+      <text class="small" x="22" y="92">Track status and elapsed time</text>
+      <text class="small" x="22" y="118">Serve previews and downloads</text>
+    </g>
+
+    <g transform="translate(34 523)">
+      <rect class="node-soft" x="0" y="0" width="557" height="126" rx="18"/>
+      <text class="section-title" x="24" y="36">Workflow Builders</text>
+      <text class="small" x="24" y="66">Patch JSON templates with prompt, seed, size, guide video, reference image, and pose strength</text>
+      <text class="mono" x="24" y="98">build_hymotion_api()</text>
+      <text class="mono" x="274" y="98">build_scail_api()</text>
+    </g>
+
+    <g transform="translate(34 674)">
+      <rect x="0" y="0" width="557" height="34" rx="17" fill="#0a1112" stroke="#304541"/>
+      <text class="mono" x="18" y="23">MOTION_COMFY_URL → ComfyUI HTTP</text>
+    </g>
+  </g>
+
+  <g transform="translate(1230 220)" filter="url(#shadow)">
+    <rect class="panel" x="0" y="0" width="620" height="645" rx="26"/>
+    <rect x="30" y="30" width="148" height="32" rx="16" fill="url(#worker)"/>
+    <text class="chip" x="60" y="52">WORKERS</text>
+    <text class="panel-title" x="30" y="112">ComfyUI Render Layer</text>
+    <text class="small" x="32" y="144">Local ComfyUI instance with HY-Motion and SCAIL2 custom nodes</text>
+    <line class="rule" x1="30" y1="174" x2="590" y2="174"/>
+
+    <g transform="translate(30 205)">
+      <rect class="node" x="0" y="0" width="560" height="128" rx="18"/>
+      <text class="section-title" x="24" y="38">HY-Motion Guide Stage</text>
+      <text class="small" x="24" y="68">Turns text prompts into motion guide videos</text>
+      <text class="mono" x="24" y="100">HYMotionEncodeText → HYMotionGenerate → SaveVideo</text>
+    </g>
+
+    <g transform="translate(30 363)">
+      <rect class="node" x="0" y="0" width="560" height="128" rx="18"/>
+      <text class="section-title" x="24" y="38">SCAIL2 Final Video Stage</text>
+      <text class="small" x="24" y="68">Combines reference image and motion guide into final video</text>
+      <text class="mono" x="24" y="100">LoadImage + LoadVideo → WanSCAILToVideo → KSampler</text>
+    </g>
+
+    <g transform="translate(30 521)">
+      <rect class="node" x="0" y="0" width="560" height="76" rx="18"/>
+      <text class="section-title" x="24" y="34">ComfyUI API</text>
+      <text class="mono" x="24" y="58">/prompt  /history  /view</text>
+    </g>
+  </g>
+
+  <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-width="4">
+    <path d="M425 468 C470 468 470 468 515 468" stroke="#7ff1d2" marker-end="url(#arrowApi)"/>
+    <path d="M425 576 C470 576 470 576 515 576" stroke="#7ff1d2" marker-end="url(#arrowApi)"/>
+    <path d="M425 705 C470 705 470 705 515 705" stroke="#9eb8ff" marker-end="url(#arrowAsset)"/>
+    <path d="M1140 535 C1185 535 1185 535 1230 535" stroke="#f5cb66" marker-end="url(#arrowWorker)"/>
+    <path d="M1535 865 C1535 925 1265 943 1100 943" stroke="#f5cb66" marker-end="url(#arrowWorker)"/>
+  </g>
+
+  <g transform="translate(175 945)" filter="url(#shadow)">
+    <rect x="0" y="0" width="1570" height="86" rx="26" fill="#0a1112" stroke="#2c403c"/>
+    <rect x="28" y="27" width="108" height="32" rx="16" fill="url(#asset)"/>
+    <text class="chip" x="55" y="49">FILES</text>
+    <text class="body" x="166" y="36">Persistent artifacts</text>
+    <text class="small" x="166" y="62">tasks/camera_lab_runs, uploaded inputs, copied ComfyUI outputs, generated contact sheets, preview URLs, reusable run parameters</text>
+    <path d="M1145 18 V68" class="rule"/>
+    <text class="mono" x="1182" y="51">/media?path=...</text>
+  </g>
+
+  <g transform="translate(76 1038)">
+    <text class="mono" x="0" y="0">Text-to-Motion and SCAIL2 are backend-orchestrated; 3D Motion supplies captured drive video into the same final rendering path.</text>
+  </g>
+</svg>

@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Camera Lab Motion Tab Technology Stack</title>
+  <desc id="desc">A slide diagram explaining the frontend, backend, ComfyUI, and media pipeline used by the Camera Lab Motion tab.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07100f"/>
+      <stop offset="0.48" stop-color="#0d1518"/>
+      <stop offset="1" stop-color="#11141d"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14201e"/>
+      <stop offset="1" stop-color="#10161b"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8ef7d5"/>
+      <stop offset="1" stop-color="#49b7ce"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6d06a"/>
+      <stop offset="1" stop-color="#f0a64c"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b6a4ff"/>
+      <stop offset="1" stop-color="#6a9dff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <filter id="lineGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowTeal" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#8ef7d5"/>
+    </marker>
+    <marker id="arrowGold" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#f6c765"/>
+    </marker>
+    <marker id="arrowViolet" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#9eb3ff"/>
+    </marker>
+    <style>
+      .title { font: 800 64px "Segoe UI", Arial, sans-serif; fill: #f7f4e8; }
+      .subtitle { font: 500 22px "Segoe UI", Arial, sans-serif; fill: #a9b8b4; }
+      .eyebrow { font: 800 16px "Segoe UI", Arial, sans-serif; fill: #8ef7d5; letter-spacing: 1.8px; }
+      .card-title { font: 800 31px "Segoe UI", Arial, sans-serif; fill: #fff9eb; }
+      .card-sub { font: 600 17px "Segoe UI", Arial, sans-serif; fill: #a7b9b8; }
+      .body { font: 500 20px "Segoe UI", Arial, sans-serif; fill: #d6ddd8; }
+      .small { font: 600 16px "Segoe UI", Arial, sans-serif; fill: #aab6b5; }
+      .mono { font: 700 17px "Cascadia Mono", Consolas, monospace; fill: #dbe7df; }
+      .chip { font: 800 15px "Segoe UI", Arial, sans-serif; fill: #09100f; }
+      .muted { fill: #76837f; }
+      .panel { fill: url(#panel); stroke: #293937; stroke-width: 1.5; }
+      .inner { fill: #0a1112; stroke: #263533; stroke-width: 1.3; }
+      .rule { stroke: #2e403d; stroke-width: 1.3; }
+      .thin { stroke: #36504c; stroke-width: 1; opacity: 0.58; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <g opacity="0.34">
+    <path d="M0 126H1920M0 252H1920M0 378H1920M0 504H1920M0 630H1920M0 756H1920M0 882H1920M0 1008H1920" class="thin"/>
+    <path d="M120 0V1080M240 0V1080M360 0V1080M480 0V1080M600 0V1080M720 0V1080M840 0V1080M960 0V1080M1080 0V1080M1200 0V1080M1320 0V1080M1440 0V1080M1560 0V1080M1680 0V1080M1800 0V1080" class="thin"/>
+  </g>
+
+  <g transform="translate(80 64)">
+    <text class="eyebrow" x="0" y="0">CAMERA LAB / MOTION WORKSPACE</text>
+    <text class="title" x="0" y="74">Motion Tab Technology Stack</text>
+    <text class="subtitle" x="4" y="114">Text-to-motion guide generation, direct SCAIL2 video driving, and embedded 3D motion capture in one local workflow.</text>
+  </g>
+
+  <g transform="translate(1440 62)">
+    <rect x="0" y="0" width="382" height="102" rx="22" fill="#0b1315" stroke="#2c3f3c"/>
+    <circle cx="50" cy="51" r="18" fill="url(#teal)"/>
+    <circle cx="102" cy="51" r="18" fill="url(#gold)"/>
+    <circle cx="154" cy="51" r="18" fill="url(#violet)"/>
+    <text class="small" x="194" y="44">Local browser UI</text>
+    <text class="small" x="194" y="72">Python server + ComfyUI</text>
+  </g>
+
+  <g transform="translate(78 230)" filter="url(#softShadow)">
+    <rect class="panel" x="0" y="0" width="520" height="610" rx="28"/>
+    <rect x="28" y="30" width="126" height="34" rx="17" fill="url(#teal)"/>
+    <text class="chip" x="52" y="53">SUBTAB 01</text>
+    <text class="card-title" x="28" y="110">Text to Motion</text>
+    <text class="card-sub" x="30" y="142">Prompt-driven motion guide generation</text>
+
+    <line class="rule" x1="28" y1="177" x2="492" y2="177"/>
+
+    <g transform="translate(30 210)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Frontend</text>
+      <text class="small" x="24" y="62">Vanilla JS controls, prompt input, seed, duration, trim UI</text>
+    </g>
+    <g transform="translate(30 316)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Stage A Workflow</text>
+      <text class="small" x="24" y="62">HYMotionEncodeText → HYMotionGenerate → SaveVideo</text>
+    </g>
+    <g transform="translate(30 422)">
+      <rect class="inner" x="0" y="0" width="458" height="114" rx="16"/>
+      <text class="body" x="24" y="35">Output</text>
+      <text class="small" x="24" y="64">Motion guide video stored in camera_lab_runs</text>
+      <text class="small" x="24" y="91">Can be reused by SCAIL2 final rendering</text>
+    </g>
+  </g>
+
+  <g transform="translate(700 230)" filter="url(#softShadow)">
+    <rect class="panel" x="0" y="0" width="520" height="610" rx="28"/>
+    <rect x="28" y="30" width="126" height="34" rx="17" fill="url(#gold)"/>
+    <text class="chip" x="52" y="53">SUBTAB 02</text>
+    <text class="card-title" x="28" y="110">SCAIL2 Video</text>
+    <text class="card-sub" x="30" y="142">Reference image plus motion video to final clip</text>
+
+    <line class="rule" x1="28" y1="177" x2="492" y2="177"/>
+
+    <g transform="translate(30 210)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Inputs</text>
+      <text class="small" x="24" y="62">Reference image, guide video, frame size, steps, seed</text>
+    </g>
+    <g transform="translate(30 316)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Stage B Workflow</text>
+      <text class="small" x="24" y="62">LoadImage + LoadVideo → WanSCAILToVideo → KSampler</text>
+    </g>
+    <g transform="translate(30 422)">
+      <rect class="inner" x="0" y="0" width="458" height="114" rx="16"/>
+      <text class="body" x="24" y="35">Output</text>
+      <text class="small" x="24" y="64">Final preview card with accumulated generated videos</text>
+      <text class="small" x="24" y="91">Same setup can restore image, guide, and parameters</text>
+    </g>
+  </g>
+
+  <g transform="translate(1322 230)" filter="url(#softShadow)">
+    <rect class="panel" x="0" y="0" width="520" height="610" rx="28"/>
+    <rect x="28" y="30" width="126" height="34" rx="17" fill="url(#violet)"/>
+    <text class="chip" x="52" y="53">SUBTAB 03</text>
+    <text class="card-title" x="28" y="110">3D Motion</text>
+    <text class="card-sub" x="30" y="142">Interactive action editing and canvas capture</text>
+
+    <line class="rule" x1="28" y1="177" x2="492" y2="177"/>
+
+    <g transform="translate(30 210)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Embedded App</text>
+      <text class="small" x="24" y="62">React 19, Vite, Three.js, OrbitControls, GLTFLoader</text>
+    </g>
+    <g transform="translate(30 316)">
+      <rect class="inner" x="0" y="0" width="458" height="84" rx="16"/>
+      <text class="body" x="24" y="35">Action System</text>
+      <text class="small" x="24" y="62">Mesh2Motion GLB clips, timeline, camera, RGB and mask</text>
+    </g>
+    <g transform="translate(30 422)">
+      <rect class="inner" x="0" y="0" width="458" height="114" rx="16"/>
+      <text class="body" x="24" y="35">Capture</text>
+      <text class="small" x="24" y="64">MediaRecorder with canvas.captureStream at 30 fps</text>
+      <text class="small" x="24" y="91">Drive video can feed the same SCAIL2 path</text>
+    </g>
+  </g>
+
+  <g filter="url(#lineGlow)" fill="none" stroke-linecap="round">
+    <path d="M598 535 C650 535 650 535 700 535" stroke="#8ef7d5" stroke-width="4" marker-end="url(#arrowTeal)"/>
+    <path d="M1220 535 C1272 535 1272 535 1322 535" stroke="#f6c765" stroke-width="4" marker-end="url(#arrowGold)"/>
+  </g>
+
+  <g transform="translate(175 888)" filter="url(#softShadow)">
+    <rect x="0" y="0" width="1570" height="128" rx="28" fill="#0a1112" stroke="#2b3c39"/>
+    <text class="eyebrow" x="34" y="40">SHARED LOCAL RUNTIME</text>
+    <text class="body" x="34" y="78">Camera Lab Python server</text>
+    <text class="small" x="34" y="104">Uploads, batch polling, workflow builders, FFmpeg trimming, output copying, contact sheets</text>
+
+    <path d="M505 34 V102" class="rule"/>
+    <text class="body" x="540" y="78">ComfyUI HTTP API</text>
+    <text class="small" x="540" y="104">/prompt, /history, /view, input folder, output folder</text>
+
+    <path d="M955 34 V102" class="rule"/>
+    <text class="body" x="990" y="78">Workflow Templates</text>
+    <text class="small" x="990" y="104">HY-Motion guide JSON and SCAIL2 video JSON</text>
+  </g>
+
+  <g transform="translate(114 854)">
+    <path d="M225 0 C225 34 225 34 225 34" stroke="#8ef7d5" stroke-width="4" marker-end="url(#arrowTeal)" fill="none"/>
+    <path d="M845 0 C845 34 845 34 845 34" stroke="#f6c765" stroke-width="4" marker-end="url(#arrowGold)" fill="none"/>
+    <path d="M1467 0 C1467 34 1467 34 1467 34" stroke="#9eb3ff" stroke-width="4" marker-end="url(#arrowViolet)" fill="none"/>
+  </g>
+
+  <g transform="translate(80 1038)">
+    <text class="mono" x="0" y="0">frontend/index.html</text>
+    <text class="muted small" x="210" y="0">+</text>
+    <text class="mono" x="235" y="0">frontend/app.js</text>
+    <text class="muted small" x="395" y="0">+</text>
+    <text class="mono" x="420" y="0">apps/3dmotion</text>
+    <text class="muted small" x="590" y="0">+</text>
+    <text class="mono" x="615" y="0">server/camera_lab_server.py</text>
+    <text class="muted small" x="900" y="0">+</text>
+    <text class="mono" x="925" y="0">ComfyUI HY-Motion and SCAIL2 custom nodes</text>
+  </g>
+</svg>
