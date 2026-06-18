@@ -1015,93 +1015,96 @@ export function App() {
     void loadNodeMotionGuide();
   }, [stageApi]);
 
-  return (
-    <main className="app-shell">
-      <aside className="action-sidebar">
-        <div className="panel-header">
-          <p className="eyebrow">Action Library</p>
-          <button className="ghost-button" type="button" onClick={resetTimeline}>
-            <RefreshCcw size={15} />
-            Reset
-          </button>
-        </div>
-
-        <div className="clip-grid">
-          {importedClips.map((item) => (
-            <button key={item.id} className="clip-button" type="button" onClick={() => addClip(item.id, item.duration)}>
-              <Plus size={14} />
-              {item.name}
-            </button>
+  const generatedVideosPanel = (
+    <section className="stage-results" aria-label="Generated videos">
+      <div className="stage-results-header">
+        <p className="eyebrow">Generated videos</p>
+        <span>{scailOutputs.length} saved</span>
+      </div>
+      {scailOutputs.length > 0 ? (
+        <div className="stage-result-strip">
+          {scailOutputs.map((item, index) => (
+            <article className="stage-result-card" key={item.id}>
+              <div className="preview-heading">
+                <Video size={14} />
+                <span>{index === 0 ? 'Latest final' : `Final ${scailOutputs.length - index}`}</span>
+              </div>
+              <video className="stage-result-video" src={item.url} controls playsInline preload="metadata">
+                <a href={item.url}>Open generated video</a>
+              </video>
+              <button className="download-button" type="button" onClick={() => downloadUrl(item.url, item.filename)}>
+                <Download size={15} />
+                {item.filename}
+              </button>
+            </article>
           ))}
         </div>
-      </aside>
+      ) : (
+        <div className="stage-results-empty">Generated final videos appear here.</div>
+      )}
+    </section>
+  );
 
-      <section className="stage-panel">
-        <div className="stage-toolbar">
-          <div>
-            <p className="eyebrow">SCAIL-2 Driving Source</p>
-            <h1>3D Motion Stage</h1>
-          </div>
-          <div className="transport">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => (isPlaying ? stageApi.current?.pause() : stageApi.current?.play())}
-              title={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-            </button>
-            <button className="icon-button" type="button" onClick={() => stageApi.current?.reset()} title="Reset playhead">
-              <RotateCcw size={18} />
-            </button>
-            <button className="primary-button" type="button" onClick={() => void recordTake()} disabled={recordTakeControl.disabled}>
-              {recordTakeControl.icon === 'square' ? <Square size={17} /> : <Video size={17} />}
-              {recordTakeControl.label}
+  return (
+    <main className="app-page">
+      <div className="app-shell">
+        <aside className="action-sidebar">
+          <div className="panel-header">
+            <p className="eyebrow">Action Library</p>
+            <button className="ghost-button" type="button" onClick={resetTimeline}>
+              <RefreshCcw size={15} />
+              Reset
             </button>
           </div>
-        </div>
 
-        <div className="stage-wrap" ref={mountRef} />
-        {stageError && <div className="stage-error">WebGL failed: {stageError}</div>}
-
-        <div className="time-strip">
-          <span>{currentTime.toFixed(2)}s</span>
-          <div className="rail">
-            <div className="rail-fill" style={{ width: `${clamp((currentTime / duration) * 100, 0, 100)}%` }} />
+          <div className="clip-grid">
+            {importedClips.map((item) => (
+              <button key={item.id} className="clip-button" type="button" onClick={() => addClip(item.id, item.duration)}>
+                <Plus size={14} />
+                {item.name}
+              </button>
+            ))}
           </div>
-          <span>{duration.toFixed(2)}s</span>
-        </div>
+        </aside>
 
-        <div className="stage-results">
-          <div className="stage-results-header">
-            <p className="eyebrow">Generated videos</p>
-            <span>{scailOutputs.length} saved</span>
-          </div>
-          {scailOutputs.length > 0 ? (
-            <div className="stage-result-strip">
-              {scailOutputs.map((item, index) => (
-                <article className="stage-result-card" key={item.id}>
-                  <div className="preview-heading">
-                    <Video size={14} />
-                    <span>{index === 0 ? 'Latest final' : `Final ${scailOutputs.length - index}`}</span>
-                  </div>
-                  <video className="stage-result-video" src={item.url} controls playsInline preload="metadata">
-                    <a href={item.url}>Open generated video</a>
-                  </video>
-                  <button className="download-button" type="button" onClick={() => downloadUrl(item.url, item.filename)}>
-                    <Download size={15} />
-                    {item.filename}
-                  </button>
-                </article>
-              ))}
+        <section className="stage-panel">
+          <div className="stage-toolbar">
+            <div>
+              <p className="eyebrow">SCAIL-2 Driving Source</p>
+              <h1>3D Motion Stage</h1>
             </div>
-          ) : (
-            <div className="stage-results-empty">Generated final videos appear here.</div>
-          )}
-        </div>
-      </section>
+            <div className="transport">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => (isPlaying ? stageApi.current?.pause() : stageApi.current?.play())}
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+              </button>
+              <button className="icon-button" type="button" onClick={() => stageApi.current?.reset()} title="Reset playhead">
+                <RotateCcw size={18} />
+              </button>
+              <button className="primary-button" type="button" onClick={() => void recordTake()} disabled={recordTakeControl.disabled}>
+                {recordTakeControl.icon === 'square' ? <Square size={17} /> : <Video size={17} />}
+                {recordTakeControl.label}
+              </button>
+            </div>
+          </div>
 
-      <aside className="control-panel">
+          <div className="stage-wrap" ref={mountRef} />
+          {stageError && <div className="stage-error">WebGL failed: {stageError}</div>}
+
+          <div className="time-strip">
+            <span>{currentTime.toFixed(2)}s</span>
+            <div className="rail">
+              <div className="rail-fill" style={{ width: `${clamp((currentTime / duration) * 100, 0, 100)}%` }} />
+            </div>
+            <span>{duration.toFixed(2)}s</span>
+          </div>
+        </section>
+
+        <aside className="control-panel">
         <div className="timeline-card">
           <div className="panel-header">
             <p className="eyebrow">Timeline</p>
@@ -1302,7 +1305,9 @@ export function App() {
             </div>
           </details>
         </section>
-      </aside>
+        </aside>
+      </div>
+      {generatedVideosPanel}
       {isPreviewOpen && exports.rgb && (
         <div className="preview-window" role="dialog" aria-label="Recorded video preview">
           <div className="preview-window-panel">

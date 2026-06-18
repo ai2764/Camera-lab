@@ -1,7 +1,7 @@
 /* Generated from apps/3dmotion/src/styles.css and scoped to the Motion tab embed. */
 #motion3dPanel {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 #motion3dPanel.motion-placeholder-panel {
   border: 0;
@@ -9,15 +9,13 @@
 }
 #root {
   display: block;
-  height: max(420px, min(760px, calc(100vh - 210px)));
-  min-height: 0;
-  overflow: hidden;
+  min-height: max(420px, min(760px, calc(100vh - 210px)));
+  overflow: visible;
 }
 @font-face {
   font-family: "IBM Plex Mono";
   src: local("IBM Plex Mono");
-}
-#root {
+}#root {
   color-scheme: dark;
   --bg: #0e1011;
   --panel: #171a1c;
@@ -35,83 +33,74 @@
     "Segoe UI",
     sans-serif;
   background: var(--bg);
-}
-#root * {
+}#root * {
   box-sizing: border-box;
-}
-#root {
+}#root {
   margin: 0;
   min-height: 100vh;
-  overflow: hidden;
+  overflow: auto;
   color: var(--text);
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
     linear-gradient(0deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 48px 48px,
     radial-gradient(circle at 20% 12%, rgba(120, 208, 168, 0.12), transparent 32%),
     #0e1011;
-}
-#root button {
+}#root button {
   border: 0;
   color: inherit;
   font: inherit;
-}
-#root .app-shell {
+}#root .app-page {
+  display: grid;
+  gap: 14px;
+  min-height: 100vh;
+  padding: 14px;
+}#root .app-shell {
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(360px, 430px);
   gap: 14px;
-  height: 100vh;
-  padding: 14px;
-}
-#root .action-sidebar,
+  height: max(420px, min(760px, calc(100vh - 210px)));
+  min-width: 0;
+}#root .action-sidebar,
 #root .stage-panel,
 #root .control-panel {
   border: 1px solid var(--line);
   background: rgba(20, 23, 25, 0.88);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
-}
-#root .stage-panel {
+}#root .stage-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
-}
-#root .stage-toolbar,
+}#root .stage-toolbar,
 #root .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-}
-#root .stage-toolbar {
+}#root .stage-toolbar {
   padding: 12px 14px;
   border-bottom: 1px solid var(--line-soft);
-}
-#root .eyebrow {
+}#root .eyebrow {
   margin: 0 0 5px;
   color: var(--green);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-#root h1,
+}#root h1,
 #root h2 {
   margin: 0;
   font-weight: 700;
   letter-spacing: 0;
-}
-#root h1 {
+}#root h1 {
   font-size: 24px;
-}
-#root h2 {
+}#root h2 {
   font-size: 18px;
-}
-#root .transport {
+}#root .transport {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-#root .icon-button,
+}#root .icon-button,
 #root .ghost-button,
 #root .primary-button,
 #root .clip-button,
@@ -129,47 +118,39 @@
     transform 140ms ease,
     border-color 140ms ease,
     background 140ms ease;
-}
-#root .icon-button {
+}#root .icon-button {
   width: 38px;
-}
-#root .ghost-button {
+}#root .ghost-button {
   padding: 0 12px;
   color: var(--muted);
-}
-#root .primary-button {
+}#root .primary-button {
   min-width: 132px;
   padding: 0 14px;
   background: var(--accent);
   color: #16120d;
   font-weight: 700;
-}
-#root .primary-button:disabled,
+}#root .primary-button:disabled,
 #root .download-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-#root .icon-button:hover,
+}#root .icon-button:hover,
 #root .ghost-button:hover,
 #root .clip-button:hover,
 #root .download-button:hover:not(:disabled) {
   border-color: #51616a;
   background: #252b2f;
   transform: translateY(-1px);
-}
-#root .stage-wrap {
+}#root .stage-wrap {
   position: relative;
   min-height: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%),
     #101315;
-}
-#root .stage-wrap canvas {
+}#root .stage-wrap canvas {
   display: block;
   width: 100%;
   height: 100%;
-}
-#root .stage-wrap .mask-canvas {
+}#root .stage-wrap .mask-canvas {
   position: absolute;
   right: 14px;
   bottom: 14px;
@@ -178,8 +159,7 @@
   border: 1px solid #53626b;
   background: #000;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
-}
-#root .stage-error {
+}#root .stage-error {
   margin: 0 18px 12px;
   padding: 10px 12px;
   border: 1px solid rgba(255, 107, 95, 0.5);
@@ -187,8 +167,7 @@
   color: #ffd5d1;
   background: rgba(255, 107, 95, 0.12);
   font-size: 13px;
-}
-#root .time-strip {
+}#root .time-strip {
   display: grid;
   grid-template-columns: 64px 1fr 64px;
   align-items: center;
@@ -198,48 +177,41 @@
   color: var(--muted);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 12px;
-}
-#root .stage-results {
+}#root .stage-results {
   display: grid;
   gap: 8px;
-  min-height: 0;
-  border-top: 1px solid var(--line-soft);
-  padding: 10px 12px 12px;
-  background: rgba(8, 10, 11, 0.58);
-}
-#root .stage-results-header {
+  border: 1px solid var(--line);
+  padding: 12px;
+  background: rgba(20, 23, 25, 0.88);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.26);
+}#root .stage-results-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-#root .stage-results-header .eyebrow {
+}#root .stage-results-header .eyebrow {
   margin: 0;
-}
-#root .stage-results-header span,
+}#root .stage-results-header span,
 #root .stage-results-empty {
   color: var(--muted);
   font-size: 12px;
-}
-#root .stage-results-empty {
+}#root .stage-results-empty {
   display: grid;
-  min-height: 96px;
+  min-height: 110px;
   place-items: center;
   border: 1px dashed #344047;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.018);
-}
-#root .stage-result-strip {
+}#root .stage-result-strip {
   display: grid;
-  grid-auto-columns: minmax(180px, 220px);
+  grid-auto-columns: minmax(200px, 260px);
   grid-auto-flow: column;
   gap: 9px;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 2px;
-}
-#root .stage-result-card {
+}#root .stage-result-card {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -247,8 +219,7 @@
   border-radius: 7px;
   padding: 8px;
   background: #121619;
-}
-#root .stage-result-video {
+}#root .stage-result-video {
   display: block;
   width: 100%;
   height: 112px;
@@ -256,19 +227,16 @@
   border-radius: 6px;
   background: #070809;
   object-fit: contain;
-}
-#root .rail {
+}#root .rail {
   height: 8px;
   overflow: hidden;
   border: 1px solid #344047;
   border-radius: 99px;
   background: #0b0d0f;
-}
-#root .rail-fill {
+}#root .rail-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--green), var(--accent));
-}
-#root .action-sidebar,
+}#root .action-sidebar,
 #root .control-panel {
   display: flex;
   flex-direction: column;
@@ -276,12 +244,10 @@
   min-height: 0;
   overflow: auto;
   padding: 12px;
-}
-#root .action-sidebar > *,
+}#root .action-sidebar > *,
 #root .control-panel > * {
   flex: 0 0 auto;
-}
-#root .clip-grid {
+}#root .clip-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
@@ -289,26 +255,22 @@
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
-}
-#root .clip-button {
+}#root .clip-button {
   justify-content: flex-start;
   min-height: 32px;
   min-width: 0;
   padding: 0 8px;
   color: #dbe0dd;
   font-size: 12px;
-}
-#root .timeline-card,
+}#root .timeline-card,
 #root .export-card {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.025);
-}
-#root .timeline-card,
+}#root .timeline-card,
 #root .export-card {
   padding: 10px;
-}
-#root .file-picker {
+}#root .file-picker {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -320,47 +282,40 @@
   color: #dfe8e2;
   cursor: pointer;
   font-weight: 700;
-}
-#root .file-picker:hover {
+}#root .file-picker:hover {
   border-color: #51616a;
   background: #252b2f;
-}
-#root .file-picker input {
+}#root .file-picker input {
   position: absolute;
   inset: 0;
   opacity: 0;
   cursor: pointer;
-}
-#root .settings-card {
+}#root .settings-card {
   display: grid;
   gap: 10px;
   padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.12);
-}
-#root .settings-card summary {
+}#root .settings-card summary {
   cursor: pointer;
   color: var(--green);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-#root .settings-card label,
+}#root .settings-card label,
 #root .settings-field {
   display: grid;
   gap: 6px;
   min-width: 0;
   color: var(--muted);
   font-size: 12px;
-}
-#root .settings-grid {
+}#root .settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(72px, 0.7fr) minmax(0, 1fr);
   gap: 8px;
-}
-#root .settings-card input,
+}#root .settings-card input,
 #root .settings-card select {
   width: 100%;
   min-width: 0;
@@ -371,38 +326,30 @@
   color: var(--text);
   background: #121619;
   font: inherit;
-}
-#root .settings-card input[type="range"] {
+}#root .settings-card input[type="range"] {
   min-height: 28px;
   padding: 0;
   accent-color: var(--accent);
-}
-#root .settings-label-row {
+}#root .settings-label-row {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-}
-#root .settings-label-row span {
+}#root .settings-label-row span {
   color: var(--text);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
-}
-#root .primary-button.wide {
+}#root .primary-button.wide {
   width: 100%;
-}
-#root .ghost-button.wide {
+}#root .ghost-button.wide {
   width: 100%;
-}
-#root .timeline-card .panel-header span {
+}#root .timeline-card .panel-header span {
   color: var(--muted);
   font-size: 12px;
-}
-#root .timeline-list {
+}#root .timeline-list {
   display: grid;
   gap: 6px;
   margin-top: 8px;
-}
-#root .timeline-row {
+}#root .timeline-row {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 74px 32px;
   align-items: center;
@@ -411,28 +358,23 @@
   border: 1px solid #293137;
   border-radius: 7px;
   background: #141719;
-}
-#root .row-index {
+}#root .row-index {
   color: var(--cyan);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 12px;
-}
-#root .timeline-row strong {
+}#root .timeline-row strong {
   display: block;
   overflow: hidden;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-#root .timeline-row small {
+}#root .timeline-row small {
   color: var(--muted);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
-}
-#root .timeline-meta {
+}#root .timeline-meta {
   min-width: 0;
-}
-#root .duration-field {
+}#root .duration-field {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -440,8 +382,7 @@
   color: var(--muted);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
-}
-#root .duration-field input {
+}#root .duration-field input {
   width: 100%;
   min-width: 0;
   height: 30px;
@@ -452,30 +393,25 @@
   color: var(--text);
   background: #101416;
   font: inherit;
-}
-#root .duration-field input:focus {
+}#root .duration-field input:focus {
   border-color: var(--green);
-}
-#root .timeline-delete {
+}#root .timeline-delete {
   width: 32px;
   min-height: 30px;
   color: #ffb3ad;
-}
-#root .video-card {
+}#root .video-card {
   display: grid;
   gap: 8px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.028);
-}
-#root .video-card-header {
+}#root .video-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-}
-#root .video-duration {
+}#root .video-duration {
   border: 1px solid #344047;
   border-radius: 6px;
   padding: 4px 7px;
@@ -483,8 +419,7 @@
   background: #111619;
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
-}
-#root .reference-picker {
+}#root .reference-picker {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -496,71 +431,59 @@
   padding: 8px;
   background: rgba(120, 208, 168, 0.04);
   cursor: pointer;
-}
-#root .reference-picker:hover {
+}#root .reference-picker:hover {
   border-color: var(--green);
-}
-#root .reference-picker input {
+}#root .reference-picker input {
   position: absolute;
   inset: 0;
   opacity: 0;
   cursor: pointer;
-}
-#root .reference-picker-copy {
+}#root .reference-picker-copy {
   display: grid;
   gap: 3px;
   min-width: 0;
-}
-#root .reference-picker-copy strong {
+}#root .reference-picker-copy strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-}
-#root .reference-picker-copy small,
+}#root .reference-picker-copy small,
 #root .video-status {
   color: var(--muted);
   font-size: 12px;
-}
-#root .reference-picker-button {
+}#root .reference-picker-button {
   border: 1px solid #3a474e;
   border-radius: 6px;
   padding: 6px 9px;
   color: var(--green);
   background: #151b1e;
   font-weight: 700;
-}
-#root .video-settings {
+}#root .video-settings {
   display: grid;
   grid-template-columns: minmax(112px, 1.2fr) minmax(74px, 0.8fr) minmax(58px, 0.55fr) minmax(84px, 0.75fr);
   gap: 8px;
-}
-#root .advanced-drawer {
+}#root .advanced-drawer {
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   padding: 8px;
   background: rgba(0, 0, 0, 0.1);
-}
-#root .advanced-drawer summary {
+}#root .advanced-drawer summary {
   cursor: pointer;
   color: var(--muted);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-#root .advanced-drawer[open] .video-slider-stack {
+}#root .advanced-drawer[open] .video-slider-stack {
   margin-top: 8px;
-}
-#root .video-settings label,
+}#root .video-settings label,
 #root .video-slider-stack label {
   display: grid;
   gap: 5px;
   min-width: 0;
   color: var(--muted);
   font-size: 11px;
-}
-#root .video-settings input,
+}#root .video-settings input,
 #root .video-settings select {
   width: 100%;
   min-width: 0;
@@ -571,72 +494,58 @@
   color: var(--text);
   background: #121619;
   font: inherit;
-}
-#root .video-slider-stack {
+}#root .video-slider-stack {
   display: grid;
   gap: 8px;
-}
-#root .video-slider-stack input[type="range"] {
+}#root .video-slider-stack input[type="range"] {
   min-height: 24px;
   padding: 0;
   accent-color: var(--accent);
-}
-#root .video-preview-stack {
+}#root .video-preview-stack {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-}
-#root .export-drawer {
+}#root .export-drawer {
   border-top: 1px solid var(--line-soft);
   padding-top: 8px;
-}
-#root .export-drawer summary {
+}#root .export-drawer summary {
   cursor: pointer;
   color: var(--muted);
   font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-#root .export-drawer .download-stack {
+}#root .export-drawer .download-stack {
   margin-top: 8px;
-}
-#root .export-card p {
+}#root .export-card p {
   margin: 10px 0 12px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
-}
-#root .download-stack {
+}#root .download-stack {
   display: grid;
   gap: 8px;
-}
-#root .download-button {
+}#root .download-button {
   justify-content: space-between;
   width: 100%;
   padding: 0 11px;
   color: #dfe8e2;
-}
-#root .scail-result-stack {
+}#root .scail-result-stack {
   display: grid;
   gap: 8px;
-}
-#root .scail-result {
+}#root .scail-result {
   display: grid;
   gap: 6px;
-}
-#root .export-preview {
+}#root .export-preview {
   margin-bottom: 10px;
-}
-#root .preview-heading {
+}#root .preview-heading {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: #dbe0dd;
   font-size: 12px;
   font-weight: 700;
-}
-#root .scail-preview {
+}#root .scail-preview {
   display: block;
   width: 100%;
   height: 130px;
@@ -644,8 +553,7 @@
   border-radius: 7px;
   background: #070809;
   object-fit: contain;
-}
-#root .preview-window {
+}#root .preview-window {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -653,8 +561,7 @@
   place-items: center;
   padding: 18px;
   background: rgba(5, 7, 8, 0.72);
-}
-#root .preview-window-panel {
+}#root .preview-window-panel {
   display: grid;
   width: min(920px, 94vw);
   max-height: 92vh;
@@ -664,18 +571,15 @@
   padding: 12px;
   background: #111619;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-}
-#root .preview-window-header {
+}#root .preview-window-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-#root .preview-window-header h2 {
+}#root .preview-window-header h2 {
   margin: 2px 0 0;
   font-size: 16px;
-}
-#root .preview-window-video {
+}#root .preview-window-video {
   display: block;
   width: 100%;
   max-height: 68vh;
@@ -684,78 +588,40 @@
   background: #070809;
   object-fit: contain;
 }
+
 @media (max-width: 820px) {
-#root {
+  #root {
     overflow: auto;
-  }
-#root .app-shell {
+  }#root .app-shell {
     grid-template-columns: 1fr;
     height: auto;
     min-height: 100vh;
-    padding: 10px;
-  }
-#root .stage-panel {
+  }#root .stage-panel {
     min-height: 62vh;
-  }
-#root .stage-toolbar {
+  }#root .stage-toolbar {
     align-items: flex-start;
     flex-direction: column;
     padding: 12px;
-  }
-#root .transport {
+  }#root .transport {
     width: 100%;
     flex-wrap: wrap;
-  }
-#root .primary-button {
+  }#root .primary-button {
     flex: 1;
-  }
-#root .stage-wrap {
+  }#root .stage-wrap {
     min-height: 46vh;
-  }
-#root .stage-wrap .mask-canvas {
+  }#root .stage-wrap .mask-canvas {
     width: 118px !important;
     height: 74px !important;
     right: 8px;
     bottom: 8px;
-  }
-#root .control-panel {
+  }#root .control-panel {
     max-height: none;
-  }
-#root .video-preview-stack,
+  }#root .video-preview-stack,
 #root .video-settings {
     grid-template-columns: 1fr;
-  }
-#root .action-sidebar {
+  }#root .action-sidebar {
     max-height: 34vh;
-  }
-#root .clip-grid {
+  }#root .clip-grid {
     grid-template-columns: 1fr;
   }
-
-
-}
-
-
-#root {
-  height: max(420px, min(760px, calc(100vh - 210px)));
-  min-height: 0;
-  overflow: hidden;
-}
-#root .app-shell {
-  height: 100%;
-  min-height: 0;
-  padding: 6px;
-}
-#root .app-shell > * {
-  min-height: 0;
-}
-#root .stage-panel {
-  min-height: 0;
-}
-#root .stage-wrap {
-  min-height: 0;
-}
-#root .action-sidebar,
-#root .control-panel {
-  min-height: 0;
 }
