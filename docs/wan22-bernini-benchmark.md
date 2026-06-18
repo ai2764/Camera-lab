@@ -1,7 +1,8 @@
 # WAN2.2 Bernini — Local Benchmark (RTX 4090 24GB)
 
-Capacity test for `workflows/app/wan22_bernini_video_edit.ui.json` on the local
-standalone ComfyUI. Answers: **how long / how large a video can this box render.**
+Capacity test for the Bernini workflows (`workflows/app/wan22_bernini_*.ui.json`)
+on the local standalone ComfyUI. Answers: **how long / how large a video can this
+box render.**
 
 ## Environment
 
