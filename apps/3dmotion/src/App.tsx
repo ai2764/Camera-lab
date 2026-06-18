@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Download,
   Film,
+  Maximize2,
   Pause,
   Play,
   Plus,
@@ -848,6 +849,7 @@ export function App() {
   const [scailReference, setScailReference] = useState<File | null>(null);
   const [scailStatus, setScailStatus] = useState('Choose a reference image, then generate with local SCAIL-2.');
   const [scailOutputs, setScailOutputs] = useState<ScailGeneratedVideo[]>([]);
+  const [scailPreview, setScailPreview] = useState<ScailGeneratedVideo | null>(null);
   const [isGeneratingScail, setIsGeneratingScail] = useState(false);
   const [scailSizePreset, setScailSizePreset] = useState(defaultScailSizePreset);
   const [scailSizeText, setScailSizeText] = useState(defaultScailSizePreset);
@@ -1029,13 +1031,19 @@ export function App() {
                 <Video size={14} />
                 <span>{index === 0 ? 'Latest final' : `Final ${scailOutputs.length - index}`}</span>
               </div>
-              <video className="stage-result-video" src={item.url} controls playsInline preload="metadata">
+              <video className="stage-result-video" src={item.url} muted playsInline preload="metadata" onClick={() => setScailPreview(item)}>
                 <a href={item.url}>Open generated video</a>
               </video>
-              <button className="download-button" type="button" onClick={() => downloadUrl(item.url, item.filename)}>
-                <Download size={15} />
-                {item.filename}
-              </button>
+              <div className="stage-result-actions">
+                <button className="download-button stage-result-preview-button" type="button" onClick={() => setScailPreview(item)}>
+                  <Maximize2 size={15} />
+                  <span>Preview</span>
+                </button>
+                <button className="download-button stage-result-download" type="button" title={item.filename} onClick={() => downloadUrl(item.url, item.filename)}>
+                  <Download size={15} />
+                  <span className="stage-result-filename">{item.filename}</span>
+                </button>
+              </div>
             </article>
           ))}
         </div>
@@ -1308,6 +1316,28 @@ export function App() {
         </aside>
       </div>
       {generatedVideosPanel}
+      {scailPreview && (
+        <div className="preview-window" role="dialog" aria-label="Generated video preview">
+          <div className="preview-window-panel">
+            <div className="preview-window-header">
+              <div>
+                <p className="eyebrow">Generated preview</p>
+                <h2>{scailPreview.filename}</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setScailPreview(null)} title="Close preview">
+                <X size={18} />
+              </button>
+            </div>
+            <video className="preview-window-video" src={scailPreview.url} controls autoPlay playsInline preload="metadata">
+              <a href={scailPreview.url}>Open generated video</a>
+            </video>
+            <button className="download-button" type="button" onClick={() => downloadUrl(scailPreview.url, scailPreview.filename)}>
+              <Download size={15} />
+              Download {scailPreview.filename}
+            </button>
+          </div>
+        </div>
+      )}
       {isPreviewOpen && exports.rgb && (
         <div className="preview-window" role="dialog" aria-label="Recorded video preview">
           <div className="preview-window-panel">

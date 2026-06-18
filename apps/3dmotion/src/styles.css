@@ -267,20 +267,56 @@ h2 {
   display: grid;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   padding: 8px;
   background: #121619;
 }
 
+.stage-result-card > * {
+  min-width: 0;
+}
+
 .stage-result-video {
   display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 112px;
   border: 1px solid #303940;
   border-radius: 6px;
   background: #070809;
+  cursor: pointer;
   object-fit: contain;
+}
+
+.stage-result-actions {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.42fr) minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.stage-result-preview-button,
+.stage-result-download {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stage-result-preview-button {
+  justify-content: center;
+}
+
+.stage-result-download {
+  justify-content: flex-start;
+}
+
+.stage-result-filename {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail {

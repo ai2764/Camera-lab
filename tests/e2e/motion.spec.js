@@ -178,6 +178,67 @@ test("Motion tab exposes Text to Motion, SCAIL2, and 3D Motion sub tabs", async 
   await expect(page.locator("#motionScailPanel")).toBeHidden();
 });
 
+test("3D Motion generated videos stay contained and open a large preview", async ({ page }) => {
+  await mockConfig(page);
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ runs: [] }) });
+  });
+  await page.route("**/api/casting/library", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ clips: [] }) });
+  });
+  await page.route("**/api/scail-drive-video?name=*", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ path: "3dmotion-scail/drive.mp4" }) });
+  });
+  await page.route("**/comfy/upload/image", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ name: "ref.png" }) });
+  });
+  await page.route("**/comfy/prompt", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ prompt_id: "scail_3d_e2e" }) });
+  });
+  await page.route("**/comfy/history/scail_3d_e2e", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        scail_3d_e2e: {
+          outputs: {
+            17: {
+              images: [{
+                filename: "3dmotion_1781759472475_00001_.mp4",
+                subfolder: "scail",
+                type: "output",
+              }],
+            },
+          },
+        },
+      }),
+    });
+  });
+  await page.route("**/comfy/view?*", async (route) => {
+    await route.fulfill({ contentType: "video/mp4", body: mp4Tiny });
+  });
+
+  await page.goto("/#motion");
+  await page.locator("#motion3dTab").click();
+  await page.locator("#motion3dPanel .duration-field input").first().fill("0.2");
+  await page.setInputFiles("#motion3dPanel .reference-picker input", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
+  await page.locator("#motion3dPanel").getByRole("button", { name: "Generate video" }).click();
+
+  const card = page.locator("#motion3dPanel .stage-result-card").first();
+  await expect(card).toBeVisible({ timeout: 15000 });
+  const cardBox = await card.boundingBox();
+  const videoBox = await card.locator(".stage-result-video").boundingBox();
+  const previewBox = await card.getByRole("button", { name: "Preview" }).boundingBox();
+  const downloadBox = await card.getByRole("button", { name: /3dmotion_1781759472475_00001_\.mp4/ }).boundingBox();
+  expect(videoBox.x + videoBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+  expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+  expect(downloadBox.x + downloadBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+
+  await card.getByRole("button", { name: "Preview" }).click();
+  const dialog = page.getByRole("dialog", { name: "Generated video preview" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("video")).toHaveAttribute("src", /3dmotion_1781759472475_00001_\.mp4/);
+});
+
 test("Motion history restores motion guides and complete final setups", async ({ page }) => {
   await mockConfig(page);
   await page.route("**/api/history?limit=200", async (route) => {
