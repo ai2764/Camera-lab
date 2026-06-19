@@ -930,7 +930,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in subject-to-video generation.this subject dancing on a neon stage"
+        "You are a helpful assistant specialized in subject-to-video generation. This subject dancing on a neon stage"
       ],
       "color": "#232",
       "bgcolor": "#353",

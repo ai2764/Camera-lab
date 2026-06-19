@@ -1,8 +1,8 @@
 {
-  "id": "bernini_rv2v",
+  "id": "bernini_r2i",
   "revision": 0,
-  "last_node_id": 54,
-  "last_link_id": 121,
+  "last_node_id": 57,
+  "last_link_id": 124,
   "nodes": [
     {
       "id": 18,
@@ -384,7 +384,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            114
+            124
           ]
         }
       ],
@@ -396,59 +396,6 @@
       "widgets_values": [],
       "color": "#322",
       "bgcolor": "#533"
-    },
-    {
-      "id": 45,
-      "type": "CreateVideo",
-      "pos": [
-        2289.1484786270394,
-        4929.969980734958
-      ],
-      "size": [
-        270,
-        78
-      ],
-      "flags": {},
-      "order": 23,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 114
-        },
-        {
-          "name": "audio",
-          "shape": 7,
-          "type": "AUDIO",
-          "link": null
-        },
-        {
-          "name": "fps",
-          "type": "FLOAT",
-          "widget": {
-            "name": "fps"
-          },
-          "link": 118
-        }
-      ],
-      "outputs": [
-        {
-          "name": "VIDEO",
-          "type": "VIDEO",
-          "links": [
-            108
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.22.0",
-        "Node name for S&R": "CreateVideo"
-      },
-      "widgets_values": [
-        24
-      ]
     },
     {
       "id": 37,
@@ -770,42 +717,6 @@
       "bgcolor": "#653"
     },
     {
-      "id": 51,
-      "type": "FloatConstant",
-      "pos": [
-        1964.432802409465,
-        5550.711385103106
-      ],
-      "size": [
-        200,
-        58
-      ],
-      "flags": {},
-      "order": 8,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "FLOAT",
-          "links": [
-            118
-          ]
-        }
-      ],
-      "title": "FPS",
-      "properties": {
-        "cnr_id": "comfyui-kjnodes",
-        "ver": "51d4261b683b4ed5645c1fe2ce3616d4e3fba090",
-        "Node name for S&R": "FloatConstant"
-      },
-      "widgets_values": [
-        24
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
       "id": 34,
       "type": "BerniniConditioning",
       "pos": [
@@ -839,7 +750,7 @@
           "name": "source_video",
           "shape": 7,
           "type": "IMAGE",
-          "link": 119
+          "link": null
         },
         {
           "name": "reference_video",
@@ -851,7 +762,7 @@
           "name": "reference_images",
           "shape": 7,
           "type": "IMAGE",
-          "link": 121
+          "link": 123
         }
       ],
       "outputs": [
@@ -887,7 +798,7 @@
       "widgets_values": [
         480,
         832,
-        121,
+        1,
         1,
         848
       ],
@@ -930,131 +841,14 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in video editing with reference. Replace the girl in the video with a girl dressed in student attire"
+        "You are a helpful assistant specialized in subject-to-image generation.this subject standing in a snowy street"
       ],
       "color": "#232",
       "bgcolor": "#353",
-      "title": "Positive — rv2v prefix (edit the part after the prefix)"
+      "title": "Positive — r2i prefix (edit after the prefix)"
     },
     {
-      "id": 46,
-      "type": "SaveVideo",
-      "pos": [
-        2629.816042321864,
-        4371.321767065052
-      ],
-      "size": [
-        1355.602148613325,
-        1965.9510339396188
-      ],
-      "flags": {},
-      "order": 24,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "link": 108
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.22.0",
-        "Node name for S&R": "SaveVideo"
-      },
-      "widgets_values": [
-        "video/bernini_rv2v",
-        "auto",
-        "auto"
-      ]
-    },
-    {
-      "id": 52,
-      "type": "VHS_LoadVideo",
-      "pos": [
-        806,
-        5504
-      ],
-      "size": [
-        468.43842413722655,
-        1013.9052679034254
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "meta_batch",
-          "shape": 7,
-          "type": "VHS_BatchManager",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            119
-          ]
-        },
-        {
-          "name": "frame_count",
-          "type": "INT",
-          "links": []
-        },
-        {
-          "name": "audio",
-          "type": "AUDIO",
-          "links": []
-        },
-        {
-          "name": "video_info",
-          "type": "VHS_VIDEOINFO",
-          "links": []
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfyui-videohelpersuite",
-        "ver": "4ee72c065db22c9d96c2427954dc69e7b908444b",
-        "Node name for S&R": "VHS_LoadVideo"
-      },
-      "widgets_values": {
-        "video": "dance_9003381.mp4",
-        "force_rate": 24,
-        "custom_width": 0,
-        "custom_height": 0,
-        "frame_load_cap": 121,
-        "skip_first_frames": 0,
-        "select_every_nth": 1,
-        "format": "AnimateDiff",
-        "choose video to upload": "image",
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "dance_9003381.mp4",
-            "type": "input",
-            "format": "video/mp4",
-            "force_rate": 24,
-            "custom_width": 0,
-            "custom_height": 0,
-            "frame_load_cap": 121,
-            "skip_first_frames": 0,
-            "select_every_nth": 1
-          }
-        }
-      }
-    },
-    {
-      "id": 53,
+      "id": 55,
       "type": "LoadImage",
       "pos": [
         3989,
@@ -1073,7 +867,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            120
+            122
           ]
         },
         {
@@ -1093,7 +887,7 @@
       ]
     },
     {
-      "id": 54,
+      "id": 56,
       "type": "BatchImagesNode",
       "pos": [
         1774,
@@ -1111,7 +905,7 @@
           "label": "image0",
           "name": "images.image0",
           "type": "IMAGE",
-          "link": 120
+          "link": 122
         },
         {
           "label": "image1",
@@ -1126,7 +920,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            121
+            123
           ]
         }
       ],
@@ -1136,6 +930,36 @@
         "Node name for S&R": "BatchImagesNode"
       },
       "widgets_values": []
+    },
+    {
+      "id": 57,
+      "type": "SaveImage",
+      "pos": [
+        2629,
+        4371
+      ],
+      "size": [
+        400,
+        450
+      ],
+      "flags": {},
+      "order": 99,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 124
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "bernini_r2i"
+      ]
     }
   ],
   "links": [
@@ -1340,51 +1164,27 @@
       "VAE"
     ],
     [
-      108,
-      45,
+      122,
+      55,
       0,
-      46,
-      0,
-      "VIDEO"
-    ],
-    [
-      114,
-      16,
-      0,
-      45,
+      56,
       0,
       "IMAGE"
     ],
     [
-      118,
-      51,
-      0,
-      45,
-      2,
-      "FLOAT"
-    ],
-    [
-      119,
-      52,
-      0,
-      34,
-      3,
-      "IMAGE"
-    ],
-    [
-      120,
-      53,
-      0,
-      54,
-      0,
-      "IMAGE"
-    ],
-    [
-      121,
-      54,
+      123,
+      56,
       0,
       34,
       5,
+      "IMAGE"
+    ],
+    [
+      124,
+      16,
+      0,
+      57,
+      0,
       "IMAGE"
     ]
   ],

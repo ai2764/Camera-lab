@@ -930,7 +930,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in text-to-video generation.a cat walking through a sunny garden, cinematic"
+        "You are a helpful assistant specialized in text-to-video generation. A cat walking through a sunny garden, cinematic"
       ],
       "color": "#232",
       "bgcolor": "#353",

@@ -1,8 +1,8 @@
 {
-  "id": "bernini_rv2v",
+  "id": "bernini_vrc2v",
   "revision": 0,
-  "last_node_id": 54,
-  "last_link_id": 121,
+  "last_node_id": 55,
+  "last_link_id": 122,
   "nodes": [
     {
       "id": 18,
@@ -839,7 +839,7 @@
           "name": "source_video",
           "shape": 7,
           "type": "IMAGE",
-          "link": 119
+          "link": 122
         },
         {
           "name": "reference_video",
@@ -851,7 +851,7 @@
           "name": "reference_images",
           "shape": 7,
           "type": "IMAGE",
-          "link": 121
+          "link": null
         }
       ],
       "outputs": [
@@ -930,11 +930,11 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in video editing with reference. Replace the girl in the video with a girl dressed in student attire"
+        "You are a helpful assistant for editing. You may need to adjust the subject's action or position.make the subject raise their right hand"
       ],
       "color": "#232",
       "bgcolor": "#353",
-      "title": "Positive — rv2v prefix (edit the part after the prefix)"
+      "title": "Positive — vrc2v prefix (edit after the prefix)"
     },
     {
       "id": 46,
@@ -964,13 +964,13 @@
         "Node name for S&R": "SaveVideo"
       },
       "widgets_values": [
-        "video/bernini_rv2v",
+        "video/bernini_vrc2v",
         "auto",
         "auto"
       ]
     },
     {
-      "id": 52,
+      "id": 55,
       "type": "VHS_LoadVideo",
       "pos": [
         806,
@@ -1002,7 +1002,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            119
+            122
           ]
         },
         {
@@ -1052,90 +1052,6 @@
           }
         }
       }
-    },
-    {
-      "id": 53,
-      "type": "LoadImage",
-      "pos": [
-        3989,
-        4369
-      ],
-      "size": [
-        400,
-        380
-      ],
-      "flags": {},
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            120
-          ]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": []
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.22.0",
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "pirates_dancing.png",
-        "image"
-      ]
-    },
-    {
-      "id": 54,
-      "type": "BatchImagesNode",
-      "pos": [
-        1774,
-        5544
-      ],
-      "size": [
-        169.32421875,
-        66
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "image0",
-          "name": "images.image0",
-          "type": "IMAGE",
-          "link": 120
-        },
-        {
-          "label": "image1",
-          "name": "images.image1",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            121
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.22.0",
-        "Node name for S&R": "BatchImagesNode"
-      },
-      "widgets_values": []
     }
   ],
   "links": [
@@ -1364,27 +1280,11 @@
       "FLOAT"
     ],
     [
-      119,
-      52,
+      122,
+      55,
       0,
       34,
       3,
-      "IMAGE"
-    ],
-    [
-      120,
-      53,
-      0,
-      54,
-      0,
-      "IMAGE"
-    ],
-    [
-      121,
-      54,
-      0,
-      34,
-      5,
       "IMAGE"
     ]
   ],

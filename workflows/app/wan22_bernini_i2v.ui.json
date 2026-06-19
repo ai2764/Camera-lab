@@ -930,7 +930,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in image-to-video generation.animate this image with gentle camera push-in"
+        "You are a helpful assistant specialized in image-to-video generation. Animate this image with gentle camera push-in"
       ],
       "color": "#232",
       "bgcolor": "#353",

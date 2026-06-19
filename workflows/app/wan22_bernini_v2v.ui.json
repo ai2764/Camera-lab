@@ -930,7 +930,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "You are a helpful assistant specialized in video editing.restyle the video into a watercolor look"
+        "You are a helpful assistant specialized in video editing. Restyle the video into a watercolor look"
       ],
       "color": "#232",
       "bgcolor": "#353",
