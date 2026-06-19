@@ -18,6 +18,7 @@ import urllib.request
 import base64
 import copy
 import ctypes
+import warnings
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -32,6 +33,9 @@ RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
+VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
+MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
 
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
@@ -77,9 +81,23 @@ def comfy_config_from_env(env: Mapping[str, str]) -> dict[str, Any]:
 load_env_file(ROOT / ".env")
 COMFY_CONFIG = comfy_config_from_env(os.environ)
 COMFY_URL = COMFY_CONFIG["url"]
+
+
+def motion_comfy_url(env: Mapping[str, str] = os.environ) -> str:
+    """ComfyUI endpoint for HY-Motion/SCAIL. Falls back to COMFY_URL so a future
+    single-instance migration needs no code change — just unset COMFYUI_MOTION_URL."""
+    return env.get("COMFYUI_MOTION_URL") or COMFY_URL
+
+
+MOTION_COMFY_URL = motion_comfy_url()
+
+
 COMFY_INPUT = COMFY_CONFIG["input"]
 COMFY_OUTPUT = COMFY_CONFIG["output"]
 COMFY_MODELS = COMFY_CONFIG["models"]
+MOTION_COMFY_ROOT = Path(os.environ.get("COMFYUI_MOTION_ROOT") or COMFY_CONFIG["root"])
+MOTION_COMFY_INPUT = MOTION_COMFY_ROOT / "input"
+MOTION_COMFY_OUTPUT = MOTION_COMFY_ROOT / "output"
 WORKFLOW_ROOT = COMFY_CONFIG["workflows"]
 TEMPLATE_WORKFLOW_ROOT = COMFY_CONFIG["template_workflows"]
 YEDP_WEB_JS = COMFY_CONFIG["root"] / "custom_nodes" / "ComfyUI-Yedp-Action-Director" / "web" / "js"
@@ -90,6 +108,8 @@ LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
 DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
+HYMOTION_GUIDE_TEMPLATE = APP_WORKFLOW_ROOT / "hymotion_guide.api.json"
+SCAIL_VIDEO_TEMPLATE = APP_WORKFLOW_ROOT / "scail2_video.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
@@ -373,8 +393,8 @@ class RunCanceled(Exception):
     pass
 
 
-def http_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict:
-    url = COMFY_URL.rstrip("/") + path
+def http_json(path: str, payload: dict | None = None, timeout: int = 30, base_url: str | None = None) -> dict:
+    url = (base_url or COMFY_URL).rstrip("/") + path
     if payload is None:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -388,8 +408,8 @@ def http_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict
         raise RuntimeError(f"ComfyUI HTTP {exc.code}: {body}") from exc
 
 
-def http_post(path: str, payload: dict | None = None, timeout: int = 30) -> None:
-    url = COMFY_URL.rstrip("/") + path
+def http_post(path: str, payload: dict | None = None, timeout: int = 30, base_url: str | None = None) -> None:
+    url = (base_url or COMFY_URL).rstrip("/") + path
     data = json.dumps(payload or {}).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -426,6 +446,67 @@ def object_info() -> dict[str, Any]:
     if OBJECT_INFO is None:
         OBJECT_INFO = http_json("/object_info", timeout=30)
     return OBJECT_INFO
+
+
+# folder type -> (loader class_type, filename input field) pairs. The union of
+# each loader's /object_info combo list is exactly what ComfyUI can load for that
+# folder, already merged across the install dir + extra_model_paths + subfolders.
+MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
+    "checkpoints": [("CheckpointLoaderSimple", "ckpt_name")],
+    "diffusion_models": [("UNETLoader", "unet_name"), ("UnetLoaderGGUF", "unet_name")],
+    "vae": [("VAELoader", "vae_name"), ("VAELoaderKJ", "vae_name")],
+    "latent_upscale_models": [("LatentUpscaleModelLoader", "model_name")],
+    "loras": [("LoraLoaderModelOnly", "lora_name")],
+    "text_encoders": [
+        ("CLIPLoader", "clip_name"),
+        ("DualCLIPLoader", "clip_name1"), ("DualCLIPLoader", "clip_name2"),
+        ("DualCLIPLoaderGGUF", "clip_name1"), ("DualCLIPLoaderGGUF", "clip_name2"),
+        ("LTXAVTextEncoderLoader", "text_encoder_name"), ("LTXAVTextEncoderLoader", "clip_name"),
+    ],
+}
+
+
+def available_models() -> dict[str, set[str]]:
+    """Model files ComfyUI can actually load, per folder, read from /object_info
+    loader combo lists. Location-agnostic: covers extra_model_paths and subfolders
+    so the preflight no longer depends on COMFY_MODELS being the real model dir.
+
+    A folder is omitted when its list is empty or unreachable, so callers treat it
+    as "unknown" (never a false "missing") — this absorbs ComfyUI dropping a custom
+    folder's combo list mid-session, and ComfyUI being down."""
+    try:
+        oi = object_info()
+    except Exception:
+        return {}
+    out: dict[str, set[str]] = {}
+    for folder, loaders in MODEL_FOLDER_LOADERS.items():
+        names: set[str] = set()
+        for node, field in loaders:
+            spec = oi.get(node, {}).get("input", {}) or {}
+            entry = {**spec.get("required", {}), **spec.get("optional", {})}.get(field)
+            if isinstance(entry, list) and entry and isinstance(entry[0], list):
+                names.update(str(x) for x in entry[0])
+        if names:
+            out[folder] = names
+    return out
+
+
+def model_listed(folder: str, name: str, avail: dict[str, set[str]] | None = None) -> bool:
+    """True only when ComfyUI definitely offers this model. Use for positive
+    overrides (apply the swap only when we are sure the target exists)."""
+    if avail is None:
+        avail = available_models()
+    return name in avail.get(folder, set())
+
+
+def model_missing(folder: str, name: str, avail: dict[str, set[str]] | None = None) -> bool:
+    """True only when we are confident the model is absent (folder known and
+    non-empty but the name is not in it). Unknown/empty folder -> False so we
+    never block on uncertainty. Use for availability hints / warnings."""
+    if avail is None:
+        avail = available_models()
+    bucket = avail.get(folder)
+    return bool(bucket) and name not in bucket
 
 
 def sync_photography_workflow(comfy_input_subdir: str, subject_image: str = "") -> Path:
@@ -1064,6 +1145,62 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     return api
 
 
+def build_hymotion_api(run: dict[str, Any], template_path: Path | str = HYMOTION_GUIDE_TEMPLATE) -> dict[str, dict]:
+    api = json.loads(Path(template_path).read_text(encoding="utf-8"))
+    expected_nodes = {
+        "5": "HYMotionGenerate",
+        "10": "HYMotionEncodeText",
+        "31": "SaveVideo",
+    }
+    for node_id, class_type in expected_nodes.items():
+        if api.get(node_id, {}).get("class_type") != class_type:
+            raise RuntimeError(f"HY-Motion workflow does not contain expected {class_type} node {node_id}")
+
+    manual_duration = float(run["duration"])
+    if run.get("rewrite"):
+        text, seconds = rewrite_motion_prompt(str(run["prompt"]), default_duration=manual_duration)
+    else:
+        text, seconds = str(run["prompt"]), manual_duration
+
+    api["10"]["inputs"]["text"] = text
+    api["5"]["inputs"]["duration"] = float(seconds)
+    api["5"]["inputs"]["seed"] = int(run["seed"])
+    api["5"]["inputs"]["cfg_scale"] = float(run["cfg_scale"])
+    api["31"]["inputs"]["filename_prefix"] = str(run["prefix"])
+    return api
+
+
+def build_scail_api(
+    run: dict[str, Any],
+    guide_name: str,
+    length: int,
+    template_path: Path | str = SCAIL_VIDEO_TEMPLATE,
+) -> dict[str, dict]:
+    api = json.loads(Path(template_path).read_text(encoding="utf-8"))
+    expected_nodes = {
+        "9": "LoadImage",
+        "11": "LoadVideo",
+        "13": "WanSCAILToVideo",
+        "14": "KSampler",
+        "17": "SaveVideo",
+    }
+    for node_id, class_type in expected_nodes.items():
+        if api.get(node_id, {}).get("class_type") != class_type:
+            raise RuntimeError(f"SCAIL workflow does not contain expected {class_type} node {node_id}")
+
+    api["11"]["inputs"]["file"] = guide_name
+    if run.get("reference_name"):
+        api["9"]["inputs"]["image"] = str(run["reference_name"])
+    api["13"]["inputs"]["width"] = int(run["width"])
+    api["13"]["inputs"]["height"] = int(run["height"])
+    api["13"]["inputs"]["length"] = int(length)
+    api["13"]["inputs"]["pose_strength"] = float(run["pose_strength"])
+    api["14"]["inputs"]["seed"] = int(run["seed"])
+    api["14"]["inputs"]["steps"] = int(run["steps"])
+    api["17"]["inputs"]["filename_prefix"] = str(run["prefix"])
+    return api
+
+
 def patch_director_custom_audio(api: dict[str, dict], run: dict[str, Any]) -> None:
     audio_name = str(run.get("comfy_audio_name") or "").strip()
     if not audio_name:
@@ -1422,8 +1559,7 @@ def disable_prompt_enhancer(api: dict) -> None:
 
 
 def patch_ltx23_local_loras(api: dict) -> None:
-    local_lora = COMFY_MODELS / "loras" / LOCAL_LTX23_DISTILLED_LORA
-    if not local_lora.exists():
+    if not model_listed("loras", LOCAL_LTX23_DISTILLED_LORA):
         return
     for node in api.values():
         if node["class_type"] != "LoraLoaderModelOnly":
@@ -1528,11 +1664,15 @@ def patch_model_names(api: dict, run: dict) -> None:
 
 
 def ensure_model_exists(folder: str, name: str) -> None:
-    if not (COMFY_MODELS / folder / name).exists():
-        raise FileNotFoundError(f"Missing ComfyUI model: models/{folder}/{name}")
+    """Best-effort warning when ComfyUI clearly cannot see the model. Never raises:
+    ComfyUI's own /prompt validation is the authority, so submission keeps working
+    regardless of where models physically live (extra_model_paths / subfolders)."""
+    if model_missing(folder, name):
+        print(f"Camera Lab: warning - model may be missing: models/{folder}/{name}", flush=True)
 
 
 def workflow_status(workflow: dict) -> dict[str, Any]:
+    avail = available_models()
     if workflow.get("builder") == "ltx23_ttp_flf":
         missing: list[str] = []
         if not (TTP_TOOLSET_ROOT / "LTXVFirstLastFrameControl_TTP.py").exists():
@@ -1543,7 +1683,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
             ("loras", LOCAL_LTX23_DISTILLED_LORA),
             ("latent_upscale_models", LTX23_UPSCALER),
         ]:
-            if not (COMFY_MODELS / folder / name).exists():
+            if model_missing(folder, name, avail):
                 missing.append(f"models/{folder}/{name}")
         if missing:
             return {"available": False, "reason": "missing " + ", ".join(missing)}
@@ -1563,7 +1703,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
     for folder, name in required_models(expand_subgraphs(data)):
-        if not (COMFY_MODELS / folder / name).exists():
+        if model_missing(folder, name, avail):
             missing.append(f"models/{folder}/{name}")
     if missing:
         return {"available": False, "reason": "missing " + ", ".join(missing)}
@@ -1626,10 +1766,12 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
     return sorted(set(models))
 
 
-def copy_outputs(run_dir: Path, prompt_id: str) -> list[Path]:
-    history = http_json(f"/history/{prompt_id}", timeout=30).get(prompt_id, {})
+def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+    history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url).get(prompt_id, {})
     (run_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     copied: list[Path] = []
+    input_root = MOTION_COMFY_INPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_INPUT
+    output_root = MOTION_COMFY_OUTPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_OUTPUT
     for output in history.get("outputs", {}).values():
         for key in ("videos", "images", "gifs"):
             for item in output.get(key, []):
@@ -1637,7 +1779,7 @@ def copy_outputs(run_dir: Path, prompt_id: str) -> list[Path]:
                 if not filename:
                     continue
                 subfolder = item.get("subfolder", "")
-                src_root = COMFY_OUTPUT if item.get("type", "output") == "output" else COMFY_INPUT
+                src_root = output_root if item.get("type", "output") == "output" else input_root
                 src = src_root / subfolder / filename
                 if src.exists():
                     dst = run_dir / filename
@@ -1691,16 +1833,33 @@ def extract_last_frame(video: Path, image: Path) -> None:
     )
 
 
+def align_4k1(n: int) -> int:
+    """Largest valid SCAIL length <= n with (length - 1) % 4 == 0; minimum 1."""
+    if n <= 1:
+        return 1
+    return ((n - 1) // 4) * 4 + 1
+
+
+def video_frame_count(path: Path) -> int:
+    """Frame count of a video via ffprobe (ffmpeg/ffprobe already used elsewhere in this server)."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return int(out)
+
+
 def check_run_canceled(run: dict[str, Any]) -> None:
     if run.get("status") == "canceled":
         raise RunCanceled()
 
 
-def wait_for_completion(prompt_id: str, run: dict[str, Any], timeout_s: int = 1800) -> None:
+def wait_for_completion(prompt_id: str, run: dict[str, Any], timeout_s: int = 1800, base_url: str | None = None) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         check_run_canceled(run)
-        history = http_json(f"/history/{prompt_id}", timeout=30)
+        history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url)
         if prompt_id in history:
             status = history[prompt_id].get("status", {})
             if status.get("status_str") == "error":
@@ -1996,6 +2155,305 @@ def comfy_prompt_running(prompt_id: str) -> bool:
     except Exception:
         return False
     return any(prompt_id in json.dumps(item, ensure_ascii=False) for item in queue.get("queue_running", []))
+
+
+def submit_motion_stage(api: dict[str, Any], run: dict[str, Any], stage_dir: Path, stage: str) -> str:
+    (stage_dir / "api_prompt.json").write_text(json.dumps(api, ensure_ascii=False, indent=2), encoding="utf-8")
+    submit = http_json(
+        "/prompt",
+        {"prompt": api, "client_id": f"camera-lab-motion-{run['run_id']}-{stage}"},
+        timeout=60,
+        base_url=MOTION_COMFY_URL,
+    )
+    (stage_dir / "submit.json").write_text(json.dumps(submit, ensure_ascii=False, indent=2), encoding="utf-8")
+    if submit.get("node_errors"):
+        raise RuntimeError(json.dumps(submit["node_errors"], ensure_ascii=False))
+    prompt_id = submit.get("prompt_id")
+    if not prompt_id:
+        raise RuntimeError(json.dumps(submit, ensure_ascii=False))
+    return str(prompt_id)
+
+
+def first_video(copied: list[Path], stage: str) -> Path:
+    videos = [path for path in copied if path.suffix.lower() in {".mp4", ".webm", ".mov"}]
+    if not videos:
+        raise RuntimeError(f"{stage} produced no video")
+    return videos[0]
+
+
+def persist_motion_batch(batch: dict[str, Any] | None) -> None:
+    if batch:
+        write_batch(batch)
+
+
+def finish_motion_batch(batch: dict[str, Any] | None) -> None:
+    if not batch:
+        return
+    batch["status"] = "done" if all(r.get("status") in {"done", "guide_done", "canceled"} for r in batch["runs"]) else "error"
+    batch["finished_at"] = time.time()
+    write_batch(batch)
+
+
+def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    guide_path = payload.get("guide_video_path") or payload.get("guide_path") or ""
+    if not guide_path:
+        raise ValueError("motion guide video is required")
+    guide_video = safe_media_path(str(guide_path))
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+
+    reference_path = payload.get("reference_path") or payload.get("source_path") or ""
+    if not reference_path:
+        raise ValueError("motion reference image is required")
+    reference = safe_media_path(str(reference_path))
+    if not reference.exists():
+        raise FileNotFoundError("motion reference image is missing")
+
+    width, height = validate_size(payload.get("width") or 480, payload.get("height") or 832)
+    seed = validate_seed(payload.get("seed"))
+    steps = max(1, min(100, int(payload.get("steps") or 8)))
+    pose_strength = max(0.0, min(1.0, float(payload.get("pose_strength") or 1.0)))
+    frame_count = video_frame_count(guide_video)
+    trim_start, trim_end = motion_trim_values(payload)
+    if trim_end is not None:
+        trim_duration = max(0.5, trim_end - trim_start)
+        scail_length = align_4k1(round(trim_duration * 24))
+        duration = max(0.5, min(60.0, trim_duration))
+    else:
+        scail_length = align_4k1(frame_count)
+        duration = max(0.5, min(60.0, float(payload.get("duration") or frame_count / 24 or 4.0)))
+    prompt = str(payload.get("prompt") or "").strip() or f"uploaded guide video: {guide_video.name}"
+
+    batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
+    batch_dir = RUN_ROOT / batch_id
+    run_id = "01_motion"
+    run_dir = batch_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run = {
+        "batch_id": batch_id,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "workflow_id": "uploaded_motion_to_scail",
+        "workflow_mode": "motion",
+        "workflow_label": "Motion",
+        "camera_move": "motion",
+        "reference_image": str(reference),
+        "guide_video": str(guide_video),
+        "scail_length": scail_length,
+        "duration": duration,
+        "guide_trim_start": trim_start,
+        "guide_trim_end": trim_end,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "variant_name": "motion",
+        "prompt": prompt,
+        "rewrite": False,
+        "cfg_scale": 5.0,
+        "steps": steps,
+        "pose_strength": pose_strength,
+        "status": "guide_done",
+        "queued_at": time.time(),
+        "scores": {},
+        "notes": "",
+    }
+    batch = {
+        "batch_id": batch_id,
+        "batch_dir": str(batch_dir),
+        "status": "queued",
+        "queued_at": time.time(),
+        "runs": [run],
+    }
+    BATCHES[batch_id] = batch
+    write_batch(batch)
+    return batch
+
+
+def motion_trim_values(values: Mapping[str, Any]) -> tuple[float, float | None]:
+    raw_start = values.get("guide_trim_start", values.get("trim_start", 0))
+    raw_end = values.get("guide_trim_end", values.get("trim_end"))
+    start = max(0.0, float(raw_start or 0))
+    if raw_end in {None, ""}:
+        return start, None
+    end = max(0.0, float(raw_end))
+    if end <= start + 0.05:
+        raise ValueError("trim end must be greater than trim start")
+    return round(start, 3), round(end, 3)
+
+
+def trim_motion_guide_video(run: dict[str, Any], guide_video: Path, run_dir: Path) -> Path:
+    trim_start, trim_end = motion_trim_values(run)
+    if trim_end is None:
+        return guide_video
+    trim_dir = run_dir / "motion_trim"
+    trim_dir.mkdir(parents=True, exist_ok=True)
+    trimmed = trim_dir / f"{guide_video.stem}_trim.mp4"
+    duration = trim_end - trim_start
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{trim_start:.3f}",
+        "-i",
+        str(guide_video),
+        "-t",
+        f"{duration:.3f}",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        str(trimmed),
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if not trimmed.exists():
+        raise RuntimeError("ffmpeg did not produce trimmed guide video")
+    run["guide_trimmed_video"] = str(trimmed)
+    run["duration"] = round(duration, 3)
+    return trimmed
+
+
+def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
+    run_dir = Path(run["run_dir"])
+    motion_dir = run_dir / "motion"
+    motion_dir.mkdir(parents=True, exist_ok=True)
+    run["status"] = "running_motion"
+    run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_guide"
+    hymotion_api = build_hymotion_api(run)
+    motion_prompt_id = submit_motion_stage(hymotion_api, run, motion_dir, "guide")
+    run["motion_prompt_id"] = motion_prompt_id
+    run["prompt_id"] = motion_prompt_id
+    wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
+    check_run_canceled(run)
+
+    guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
+    guide_video = first_video(guide_copied, "HY-Motion guide")
+    run["guide_video"] = str(guide_video)
+    run["scail_length"] = align_4k1(video_frame_count(guide_video))
+    run["copied"] = [str(path) for path in guide_copied]
+    run["status"] = "guide_done"
+    return guide_copied
+
+
+def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
+    run_dir = Path(run["run_dir"])
+    video_dir = run_dir / "video"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    guide_video = Path(run.get("guide_video") or "")
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+
+    guide_for_scail = trim_motion_guide_video(run, guide_video, run_dir)
+    if guide_for_scail != guide_video:
+        length = align_4k1(video_frame_count(guide_for_scail))
+    else:
+        length = int(run.get("scail_length") or align_4k1(video_frame_count(guide_for_scail)))
+    run["scail_length"] = length
+
+    MOTION_COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    guide_name = f"{safe_filename(run['run_id'])}_{safe_filename(guide_for_scail.name)}"
+    shutil.copy2(guide_for_scail, MOTION_COMFY_INPUT / guide_name)
+    run["guide_name"] = guide_name
+
+    reference_path = run.get("reference_image") or ""
+    if reference_path:
+        reference = Path(reference_path)
+        if not reference.exists():
+            raise FileNotFoundError("motion reference image is missing")
+        reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
+        shutil.copy2(reference, MOTION_COMFY_INPUT / reference_name)
+        run["reference_name"] = reference_name
+
+    run["status"] = "running_video"
+    run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_final"
+    scail_api = build_scail_api(run, guide_name, length)
+    video_prompt_id = submit_motion_stage(scail_api, run, video_dir, "video")
+    run["video_prompt_id"] = video_prompt_id
+    run["prompt_id"] = video_prompt_id
+    wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
+    check_run_canceled(run)
+
+    final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
+    final_video = first_video(final_copied, "SCAIL video")
+    run["video"] = str(final_video)
+    run["copied"] = [*run.get("copied", []), *[str(path) for path in final_copied]]
+    contact = run_dir / "contact.jpg"
+    try:
+        make_contact_sheet(final_video, contact, "Motion / SCAIL")
+        run["contact_sheet"] = str(contact)
+    except Exception as exc:
+        run["contact_error"] = str(exc)
+    run["status"] = "done"
+    return final_copied
+
+
+def motion_guide_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    try:
+        if batch:
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run["started_at"] = time.time()
+        persist_motion_batch(batch)
+        run_motion_guide_stage(run)
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        finish_motion_batch(batch)
+
+
+def motion_final_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    try:
+        if batch:
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run.pop("error", None)
+        run["finished_at"] = None
+        persist_motion_batch(batch)
+        run_motion_final_stage(run)
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        finish_motion_batch(batch)
+
+
+def motion_worker(run: dict[str, Any], batch: dict[str, Any] | None = None) -> None:
+    try:
+        if batch:
+            batch["status"] = "running"
+            batch["started_at"] = time.time()
+        run["started_at"] = time.time()
+        persist_motion_batch(batch)
+        run_motion_guide_stage(run)
+        persist_motion_batch(batch)
+        run_motion_final_stage(run)
+        run["finished_at"] = time.time()
+    except RunCanceled:
+        run["status"] = "canceled"
+        run["error"] = "canceled"
+        run["finished_at"] = time.time()
+    except Exception as exc:
+        run["status"] = "error"
+        run["error"] = str(exc)
+        run["finished_at"] = time.time()
+    finally:
+        persist_motion_batch(batch)
+        finish_motion_batch(batch)
 
 
 def run_batch_worker(batch_id: str) -> None:
@@ -2496,6 +2954,62 @@ def extract_json_object(content: str) -> dict:
     return json.loads(content[start:end + 1])
 
 
+MOTION_REWRITE_PROMPT_FORMAT = """
+    # Role
+    You are an expert in 3D motion analysis, animation timing, and choreography. Your task is to analyze textual action descriptions to estimate execution time and standardize the language for motion generation systems.
+
+    # Task
+    Analyze the user-provided [Input Action] and generate a structured JSON response containing a duration estimate and a refined caption.
+
+    # Instructions
+
+    ### 1. Duration Estimation (frame_count)
+    - Analyze the complexity, speed, and physical constraints of the described action.
+    - Estimate the time required to perform the action in a **smooth, natural, and realistic manner**.
+    - Calculate the total duration in frames based on a **30 fps** (frames per second) standard.
+    - Output strictly as an Integer.
+
+    ### 2. Caption Refinement (short_caption)
+    - Generate a refined, grammatically correct version of the input description in **English**.
+    - **Strict Constraints**:
+        - You must **PRESERVE** the original sequence of events (chronological order).
+        - You must **RETAIN** all original spatial modifiers (e.g., "left," "upward," "quickly").
+        - **DO NOT** add new sub-actions or hallucinate details not present in the input.
+        - **DO NOT** delete any specific movements.
+    - The goal is to improve clarity and flow while maintaining 100% semantic fidelity to the original request.
+
+    ### 3. Output Format
+    - Return **ONLY** a raw JSON object.
+    - Do not use Markdown formatting (i.e., do not use ```json ... ```).
+    - Ensure the JSON is valid and parsable.
+
+    # JSON Structure
+    {{
+        "duration": <Integer, frames at 30fps>,
+        "short_caption": "<String, the refined English description>"
+    }}
+
+    # Input
+    {}
+"""
+
+
+def rewrite_motion_prompt(text: str, default_duration: float = 4.0) -> tuple[str, float]:
+    """Rewrite a motion prompt via the in-server LLM and infer duration.
+
+    Returns ``(short_caption, duration_seconds)``.  On any failure (LLM
+    unavailable, non-JSON reply, missing keys) falls back to
+    ``(text, default_duration)``.
+    """
+    try:
+        prompt = MOTION_REWRITE_PROMPT_FORMAT.format(text)
+        reply = llm_chat([{"role": "user", "content": prompt}])
+        data = extract_json_object(reply)
+        return (str(data["short_caption"]), float(data["duration"]) / 30.0)
+    except Exception:
+        return (text, default_duration)
+
+
 def build_casting_prompt(script: str, roster: list[dict[str, Any]]) -> str:
     emotions = ", ".join(CASTING_EMOTIONS.keys())
     return (
@@ -2585,6 +3099,11 @@ def safe_media_path(raw: str) -> Path:
     return path
 
 
+def sanitize_3dmotion_video_name(name: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", name or "drive.webm")
+    return re.sub(r"\.[^.]+$", "", cleaned) or "drive"
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         return
@@ -2601,6 +3120,86 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
 
+    def proxy_comfy_request(self, method: str, parsed: urllib.parse.ParseResult) -> None:
+        suffix = parsed.path.removeprefix("/comfy")
+        target = MOTION_COMFY_URL.rstrip("/") + suffix
+        if parsed.query:
+            target += "?" + parsed.query
+        body = None
+        if method != "GET":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length) if length else b""
+        headers = {}
+        for key in ("Content-Type", "Accept", "Range"):
+            value = self.headers.get(key)
+            if value:
+                headers[key] = value
+        request = urllib.request.Request(target, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                self.send_response(response.status)
+                self.forward_proxy_headers(response.headers)
+                self.end_headers()
+                shutil.copyfileobj(response, self.wfile)
+        except urllib.error.HTTPError as exc:
+            self.send_response(exc.code)
+            self.forward_proxy_headers(exc.headers)
+            self.end_headers()
+            self.wfile.write(exc.read())
+
+    def forward_proxy_headers(self, headers: Any) -> None:
+        for key in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+            value = headers.get(key)
+            if value:
+                self.send_header(key, value)
+
+    def handle_3dmotion_drive_video(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        base_name = sanitize_3dmotion_video_name(query.get("name", ["drive.webm"])[0])
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_3DMOTION_DRIVE_BYTES:
+            raise ValueError("drive video is too large")
+        output_dir = MOTION_COMFY_INPUT / "3dmotion-scail"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        webm_path = output_dir / f"{base_name}.webm"
+        mp4_path = output_dir / f"{base_name}.mp4"
+        with webm_path.open("wb") as handle:
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                handle.write(chunk)
+                remaining -= len(chunk)
+        ffmpeg = os.environ.get("FFMPEG_PATH") or "ffmpeg"
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(webm_path),
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(mp4_path),
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+            raise RuntimeError(stderr or f"ffmpeg exited with code {exc.returncode}") from exc
+        finally:
+            webm_path.unlink(missing_ok=True)
+        if not mp4_path.exists():
+            raise RuntimeError("ffmpeg did not produce a drive video")
+        self.send_json({"path": f"3dmotion-scail/{base_name}.mp4"})
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
@@ -2608,6 +3207,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_file(WEB_DIR / "index.html")
             if parsed.path.startswith("/static/"):
                 return self.serve_file(WEB_DIR / parsed.path.removeprefix("/static/"))
+            if parsed.path.startswith("/comfy/"):
+                return self.proxy_comfy_request("GET", parsed)
             if parsed.path.startswith("/vendor/yedp/"):
                 name = Path(parsed.path.removeprefix("/vendor/yedp/")).name
                 if Path(name).suffix.lower() not in {".js", ".mjs", ".wasm"}:
@@ -2615,14 +3216,16 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self.serve_file(YEDP_WEB_JS / name)
             if parsed.path == "/api/config":
+                comfy = comfy_status()
                 return self.send_json(
                     {
-                        "workflows": public_workflows(),
+                        "workflows": public_workflows(None if comfy.get("ok") else comfy.get("reason") or "ComfyUI unavailable"),
                         "camera_moves": CAMERA_MOVES,
                         "camera_examples": CAMERA_EXAMPLES,
                         "images": REFERENCE_IMAGES,
                         "default_negative": DEFAULT_NEGATIVE,
-                        "comfy": comfy_status(),
+                        "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
+                        "comfy": comfy,
                         "casting": casting_status(),
                     }
                 )
@@ -2646,10 +3249,24 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/api/run":
                 return self.handle_run()
+            if self.path == "/api/text-to-motion":
+                return self.handle_text_to_motion()
+            if self.path == "/api/text-to-motion-guide":
+                return self.handle_text_to_motion_guide()
+            if self.path == "/api/text-to-motion-final":
+                return self.handle_text_to_motion_final()
+            if self.path == "/api/text-to-motion-video-final":
+                return self.handle_text_to_motion_video_final()
             if self.path == "/api/upload-audio":
                 return self.handle_upload_audio()
+            if self.path == "/api/upload-video":
+                return self.handle_upload_video()
+            if self.path.startswith("/api/scail-drive-video"):
+                return self.handle_3dmotion_drive_video()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
+            if self.path.startswith("/comfy/"):
+                return self.proxy_comfy_request("POST", urllib.parse.urlparse(self.path))
             if self.path == "/api/photography-subject":
                 return self.handle_photography_subject()
             if self.path == "/api/photography-frames":
@@ -2795,6 +3412,115 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         self.send_json(batch)
 
+    def create_motion_batch(self, payload: dict[str, Any], require_reference: bool = True) -> dict[str, Any]:
+        prompt = str(payload.get("prompt") or "").strip()
+        if not prompt:
+            raise ValueError("prompt is required")
+        reference_path = payload.get("reference_path") or payload.get("source_path") or ""
+        if require_reference and not reference_path:
+            raise ValueError("motion reference image is required")
+        reference = safe_media_path(str(reference_path)) if reference_path else None
+        width, height = validate_size(payload.get("width") or 480, payload.get("height") or 832)
+        seed = validate_seed(payload.get("seed"))
+        duration = max(0.5, min(12.0, float(payload.get("duration") or 4.0)))
+        cfg_scale = max(1.0, min(5.0, float(payload.get("cfg_scale") or payload.get("cfg") or 5.0)))
+        steps = max(1, min(100, int(payload.get("steps") or 8)))
+        pose_strength = max(0.0, min(1.0, float(payload.get("pose_strength") or 1.0)))
+
+        batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
+        batch_dir = RUN_ROOT / batch_id
+        run_id = "01_motion"
+        run_dir = batch_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        run = {
+            "batch_id": batch_id,
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "workflow_id": "text_to_motion",
+            "workflow_mode": "motion",
+            "workflow_label": "Motion",
+            "camera_move": "motion",
+            "reference_image": str(reference) if reference else "",
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "seed": seed,
+            "variant_name": "motion",
+            "prompt": prompt,
+            "rewrite": bool(payload.get("rewrite")),
+            "cfg_scale": cfg_scale,
+            "steps": steps,
+            "pose_strength": pose_strength,
+            "status": "queued",
+            "queued_at": time.time(),
+            "scores": {},
+            "notes": "",
+        }
+        batch = {
+            "batch_id": batch_id,
+            "batch_dir": str(batch_dir),
+            "status": "queued",
+            "queued_at": time.time(),
+            "runs": [run],
+        }
+        BATCHES[batch_id] = batch
+        write_batch(batch)
+        return batch
+
+    def handle_text_to_motion(self) -> None:
+        batch = self.create_motion_batch(self.read_json(), require_reference=True)
+        thread = threading.Thread(target=motion_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion_guide(self) -> None:
+        batch = self.create_motion_batch(self.read_json(), require_reference=False)
+        thread = threading.Thread(target=motion_guide_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion_final(self) -> None:
+        payload = self.read_json()
+        batch_id = str(payload.get("batch_id") or "").strip()
+        if not batch_id:
+            raise ValueError("batch_id is required")
+        batch = BATCHES.get(batch_id) or load_batch(batch_id)
+        BATCHES[batch_id] = batch
+        run_id = str(payload.get("run_id") or "").strip()
+        run = next((item for item in batch.get("runs", []) if not run_id or item.get("run_id") == run_id), None)
+        if not run:
+            raise ValueError("motion run not found")
+        if not run.get("guide_video"):
+            raise ValueError("generate a motion guide first")
+
+        if payload.get("reference_path") or payload.get("source_path"):
+            run["reference_image"] = str(safe_media_path(str(payload.get("reference_path") or payload.get("source_path"))))
+        width, height = validate_size(payload.get("width") or run.get("width") or 480, payload.get("height") or run.get("height") or 832)
+        run["width"] = width
+        run["height"] = height
+        if payload.get("steps") not in {None, ""}:
+            run["steps"] = max(1, min(100, int(payload.get("steps"))))
+        if payload.get("pose_strength") not in {None, ""}:
+            run["pose_strength"] = max(0.0, min(1.0, float(payload.get("pose_strength"))))
+        if payload.get("seed") not in {None, ""}:
+            run["seed"] = validate_seed(payload.get("seed"))
+        trim_start, trim_end = motion_trim_values(payload)
+        run["guide_trim_start"] = trim_start
+        run["guide_trim_end"] = trim_end
+        if trim_end is not None:
+            run["duration"] = round(trim_end - trim_start, 3)
+            run["scail_length"] = align_4k1(round((trim_end - trim_start) * 24))
+        write_batch(batch)
+        thread = threading.Thread(target=motion_final_worker, args=(run, batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
+    def handle_text_to_motion_video_final(self) -> None:
+        batch = create_motion_video_batch(self.read_json())
+        thread = threading.Thread(target=motion_final_worker, args=(batch["runs"][0], batch), daemon=True)
+        thread.start()
+        self.send_json(batch)
+
     def handle_upload_audio(self) -> None:
         payload = self.read_json()
         name = safe_filename(payload.get("name") or "audio.wav")
@@ -2808,6 +3534,57 @@ class Handler(BaseHTTPRequestHandler):
         if len(raw) > 80 * 1024 * 1024:
             raise ValueError("audio file is too large")
         upload_dir = UPLOAD_ROOT / "audio"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
+        path.write_bytes(raw)
+        self.send_json({"path": str(path), "name": name})
+
+    def handle_upload_video(self) -> None:
+        content_type = self.headers.get("Content-Type", "")
+        if content_type.startswith("multipart/form-data"):
+            return self.handle_upload_video_form(content_type)
+        payload = self.read_json()
+        name = safe_filename(payload.get("name") or "video.mp4")
+        data_url = payload.get("data") or ""
+        if "," in data_url:
+            data_url = data_url.split(",", 1)[1]
+        raw = base64.b64decode(data_url)
+        self.save_uploaded_video(name, raw)
+
+    def handle_upload_video_form(self, content_type: str) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            import cgi
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": content_type,
+                "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+            },
+        )
+        item = None
+        for field_name in ("file", "video"):
+            if field_name in form:
+                item = form[field_name]
+                break
+        if isinstance(item, list):
+            item = item[0] if item else None
+        if item is None or not getattr(item, "file", None):
+            raise ValueError("video file is required")
+        name = safe_filename(getattr(item, "filename", "") or "video.mp4")
+        raw = item.file.read(MAX_VIDEO_UPLOAD_BYTES + 1)
+        self.save_uploaded_video(name, raw)
+
+    def save_uploaded_video(self, name: str, raw: bytes) -> None:
+        suffix = Path(name).suffix.lower()
+        if suffix not in VIDEO_UPLOAD_SUFFIXES:
+            raise ValueError("unsupported video file type")
+        if len(raw) > MAX_VIDEO_UPLOAD_BYTES:
+            raise ValueError("video file is too large")
+        upload_dir = UPLOAD_ROOT / "videos"
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
@@ -3211,10 +3988,16 @@ def move_to_recycle_bin(path: Path) -> None:
         raise OSError(f"failed to move to recycle bin: {path} ({result})")
 
 
-def public_workflows() -> list[dict[str, Any]]:
+def public_workflows(unavailable_reason: str | None = None) -> list[dict[str, Any]]:
     items = []
     for workflow in WORKFLOWS:
-        status = workflow_status(workflow)
+        if unavailable_reason:
+            status = {"available": False, "reason": unavailable_reason}
+        else:
+            try:
+                status = workflow_status(workflow)
+            except Exception as exc:
+                status = {"available": False, "reason": str(exc)}
         item = dict(workflow)
         item.update(status)
         items.append(item)

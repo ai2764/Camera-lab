@@ -43,3 +43,5 @@ tts/library/
 Thumbs.db
 .vscode/
 .idea/
+
+.env.bak*

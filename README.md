@@ -11,6 +11,7 @@ It runs as a lightweight Python HTTP server, serves a static frontend, and submi
 - **Camera Lab** queues image-to-video and multi-image workflow runs with reusable camera move presets, prompts, seeds, reference images, and result history.
 - **Director** assembles shot timelines, audio cues, reference images, and workflow settings for longer structured video runs.
 - **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
+- **Motion** drives the SCAIL-2 video model to animate a reference character from a guide pose video. It has three tools: **Text to Motion** (HY-Motion turns a text prompt into a pose video), **SCAIL2** (renders a pose video onto a reference character), and **3D Motion** (poses a rigged 3D character in the browser, then feeds that as the guide).
 
 ## Quick Start
 
@@ -59,6 +60,13 @@ Edit `.env` and set your own ComfyUI folder:
 ```text
 COMFYUI_ROOT=<path-to-your-ComfyUI>
 COMFYUI_URL=http://127.0.0.1:8000
+```
+
+The **Motion** workspace can use a separate ComfyUI instance that hosts the HY-Motion and SCAIL-2 nodes. It is optional: leave it unset to route Motion through the main `COMFYUI_URL`, or point it at a dedicated instance.
+
+```text
+COMFYUI_MOTION_URL=http://127.0.0.1:8188
+COMFYUI_MOTION_ROOT=<path-to-your-ComfyUI-scail>
 ```
 
 Do not commit `.env`. It is ignored by git because it is machine-specific.

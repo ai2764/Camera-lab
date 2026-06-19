@@ -24,7 +24,10 @@ def main() -> int:
     parser.add_argument("--open", action="store_true", dest="open_browser")
     args = parser.parse_args()
 
-    load_env()
+    # The start script treats .env as the source of truth: override stale session
+    # env vars (e.g. a COMFYUI_URL left over from an earlier run) so editing .env
+    # always takes effect. The server's own loader still honours real env vars.
+    load_env(override=True)
     server_path = REPO_ROOT / "server" / "camera_lab_server.py"
     if not server_path.exists():
         print(f"Server not found: {server_path}", file=sys.stderr)
