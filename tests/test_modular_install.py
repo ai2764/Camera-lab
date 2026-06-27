@@ -1,5 +1,6 @@
-from scripts.camera_lab_setup.modules import MODULES, get_module, module_ids, selected_modules
 from scripts.camera_lab_setup.hardware import detect_hardware
+from scripts.camera_lab_setup.modules import MODULES, ModelRef, get_module, module_ids, selected_modules
+from scripts.camera_lab_setup.visibility import model_visible, node_visible, visibility_from_object_info
 
 
 def test_module_registry_contains_user_facing_workspaces():
@@ -58,3 +59,18 @@ def test_detect_hardware_keeps_unknown_gpu_as_warning():
 
     assert profile.gpu_name is None
     assert "GPU VRAM could not be detected" in profile.warnings
+
+
+def test_visibility_reads_combo_options_from_object_info():
+    visibility = visibility_from_object_info(
+        {
+            "UNETLoader": {"input": {"required": {"unet_name": ["COMBO", {"options": ["model-a.safetensors"]}]}}},
+            "VAELoader": {"input": {"required": {"vae_name": [["vae-a.safetensors"], {}]}}},
+            "LTXDirector": {"input": {"required": {}}},
+        }
+    )
+
+    assert node_visible(visibility, "LTXDirector")
+    assert model_visible(visibility, ModelRef("diffusion_models", "model-a.safetensors"))
+    assert model_visible(visibility, ModelRef("vae", "vae-a.safetensors"))
+    assert not model_visible(visibility, ModelRef("loras", "missing.safetensors"))
