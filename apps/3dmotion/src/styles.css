@@ -118,6 +118,13 @@ h2 {
   gap: 8px;
 }
 
+.camera-preset-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 2px;
+}
+
 .icon-button,
 .ghost-button,
 .primary-button,
@@ -156,6 +163,7 @@ h2 {
 }
 
 .primary-button:disabled,
+.icon-button:disabled,
 .download-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -168,6 +176,12 @@ h2 {
   border-color: #51616a;
   background: #252b2f;
   transform: translateY(-1px);
+}
+
+.icon-button.active {
+  border-color: var(--accent);
+  background: #2c2419;
+  color: var(--accent);
 }
 
 .stage-wrap {
@@ -693,6 +707,37 @@ h2 {
   accent-color: var(--accent);
 }
 
+.scail-mask-toggle {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 10px;
+  padding: 10px 0 0;
+}
+
+.scail-mask-toggle input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.scail-mask-toggle span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scail-mask-toggle strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.scail-mask-toggle small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .video-preview-stack {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -837,6 +882,10 @@ h2 {
   .transport {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .camera-preset-strip {
+    flex: 0 0 auto;
   }
 
   .primary-button {

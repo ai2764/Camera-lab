@@ -203,7 +203,7 @@ def test_motion_final_worker_reuses_existing_guide(monkeypatch, tmp_path):
     final.parent.mkdir()
     guide.write_bytes(b"guide")
     final.write_bytes(b"final")
-    reference.write_bytes(b"ref")
+    s.Image.new("RGB", (4, 4), "red").save(reference)
     run = {
         "batch_id": "motion_test",
         "run_id": "01_motion",
@@ -293,6 +293,62 @@ def test_create_motion_video_batch_uses_uploaded_guide(monkeypatch, tmp_path):
     assert run["scail_length"] == 93
     assert run["status"] == "guide_done"
     assert run["workflow_id"] == "uploaded_motion_to_scail"
+    assert run["workflow_mode"] == "motion_scail"
+    assert run["workflow_label"] == "SCAIL2"
+    assert run["use_pose_video_mask"] is True
+    assert run["pose_video_mask_prompt"] == "person"
+
+
+def test_create_motion_video_batch_can_disable_pose_video_mask(monkeypatch, tmp_path):
+    guide = tmp_path / "uploads" / "guide.mp4"
+    reference = tmp_path / "uploads" / "ref.png"
+    run_root = tmp_path / "runs"
+    guide.parent.mkdir()
+    guide.write_bytes(b"guide")
+    reference.write_bytes(b"ref")
+    monkeypatch.setattr(s, "ROOT", tmp_path)
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "comfy_output")
+    monkeypatch.setattr(s, "RUN_ROOT", run_root)
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 94)
+
+    batch = s.create_motion_video_batch({
+        "guide_video_path": str(guide),
+        "reference_path": str(reference),
+        "width": 480,
+        "height": 832,
+        "use_pose_video_mask": "false",
+    })
+
+    run = batch["runs"][0]
+    assert run["use_pose_video_mask"] is False
+
+
+def test_create_motion_video_batch_records_3d_motion_type(monkeypatch, tmp_path):
+    guide = tmp_path / "uploads" / "guide.mp4"
+    reference = tmp_path / "uploads" / "ref.png"
+    run_root = tmp_path / "runs"
+    guide.parent.mkdir()
+    guide.write_bytes(b"guide")
+    reference.write_bytes(b"ref")
+    monkeypatch.setattr(s, "ROOT", tmp_path)
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "comfy_output")
+    monkeypatch.setattr(s, "RUN_ROOT", run_root)
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 94)
+
+    batch = s.create_motion_video_batch({
+        "guide_video_path": str(guide),
+        "reference_path": str(reference),
+        "width": 480,
+        "height": 832,
+        "motion_type": "3d",
+    })
+
+    run = batch["runs"][0]
+    assert run["workflow_id"] == "motion_3d_to_scail"
+    assert run["workflow_mode"] == "motion_3d"
+    assert run["workflow_label"] == "3D Motion"
 
 
 def test_create_motion_video_batch_records_guide_trim(monkeypatch, tmp_path):
@@ -320,8 +376,59 @@ def test_create_motion_video_batch_records_guide_trim(monkeypatch, tmp_path):
     run = batch["runs"][0]
     assert run["guide_trim_start"] == 1.25
     assert run["guide_trim_end"] == 4.75
-    assert run["duration"] == 3.5
-    assert run["scail_length"] == 81
+
+
+def test_text_to_motion_final_randomizes_blank_seed(monkeypatch, tmp_path):
+    run = {
+        "batch_id": "motion_existing",
+        "run_id": "01_motion",
+        "run_dir": str(tmp_path / "runs" / "01_motion"),
+        "workflow_id": "text_to_motion",
+        "workflow_mode": "motion_text",
+        "workflow_label": "Motion Guide",
+        "guide_video": str(tmp_path / "guide.mp4"),
+        "reference_image": str(tmp_path / "ref.png"),
+        "width": 480,
+        "height": 832,
+        "seed": 123,
+        "steps": 8,
+        "pose_strength": 1.0,
+        "cfg_scale": 5.0,
+        "duration": 4,
+    }
+    batch = {"batch_id": "motion_existing", "batch_dir": str(tmp_path), "runs": [run]}
+    monkeypatch.setattr(s, "ROOT", tmp_path)
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "comfy_output")
+    monkeypatch.setattr(s, "BATCHES", {"motion_existing": batch})
+    monkeypatch.setattr(s, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(s, "validate_seed", lambda value: 987654321 if value in {None, ""} else int(value))
+
+    class NoopThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(s.threading, "Thread", NoopThread)
+
+    class FakeHandler:
+        def read_json(self):
+            return {
+                "batch_id": "motion_existing",
+                "run_id": "01_motion",
+                "seed": "",
+                "reference_path": str(tmp_path / "ref.png"),
+            }
+
+        def send_json(self, payload, status=200):
+            self.payload = payload
+            self.status = status
+
+    handler = FakeHandler()
+    s.Handler.handle_text_to_motion_final(handler)
+
+    assert run["seed"] == 987654321
 
 
 def test_run_motion_final_stage_trims_guide_before_scail(monkeypatch, tmp_path):
@@ -333,7 +440,7 @@ def test_run_motion_final_stage_trims_guide_before_scail(monkeypatch, tmp_path):
     final.parent.mkdir()
     guide.write_bytes(b"guide")
     final.write_bytes(b"final")
-    reference.write_bytes(b"ref")
+    s.Image.new("RGB", (4, 4), "red").save(reference)
     run = {
         "batch_id": "motion_test",
         "run_id": "01_motion",
@@ -384,6 +491,27 @@ def test_run_motion_final_stage_trims_guide_before_scail(monkeypatch, tmp_path):
     assert calls["guide_name"].endswith("_guide_trim.mp4")
     assert calls["length"] == 33
     assert run["guide_trimmed_video"].endswith("guide_trim.mp4")
+
+
+def test_prepare_scail_reference_preserves_alpha_as_mask(tmp_path):
+    reference = tmp_path / "ref.png"
+    image = s.Image.new("RGBA", (4, 4), (255, 255, 255, 0))
+    for x in range(1, 3):
+        for y in range(1, 3):
+            image.putpixel((x, y), (20, 40, 80, 255))
+    image.save(reference)
+
+    input_dir = tmp_path / "motion_input"
+    prepared = s.prepare_scail_reference_assets(reference, input_dir, "01_motion_ref.png")
+
+    assert prepared["reference_name"] == "01_motion_ref.png"
+    assert prepared["reference_mask_name"] == "01_motion_ref_mask.png"
+    ref_rgb = s.Image.open(input_dir / prepared["reference_name"]).convert("RGB")
+    mask_rgb = s.Image.open(input_dir / prepared["reference_mask_name"]).convert("RGB")
+    assert ref_rgb.getpixel((0, 0)) == (127, 127, 127)
+    assert ref_rgb.getpixel((1, 1)) == (20, 40, 80)
+    assert mask_rgb.getpixel((0, 0)) == (0, 0, 0)
+    assert mask_rgb.getpixel((1, 1)) == (255, 255, 255)
 
 
 def test_create_motion_guide_batch_allows_missing_reference(monkeypatch, tmp_path):

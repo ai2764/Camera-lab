@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 
 from PIL import Image
@@ -8,7 +9,30 @@ from PIL import Image
 from server import camera_lab_server as server
 
 
+class _ScriptSrcParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.sources = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "script":
+            return
+        source = dict(attrs).get("src")
+        if source:
+            self.sources.append(source)
+
+
 class DirectorReferenceTests(unittest.TestCase):
+    def test_main_page_references_existing_3dmotion_bundle(self):
+        parser = _ScriptSrcParser()
+        parser.feed((server.WEB_DIR / "index.html").read_text(encoding="utf-8"))
+        sources = [source for source in parser.sources if source.startswith("/static/3dmotion/")]
+
+        self.assertTrue(sources)
+        for source in sources:
+            path = server.WEB_DIR / source.removeprefix("/static/")
+            self.assertTrue(path.exists(), f"{source} is referenced by frontend/index.html but missing")
+
     def test_comfy_config_auto_detects_existing_default_comfyui_root(self):
         env = {}
 
@@ -77,6 +101,864 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertEqual(loaded["COMFYUI_ROOT"], "ExistingComfyUI")
             self.assertEqual(loaded["COMFYUI_URL"], "http://127.0.0.1:8188")
 
+    def test_bernini_workflows_are_registered(self):
+        workflows = {workflow["id"]: workflow for workflow in server.WORKFLOWS}
+        expected = {
+            "bernini_t2v": "bernini_t2v",
+            "bernini_t2i": "bernini_t2i",
+            "bernini_i2v": "bernini_i2v",
+            "bernini_i2i": "bernini_i2i",
+            "bernini_v2v": "bernini_v2v",
+            "bernini_mv2v": "bernini_mv2v",
+            "bernini_vi2v": "bernini_vi2v",
+            "bernini_vrc2v": "bernini_vrc2v",
+            "bernini_r2v": "bernini_r2v",
+            "bernini_r2i": "bernini_r2i",
+            "bernini_rv2v": "bernini_rv2v",
+            "bernini_ads2v": "bernini_ads2v",
+        }
+
+        for workflow_id, mode in expected.items():
+            self.assertIn(workflow_id, workflows)
+            self.assertEqual(workflows[workflow_id]["mode"], mode)
+            self.assertTrue(workflows[workflow_id]["path"].endswith(f"wan22_{workflow_id}.ui.json"))
+        self.assertNotIn("bernini_default", workflows)
+
+    def test_inpaint_workflow_is_registered(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "wan_vace_inpaint")
+
+        self.assertEqual(workflow["mode"], "wan_vace_inpaint")
+        self.assertTrue(workflow["path"].endswith("wan_vace_inpainting.ui.json"))
+        self.assertTrue(Path(workflow["path"]).exists())
+
+    def test_bernini_required_inputs_map(self):
+        self.assertEqual(
+            server.bernini_required_inputs("bernini_t2v"),
+            {
+                "source_image": False,
+                "reference_image": False,
+                "source_video": False,
+                "reference_video": False,
+            },
+        )
+        self.assertEqual(server.bernini_required_inputs("bernini_t2i"), server.bernini_required_inputs("bernini_t2v"))
+        self.assertTrue(server.bernini_required_inputs("bernini_i2v")["source_image"])
+        self.assertTrue(server.bernini_required_inputs("bernini_i2i")["source_image"])
+        self.assertTrue(server.bernini_required_inputs("bernini_v2v")["source_video"])
+        self.assertTrue(server.bernini_required_inputs("bernini_mv2v")["source_video"])
+        self.assertTrue(server.bernini_required_inputs("bernini_vi2v")["source_video"])
+        self.assertTrue(server.bernini_required_inputs("bernini_vi2v")["reference_image"])
+        self.assertTrue(server.bernini_required_inputs("bernini_vrc2v")["source_video"])
+        self.assertTrue(server.bernini_required_inputs("bernini_r2v")["reference_image"])
+        self.assertTrue(server.bernini_required_inputs("bernini_r2i")["reference_image"])
+        self.assertEqual(
+            server.bernini_required_inputs("bernini_rv2v"),
+            {
+                "source_image": False,
+                "reference_image": True,
+                "source_video": True,
+                "reference_video": False,
+            },
+        )
+        self.assertEqual(
+            server.bernini_required_inputs("bernini_ads2v"),
+            {
+                "source_image": False,
+                "reference_image": False,
+                "source_video": True,
+                "reference_video": True,
+            },
+        )
+
+    def test_video_upload_suffix_validation(self):
+        self.assertTrue(server.is_supported_video_upload("clip.mp4"))
+        self.assertTrue(server.is_supported_video_upload("clip.webm"))
+        self.assertTrue(server.is_supported_video_upload("clip.mov"))
+        self.assertTrue(server.is_supported_video_upload("clip.mkv"))
+        self.assertTrue(server.is_supported_video_upload("clip.avi"))
+        self.assertFalse(server.is_supported_video_upload("clip.png"))
+
+    def test_validate_bernini_media_paths_requires_expected_media(self):
+        image = Path(tempfile.gettempdir()) / "camera_lab_ref.png"
+        video = Path(tempfile.gettempdir()) / "camera_lab_source.mp4"
+
+        def fake_safe_media_path(value):
+            return Path(value)
+
+        with unittest.mock.patch.object(server, "safe_media_path", side_effect=fake_safe_media_path):
+            self.assertEqual(
+                server.validate_bernini_media_paths("bernini_t2v", {}),
+                {
+                    "source": {"path": ""},
+                    "reference_image": {"path": ""},
+                    "source_video": {"path": ""},
+                    "reference_video": {"path": ""},
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "source video is required"):
+                server.validate_bernini_media_paths("bernini_v2v", {})
+            with self.assertRaisesRegex(ValueError, "reference image is required"):
+                server.validate_bernini_media_paths("bernini_r2v", {})
+            with self.assertRaisesRegex(ValueError, "reference image is required"):
+                server.validate_bernini_media_paths("bernini_vi2v", {"source_video_path": str(video)})
+            paths = server.validate_bernini_media_paths(
+                "bernini_rv2v",
+                {"source_video_path": str(video), "reference_image_path": str(image)},
+            )
+
+        self.assertEqual(paths["source_video"]["path"], str(video))
+        self.assertEqual(paths["reference_image"]["path"], str(image))
+
+    def test_patch_bernini_api_updates_conditioning_prompt_and_media(self):
+        api = {
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "old positive"}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"text": "old negative"}},
+            "34": {
+                "class_type": "BerniniConditioning",
+                "inputs": {
+                    "positive": ["3", 0],
+                    "negative": ["4", 0],
+                    "width": 480,
+                    "height": 832,
+                    "length": 121,
+                    "source_video": ["52", 0],
+                    "reference_video": ["53", 0],
+                },
+            },
+            "52": {"class_type": "VHS_LoadVideo", "inputs": {"video": "old.mp4", "frame_load_cap": 121}},
+            "53": {"class_type": "VHS_LoadVideo", "inputs": {"video": "old_ref.mp4", "frame_load_cap": 121}},
+        }
+        run = {"prompt": "new positive", "negative_prompt": "new negative", "width": 720, "height": 1280, "duration": 2}
+
+        server.patch_bernini_api(
+            api,
+            "bernini_ads2v",
+            run,
+            {"source_video": "source.mp4", "reference_video": "reference.mp4"},
+        )
+
+        self.assertEqual(api["3"]["inputs"]["text"], "You are a helpful assistant specialized in ads insertion. new positive")
+        self.assertEqual(api["4"]["inputs"]["text"], "new negative")
+        self.assertEqual(api["34"]["inputs"]["width"], 720)
+        self.assertEqual(api["34"]["inputs"]["height"], 1280)
+        self.assertEqual(api["34"]["inputs"]["length"], 49)
+        self.assertEqual(api["52"]["inputs"]["video"], "source.mp4")
+        self.assertEqual(api["52"]["inputs"]["frame_load_cap"], 49)
+        self.assertEqual(api["53"]["inputs"]["video"], "reference.mp4")
+        self.assertEqual(api["53"]["inputs"]["frame_load_cap"], 49)
+
+    def test_patch_bernini_api_keeps_task_prompt_prefix_and_default_negative(self):
+        api = {
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "old positive"}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"text": "old negative"}},
+        }
+        run = {"prompt": "A cat walking through a sunny garden, cinematic", "negative_prompt": "", "width": 480, "height": 832, "duration": 1}
+
+        server.patch_bernini_api(api, "bernini_t2v", run, {})
+
+        self.assertEqual(
+            api["3"]["inputs"]["text"],
+            "You are a helpful assistant specialized in text-to-video generation. A cat walking through a sunny garden, cinematic",
+        )
+        self.assertEqual(api["4"]["inputs"]["text"], "bad video")
+
+    def test_patch_bernini_image_modes_use_single_frame_length(self):
+        for mode in ("bernini_t2i", "bernini_i2i", "bernini_r2i"):
+            with self.subTest(mode=mode):
+                api = {
+                    "34": {"class_type": "BerniniConditioning", "inputs": {"width": 0, "height": 0, "length": 0}},
+                }
+                run = {"prompt": "make an image", "negative_prompt": "", "width": 512, "height": 512, "duration": 9}
+
+                server.patch_bernini_api(api, mode, run, {})
+
+                self.assertEqual(api["34"]["inputs"]["length"], 1)
+
+    def test_patch_bernini_video_modes_keep_duration_length(self):
+        api = {
+            "34": {"class_type": "BerniniConditioning", "inputs": {"width": 0, "height": 0, "length": 0}},
+        }
+        run = {"prompt": "make a video", "negative_prompt": "", "width": 512, "height": 512, "duration": 4}
+
+        server.patch_bernini_api(api, "bernini_t2v", run, {})
+
+        self.assertEqual(api["34"]["inputs"]["length"], 97)
+
+    def test_bernini_prompt_prefixes_match_workflow_task_notes(self):
+        cases = {
+            "bernini_mv2v": (
+                "change the lighting to warm golden hour",
+                "You are a helpful assistant for editing. You might need to adjust the video's style, lighting, colors, textures, and the subject's pose or action. change the lighting to warm golden hour",
+            ),
+            "bernini_vi2v": (
+                "propagate the edit consistently across the whole clip",
+                "You are a helpful assistant specialized in video editing on content propagation. propagate the edit consistently across the whole clip",
+            ),
+            "bernini_vrc2v": (
+                "make the subject raise their right hand",
+                "You are a helpful assistant for editing. You may need to adjust the subject's action or position. make the subject raise their right hand",
+            ),
+        }
+        for mode, (prompt, expected) in cases.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(server.bernini_prompt_text(mode, prompt), expected)
+
+    def test_patch_bernini_api_uses_autogrow_reference_image_input(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "bernini_rv2v")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "prompt": "replace actor",
+            "negative_prompt": "",
+            "width": 480,
+            "height": 832,
+            "duration": 4,
+            "bernini_ref_max_size": 1024,
+        }
+
+        server.patch_bernini_api(
+            api,
+            "bernini_rv2v",
+            run,
+            {"source_video": "source.mp4", "reference_image": "ref.png"},
+        )
+
+        bernini_inputs = api["34"]["inputs"]
+        self.assertNotIn("reference_images", bernini_inputs)
+        self.assertEqual(bernini_inputs["reference_images.reference_image_0"], ["53", 0])
+        self.assertEqual(bernini_inputs["ref_max_size"], 1024)
+        self.assertEqual(api["53"]["inputs"]["image"], "ref.png")
+
+    def test_patch_bernini_r2v_uses_autogrow_reference_image_input(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "bernini_r2v")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {"prompt": "subject dancing", "negative_prompt": "", "width": 480, "height": 832, "duration": 4}
+
+        server.patch_bernini_api(
+            api,
+            "bernini_r2v",
+            run,
+            {"reference_image": "ref.png"},
+        )
+
+        bernini_inputs = api["34"]["inputs"]
+        self.assertNotIn("reference_images", bernini_inputs)
+        self.assertEqual(bernini_inputs["reference_images.reference_image_0"], ["52", 0])
+        self.assertEqual(api["52"]["inputs"]["image"], "ref.png")
+
+    def test_patch_bernini_vi2v_adds_reference_image_input(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "bernini_vi2v")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {"prompt": "propagate edit", "negative_prompt": "", "width": 480, "height": 832, "duration": 4}
+
+        server.patch_bernini_api(
+            api,
+            "bernini_vi2v",
+            run,
+            {"source_video": "source.mp4", "reference_image": "guide.png"},
+        )
+
+        bernini_inputs = api["34"]["inputs"]
+        self.assertEqual(api["55"]["inputs"]["video"], "source.mp4")
+        self.assertIn("reference_images.reference_image_0", bernini_inputs)
+        image_node = api[str(bernini_inputs["reference_images.reference_image_0"][0])]
+        self.assertEqual(image_node["class_type"], "LoadImage")
+        self.assertEqual(image_node["inputs"]["image"], "guide.png")
+
+    def test_patch_bernini_api_sets_reference_strength_when_node_supports_it(self):
+        api = {
+            "34": {
+                "class_type": "BerniniConditioning",
+                "inputs": {
+                    "width": 480,
+                    "height": 832,
+                    "length": 121,
+                    "reference_strength": 0.35,
+                },
+            },
+        }
+        run = {
+            "prompt": "subject dancing",
+            "negative_prompt": "",
+            "width": 480,
+            "height": 832,
+            "duration": 4,
+            "global_reference_strength": 0.7,
+        }
+
+        server.patch_bernini_api(api, "bernini_r2v", run, {})
+
+        self.assertEqual(api["34"]["inputs"]["reference_strength"], 0.7)
+
+    def test_patch_bernini_api_updates_sampler_noise_seed(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "bernini_rv2v")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "prompt": "replace actor",
+            "negative_prompt": "",
+            "width": 480,
+            "height": 832,
+            "duration": 4,
+            "seed": 123456,
+        }
+
+        server.patch_bernini_api(api, "bernini_rv2v", run, {"source_video": "source.mp4", "reference_image": "ref.png"})
+
+        sampler_seeds = [
+            node["inputs"]["noise_seed"]
+            for node in api.values()
+            if node["class_type"] == "SamplerCustom" and "noise_seed" in node["inputs"]
+        ]
+        self.assertTrue(sampler_seeds)
+        self.assertTrue(all(seed == 123456 for seed in sampler_seeds))
+
+    def test_workflow_to_api_expands_nested_subgraphs(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "wan_vace_inpaint")
+
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        class_types = {node["class_type"] for node in api.values()}
+
+        self.assertNotIn("bd7f73a0-ec67-4f46-8671-17088d8e31b7", class_types)
+        self.assertNotIn("17df2eeb-d89e-46ee-9480-a4ca2494b207", class_types)
+        self.assertIn("WanVaceToVideo", class_types)
+
+    def test_patch_inpaint_api_uses_uploaded_mask_and_reference(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "wan_vace_inpaint")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "prompt": "Place the product in the painted area.",
+            "negative_prompt": "bad video",
+            "width": 320,
+            "height": 320,
+            "duration": 1,
+            "seed": 123,
+            "batch_id": "batch",
+            "run_id": "run",
+        }
+
+        server.patch_inpaint_api(
+            api,
+            run,
+            {"source_video": "source.mp4", "reference_image": "ref.png", "mask_image": "mask.png"},
+        )
+
+        def node_id_by_type_and_input(class_type, key, value):
+            return next(
+                node_id
+                for node_id, node in api.items()
+                if node["class_type"] == class_type and node["inputs"].get(key) == value
+            )
+
+        ref_id = node_id_by_type_and_input("LoadImage", "image", "ref.png")
+        mask_id = node_id_by_type_and_input("LoadImage", "image", "mask.png")
+        image_to_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "ImageToMask")
+        load_video = next(node for node in api.values() if node["class_type"] == "LoadVideo")
+        image_to_mask = api[image_to_mask_id]
+        vace = next(node for node in api.values() if node["class_type"] == "WanVaceToVideo")
+        sampler = next(node for node in api.values() if node["class_type"] == "KSampler")
+        trim = next(node for node in api.values() if node["class_type"] == "TrimVideoLatent")
+        vace_id = next(node_id for node_id, node in api.items() if node["class_type"] == "WanVaceToVideo")
+
+        self.assertEqual(load_video["inputs"]["file"], "source.mp4")
+        self.assertEqual(image_to_mask["inputs"]["image"], [mask_id, 0])
+        self.assertEqual(vace["inputs"]["reference_image"], [ref_id, 0])
+        self.assertEqual(vace["inputs"]["control_masks"], [image_to_mask_id, 0])
+        self.assertEqual(vace["inputs"]["width"], 320)
+        self.assertEqual(vace["inputs"]["height"], 320)
+        self.assertEqual(vace["inputs"]["length"], 25)
+        self.assertEqual(sampler["inputs"]["sampler_name"], "uni_pc")
+        self.assertEqual(sampler["inputs"]["scheduler"], "simple")
+        self.assertEqual(sampler["inputs"]["denoise"], 1.0)
+        self.assertEqual(trim["inputs"]["trim_amount"], [vace_id, 3])
+
+    def test_patch_inpaint_api_allows_prompt_only_without_reference(self):
+        workflow = next(item for item in server.WORKFLOWS if item["id"] == "wan_vace_inpaint")
+        api = server.workflow_to_api(json.loads(Path(workflow["path"]).read_text(encoding="utf-8")))
+        run = {
+            "prompt": "Remove the object and rebuild the background.",
+            "negative_prompt": "bad video",
+            "width": 320,
+            "height": 320,
+            "duration": 1,
+            "seed": 123,
+            "batch_id": "batch",
+            "run_id": "run",
+        }
+
+        server.patch_inpaint_api(
+            api,
+            run,
+            {"source_video": "source.mp4", "mask_image": "mask.png"},
+        )
+
+        vace = next(node for node in api.values() if node["class_type"] == "WanVaceToVideo")
+        mask_id = next(
+            node_id
+            for node_id, node in api.items()
+            if node["class_type"] == "LoadImage" and node["inputs"].get("image") == "mask.png"
+        )
+        image_to_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "ImageToMask")
+
+        self.assertNotIn("reference_image", vace["inputs"])
+        self.assertEqual(vace["inputs"]["control_masks"], [image_to_mask_id, 0])
+        self.assertEqual(api[image_to_mask_id]["inputs"]["image"], [mask_id, 0])
+
+    def test_validate_inpaint_media_paths_reference_is_optional(self):
+        source_video = Path(tempfile.gettempdir()) / "camera_lab_source.mp4"
+        mask_image = Path(tempfile.gettempdir()) / "camera_lab_mask.png"
+
+        def fake_safe_media_path(value):
+            return Path(value)
+
+        with unittest.mock.patch.object(server, "safe_media_path", side_effect=fake_safe_media_path):
+            paths = server.validate_inpaint_media_paths(
+                {"source_video_path": str(source_video), "mask_image_path": str(mask_image)}
+            )
+
+        self.assertEqual(paths["source_video"]["path"], str(source_video))
+        self.assertEqual(paths["mask_image"]["path"], str(mask_image))
+        self.assertEqual(paths["reference_image"]["path"], "")
+
+    def test_stage_inpaint_inputs_copies_video_reference_and_mask(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_video = root / "source clip.mp4"
+            source_video.write_bytes(b"video")
+            reference_image = root / "reference.png"
+            Image.new("RGB", (64, 64), "red").save(reference_image)
+            mask_image = root / "mask.png"
+            Image.new("RGB", (64, 64), "white").save(mask_image)
+            comfy_input = root / "comfy_input"
+            run_dir = root / "run"
+            run_dir.mkdir()
+            run = {
+                "run_id": "01_inpaint",
+                "source_video": str(source_video),
+                "reference_image": str(reference_image),
+                "mask_image": str(mask_image),
+            }
+
+            with unittest.mock.patch.object(server, "COMFY_INPUT", comfy_input):
+                input_names = server.stage_inpaint_inputs(run, 320, 320, run_dir)
+
+            self.assertEqual(input_names["source_video"], "01_inpaint_source_clip.mp4")
+            self.assertEqual(input_names["reference_image"], "01_inpaint_reference.png")
+            self.assertEqual(input_names["mask_image"], "01_inpaint_mask.png")
+            self.assertTrue((comfy_input / input_names["source_video"]).exists())
+            self.assertTrue((comfy_input / input_names["reference_image"]).exists())
+            self.assertTrue((comfy_input / input_names["mask_image"]).exists())
+
+    def test_stage_inpaint_inputs_allows_missing_reference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_video = root / "source clip.mp4"
+            source_video.write_bytes(b"video")
+            mask_image = root / "mask.png"
+            Image.new("RGB", (64, 64), "white").save(mask_image)
+            comfy_input = root / "comfy_input"
+            run_dir = root / "run"
+            run_dir.mkdir()
+            run = {
+                "run_id": "01_inpaint",
+                "source_video": str(source_video),
+                "reference_image": "",
+                "mask_image": str(mask_image),
+            }
+
+            with unittest.mock.patch.object(server, "COMFY_INPUT", comfy_input):
+                input_names = server.stage_inpaint_inputs(run, 320, 320, run_dir)
+
+            self.assertEqual(input_names["source_video"], "01_inpaint_source_clip.mp4")
+            self.assertEqual(input_names["mask_image"], "01_inpaint_mask.png")
+            self.assertNotIn("reference_image", input_names)
+            self.assertTrue((comfy_input / input_names["source_video"]).exists())
+            self.assertTrue((comfy_input / input_names["mask_image"]).exists())
+
+    def test_stage_bernini_inputs_copies_images_and_videos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_video = root / "source clip.mp4"
+            source_video.write_bytes(b"video")
+            reference_image = root / "reference.png"
+            Image.new("RGB", (64, 64), "red").save(reference_image)
+            comfy_input = root / "comfy_input"
+            run_dir = root / "run"
+            run_dir.mkdir()
+            run = {
+                "run_id": "01_bernini",
+                "workflow_mode": "bernini_rv2v",
+                "source_video": str(source_video),
+                "reference_image": str(reference_image),
+            }
+
+            with unittest.mock.patch.object(server, "COMFY_INPUT", comfy_input):
+                input_names = server.stage_bernini_inputs(run, 48, 80, run_dir)
+
+            self.assertEqual(input_names["source_video"], "01_bernini_source_clip.mp4")
+            self.assertEqual(input_names["reference_image"], "01_bernini_reference.png")
+            self.assertTrue((comfy_input / input_names["source_video"]).exists())
+            self.assertTrue((comfy_input / input_names["reference_image"]).exists())
+
+    def test_bernini_segment_specs_cover_full_duration(self):
+        specs = server.bernini_segment_specs(total_duration=10.5, segment_duration=4)
+
+        self.assertEqual(
+            specs,
+            [
+                {"index": 1, "start": 0.0, "duration": 4.0},
+                {"index": 2, "start": 4.0, "duration": 4.0},
+                {"index": 3, "start": 8.0, "duration": 2.5},
+            ],
+        )
+
+    def test_split_video_segments_uses_exact_trim_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "long.mp4"
+            source.write_bytes(b"video")
+            out_dir = root / "segments"
+            commands: list[list[str]] = []
+
+            def fake_runner(command, **_kwargs):
+                commands.append(command)
+                Path(command[-1]).write_bytes(b"segment")
+                return unittest.mock.Mock(returncode=0)
+
+            with unittest.mock.patch.object(server, "video_duration_seconds", return_value=8.5):
+                segments = server.split_video_segments(source, out_dir, 4, runner=fake_runner)
+
+            self.assertEqual([path.name for path in segments], ["segment_001.mp4", "segment_002.mp4", "segment_003.mp4"])
+            self.assertEqual(commands[0][0], "ffmpeg")
+            self.assertIn("-ss", commands[0])
+            self.assertIn("-t", commands[0])
+            self.assertEqual(commands[0][commands[0].index("-ss") + 1], "0.000")
+            self.assertEqual(commands[0][commands[0].index("-t") + 1], "4.000")
+            self.assertEqual(commands[2][commands[2].index("-ss") + 1], "8.000")
+            self.assertEqual(commands[2][commands[2].index("-t") + 1], "0.500")
+
+    def test_merge_segment_videos_writes_concat_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "one.mp4"
+            second = root / "two.mp4"
+            first.write_bytes(b"one")
+            second.write_bytes(b"two")
+            merged = root / "merged.mp4"
+            commands: list[list[str]] = []
+
+            def fake_runner(command, **_kwargs):
+                commands.append(command)
+                merged.write_bytes(b"merged")
+                return unittest.mock.Mock(returncode=0)
+
+            out = server.merge_segment_videos([first, second], merged, runner=fake_runner)
+
+            self.assertEqual(out, merged)
+            concat_list = root / "merged.txt"
+            self.assertTrue(concat_list.exists())
+            self.assertIn("one.mp4", concat_list.read_text(encoding="utf-8"))
+            self.assertEqual(commands[0][:5], ["ffmpeg", "-y", "-f", "concat", "-safe"])
+
+    def test_trim_video_clip_uses_precise_ffmpeg_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.mp4"
+            source.write_bytes(b"video")
+            output_dir = root / "clips"
+            commands: list[list[str]] = []
+
+            def fake_runner(command, **_kwargs):
+                commands.append(command)
+                Path(command[-1]).write_bytes(b"clip")
+                return unittest.mock.Mock(returncode=0)
+
+            out = server.trim_video_clip(source, output_dir, 1.25, 3.75, runner=fake_runner)
+
+            self.assertTrue(out.exists())
+            self.assertEqual(out.parent, output_dir)
+            self.assertEqual(commands[0][0], "ffmpeg")
+            self.assertEqual(commands[0][commands[0].index("-ss") + 1], "1.250")
+            self.assertEqual(commands[0][commands[0].index("-t") + 1], "2.500")
+            self.assertEqual(commands[0][commands[0].index("-vf") + 1], "scale=trunc(iw/2)*2:trunc(ih/2)*2")
+            self.assertIn("-movflags", commands[0])
+            self.assertIn("+faststart", commands[0])
+
+    def test_trim_video_clip_rejects_invalid_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.mp4"
+            source.write_bytes(b"video")
+
+            with self.assertRaisesRegex(ValueError, "end must be after start"):
+                server.trim_video_clip(source, Path(tmp) / "clips", 2, 2)
+
+    def test_preserve_video_audio_muxes_source_audio_into_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "generated.mp4"
+            source = root / "source.mp4"
+            generated.write_bytes(b"generated")
+            source.write_bytes(b"source")
+            commands: list[list[str]] = []
+
+            def fake_runner(command, **_kwargs):
+                commands.append(command)
+                Path(command[-1]).write_bytes(b"muxed")
+                return unittest.mock.Mock(returncode=0)
+
+            out = server.preserve_video_audio(generated, source, runner=fake_runner)
+
+            self.assertTrue(out.exists())
+            self.assertEqual(out.name, "generated_preserve_audio.mp4")
+            self.assertEqual(commands[0][0], "ffmpeg")
+            self.assertEqual(commands[0][commands[0].index("-map") + 1], "0:v:0")
+            self.assertIn("1:a:0?", commands[0])
+            self.assertIn("-shortest", commands[0])
+
+    def test_apply_bernini_preserve_audio_updates_run_video(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "generated.mp4"
+            source = root / "source.mp4"
+            generated.write_bytes(b"generated")
+            source.write_bytes(b"source")
+            run = {
+                "workflow_mode": "bernini_v2v",
+                "source_video": str(source),
+                "bernini_preserve_audio": True,
+                "copied": [str(generated)],
+            }
+
+            def fake_preserve(video, audio_source):
+                self.assertEqual(video, generated)
+                self.assertEqual(audio_source, source)
+                muxed = root / "muxed.mp4"
+                muxed.write_bytes(b"muxed")
+                return muxed
+
+            with unittest.mock.patch.object(server, "preserve_video_audio", side_effect=fake_preserve):
+                out = server.apply_bernini_preserve_audio(run, generated)
+
+            self.assertEqual(out.name, "muxed.mp4")
+            self.assertEqual(run["video"], str(out))
+            self.assertTrue(run["bernini_audio_preserved"])
+            self.assertIn(str(out), run["copied"])
+
+    def test_apply_bernini_preserve_audio_keeps_generated_video_when_source_audio_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "generated.mp4"
+            missing_source = root / "missing_source.mp4"
+            generated.write_bytes(b"generated")
+            run = {
+                "workflow_mode": "bernini_v2v",
+                "source_video": str(missing_source),
+                "bernini_preserve_audio": True,
+                "copied": [str(generated)],
+            }
+
+            out = server.apply_bernini_preserve_audio(run, generated)
+
+            self.assertEqual(out, generated)
+            self.assertEqual(run["video"], str(generated))
+            self.assertFalse(run["bernini_audio_preserved"])
+            self.assertIn("source video is missing", run["bernini_audio_warning"])
+
+    def test_record_run_media_outputs_sets_image_for_image_only_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.png"
+            second = root / "second.webp"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            run = {
+                "variant_name": "prompt",
+                "camera_move": "R2I",
+            }
+
+            server.record_run_media_outputs(run, [first, second], "bernini_r2i", root)
+
+            self.assertEqual(run["copied"], [str(first), str(second)])
+            self.assertEqual(run["image"], str(first))
+            self.assertEqual(run["images"], [str(first), str(second)])
+            self.assertNotIn("video", run)
+
+    def test_history_runs_hydrates_image_from_existing_copied_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            batch_dir = root / "batch"
+            run_dir = batch_dir / "01_prompt"
+            run_dir.mkdir(parents=True)
+            image = run_dir / "output.png"
+            image.write_bytes(b"image")
+            (batch_dir / "batch.json").write_text(
+                json.dumps(
+                    {
+                        "status": "done",
+                        "runs": [
+                            {
+                                "batch_id": "batch",
+                                "run_id": "01_prompt",
+                                "workflow_id": "bernini_r2i",
+                                "workflow_mode": "bernini_r2i",
+                                "workflow_label": "WAN2.2 Bernini R2I",
+                                "status": "done",
+                                "copied": [str(image)],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with unittest.mock.patch.object(server, "RUN_ROOT", root):
+                runs = server.history_runs()
+
+            self.assertEqual(runs[0]["image"], str(image))
+            self.assertEqual(runs[0]["images"], [str(image)])
+
+    def test_record_3dmotion_guide_run_writes_history_visible_motion_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "recorded.webm"
+            source.write_bytes(b"webm")
+
+            commands: list[list[str]] = []
+
+            def fake_runner(command, **_kwargs):
+                commands.append(command)
+                Path(command[-1]).write_bytes(b"mp4")
+                return unittest.mock.Mock(returncode=0)
+
+            with unittest.mock.patch.object(server, "RUN_ROOT", root):
+                batch = server.record_3dmotion_guide_run(source, duration=1.75, prompt="face focus orbit", runner=fake_runner)
+                runs = server.history_runs()
+
+            run = batch["runs"][0]
+            copied = Path(run["video"])
+            self.assertEqual(commands[0][0], "ffmpeg")
+            self.assertEqual(commands[0][commands[0].index("-vf") + 1], "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24")
+            self.assertEqual(run["workflow_id"], "motion_3d_to_scail")
+            self.assertEqual(run["workflow_mode"], "motion_3d")
+            self.assertEqual(run["workflow_label"], "3D Motion")
+            self.assertEqual(run["status"], "guide_done")
+            self.assertEqual(run["duration"], 1.75)
+            self.assertEqual(run["prompt"], "face focus orbit")
+            self.assertEqual(run["guide_video"], str(copied))
+            self.assertEqual(copied.suffix, ".mp4")
+            self.assertTrue(copied.exists())
+            self.assertEqual(runs[0]["history_key"], f"{run['batch_id']}:{run['run_id']}")
+            self.assertEqual(runs[0]["video"], str(copied))
+            self.assertEqual(runs[0]["guide_video"], str(copied))
+
+    def test_bernini_split_options_only_enable_for_rv2v(self):
+        options = server.bernini_split_options(
+            "bernini_rv2v",
+            {"bernini_split_enabled": True, "bernini_split_duration": "4.5", "bernini_split_merge": True},
+        )
+
+        self.assertEqual(options, {"enabled": True, "duration": 4.5, "merge": True})
+        self.assertEqual(server.bernini_split_options("bernini_v2v", {"bernini_split_enabled": True})["enabled"], False)
+
+    def test_prepare_bernini_split_runs_expands_source_video(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            batch_dir = root / "batch"
+            batch_dir.mkdir()
+            source = root / "long.mp4"
+            source.write_bytes(b"video")
+            reference = root / "ref.png"
+            Image.new("RGB", (64, 64), "red").save(reference)
+            seg1 = batch_dir / "_segments" / "segment_001.mp4"
+            seg2 = batch_dir / "_segments" / "segment_002.mp4"
+            seg1.parent.mkdir()
+            seg1.write_bytes(b"one")
+            seg2.write_bytes(b"two")
+            base_run = {
+                "batch_id": "batch",
+                "run_id": "01_prompt",
+                "run_dir": str(batch_dir / "01_prompt"),
+                "workflow_id": "bernini_rv2v",
+                "workflow_mode": "bernini_rv2v",
+                "workflow_label": "WAN2.2 Bernini RV2V",
+                "source_video": str(source),
+                "reference_image": str(reference),
+                "duration": 8.0,
+                "variant_name": "prompt",
+                "prompt": "replace actor",
+                "status": "queued",
+            }
+
+            with unittest.mock.patch.object(server, "video_duration_seconds", return_value=8.0), unittest.mock.patch.object(
+                server, "split_video_segments", return_value=[seg1, seg2]
+            ):
+                runs = server.prepare_bernini_split_runs(base_run, batch_dir, 4.0)
+
+            self.assertEqual([run["run_id"] for run in runs], ["01_prompt_seg001", "01_prompt_seg002"])
+            self.assertEqual([Path(run["source_video"]).name for run in runs], ["segment_001.mp4", "segment_002.mp4"])
+            self.assertEqual([run["duration"] for run in runs], [4.0, 4.0])
+            self.assertEqual([run["segment_index"] for run in runs], [1, 2])
+            self.assertTrue(runs[0]["run_dir"].endswith("01_prompt_seg001"))
+
+    def test_merge_bernini_split_batch_appends_final_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "seg1.mp4"
+            second = root / "seg2.mp4"
+            first.write_bytes(b"one")
+            second.write_bytes(b"two")
+            merged = root / "merged.mp4"
+            batch = {
+                "batch_id": "batch",
+                "batch_dir": str(root),
+                "bernini_split": {"enabled": True, "merge": True},
+                "runs": [
+                    {
+                        "run_id": "01_prompt_seg001",
+                        "run_dir": str(root / "seg001"),
+                        "status": "done",
+                        "video": str(first),
+                        "segment_index": 1,
+                        "workflow_id": "bernini_rv2v",
+                        "workflow_mode": "bernini_rv2v",
+                        "workflow_label": "WAN2.2 Bernini RV2V",
+                        "prompt": "replace actor",
+                        "negative_prompt": "bad video",
+                        "seed": 123,
+                        "duration": 4.0,
+                        "width": 1280,
+                        "height": 720,
+                    },
+                    {
+                        "run_id": "01_prompt_seg002",
+                        "run_dir": str(root / "seg002"),
+                        "status": "done",
+                        "video": str(second),
+                        "segment_index": 2,
+                        "workflow_id": "bernini_rv2v",
+                        "workflow_mode": "bernini_rv2v",
+                        "workflow_label": "WAN2.2 Bernini RV2V",
+                        "prompt": "replace actor",
+                        "negative_prompt": "bad video",
+                        "seed": 123,
+                        "duration": 4.0,
+                        "width": 1280,
+                        "height": 720,
+                    },
+                ],
+            }
+
+            def fake_merge(_videos, output, **_kwargs):
+                output.write_bytes(b"merged")
+                return output
+
+            with unittest.mock.patch.object(server, "merge_segment_videos", side_effect=fake_merge):
+                final_run = server.merge_bernini_split_batch(batch)
+
+            self.assertIsNotNone(final_run)
+            self.assertEqual(final_run["run_id"], "merged")
+            self.assertEqual(final_run["status"], "done")
+            self.assertTrue(Path(final_run["video"]).exists())
+            self.assertEqual(batch["runs"][-1]["run_id"], "merged")
+
     def test_runexx_length_primitive_stays_in_seconds(self):
         workflow = next(item for item in server.WORKFLOWS if item["id"] == "fml_runexx_guider_local")
         api = server.workflow_to_api(json.loads(server.Path(workflow["path"]).read_text(encoding="utf-8")))
@@ -115,6 +997,19 @@ class DirectorReferenceTests(unittest.TestCase):
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
             "flf_ia2v": "ltx23_flf_ia2v_nag_extend.json",
             "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
+            "bernini_t2v": "wan22_bernini_t2v.ui.json",
+            "bernini_t2i": "wan22_bernini_t2i.ui.json",
+            "bernini_i2v": "wan22_bernini_i2v.ui.json",
+            "bernini_i2i": "wan22_bernini_i2i.ui.json",
+            "bernini_v2v": "wan22_bernini_v2v.ui.json",
+            "bernini_mv2v": "wan22_bernini_mv2v.ui.json",
+            "bernini_vi2v": "wan22_bernini_vi2v.ui.json",
+            "bernini_vrc2v": "wan22_bernini_vrc2v.ui.json",
+            "bernini_r2v": "wan22_bernini_r2v.ui.json",
+            "bernini_r2i": "wan22_bernini_r2i.ui.json",
+            "bernini_rv2v": "wan22_bernini_rv2v.ui.json",
+            "bernini_ads2v": "wan22_bernini_ads2v.ui.json",
+            "wan_vace_inpaint": "wan_vace_inpainting.ui.json",
         }
         expected_builders: dict[str, str] = {}
 

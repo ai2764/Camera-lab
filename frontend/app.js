@@ -1,15 +1,126 @@
 function initialWorkspace() {
   if (window.location.hash === "#director") return "director";
+  if (window.location.hash === "#edit" || window.location.hash === "#bernini" || window.location.hash === "#inpaint") return "edit";
   if (window.location.hash === "#casting") return "casting";
   if (window.location.hash === "#motion") return "motion";
   return "camera";
 }
 
+const BERNINI_TASKS = {
+  bernini_t2v: {
+    tag: "T2V",
+    sourceImage: false,
+    sourceVideo: false,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "A cat walking through a sunny garden, cinematic",
+  },
+  bernini_t2i: {
+    tag: "T2I",
+    sourceImage: false,
+    sourceVideo: false,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "a portrait of a woman in a red dress, studio lighting",
+  },
+  bernini_i2v: {
+    tag: "I2V",
+    sourceImage: true,
+    sourceVideo: false,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "Animate this image with gentle camera push-in",
+  },
+  bernini_i2i: {
+    tag: "I2I",
+    sourceImage: true,
+    sourceVideo: false,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "change the shirt color to blue",
+  },
+  bernini_v2v: {
+    tag: "V2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "Restyle the video into a watercolor look",
+  },
+  bernini_mv2v: {
+    tag: "MV2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "change the lighting to warm golden hour",
+  },
+  bernini_vi2v: {
+    tag: "VI2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: true,
+    referenceVideo: false,
+    prompt: "propagate the edit consistently across the whole clip",
+  },
+  bernini_vrc2v: {
+    tag: "VRC2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: false,
+    referenceVideo: false,
+    prompt: "make the subject raise their right hand",
+  },
+  bernini_r2v: {
+    tag: "R2V",
+    sourceImage: false,
+    sourceVideo: false,
+    referenceImage: true,
+    referenceVideo: false,
+    prompt: "This subject dancing on a neon stage",
+  },
+  bernini_r2i: {
+    tag: "R2I",
+    sourceImage: false,
+    sourceVideo: false,
+    referenceImage: true,
+    referenceVideo: false,
+    prompt: "this subject standing in a snowy street",
+  },
+  bernini_rv2v: {
+    tag: "RV2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: true,
+    referenceVideo: false,
+    prompt: "Replace the girl in the video with a girl dressed in student attire",
+  },
+  bernini_ads2v: {
+    tag: "ADS2V",
+    sourceImage: false,
+    sourceVideo: true,
+    referenceImage: false,
+    referenceVideo: true,
+    prompt: "Insert the product naturally onto the table",
+  },
+};
+
+const BERNINI_IMAGE_MODES = new Set(["bernini_t2i", "bernini_i2i", "bernini_r2i"]);
+const EDIT_BERNINI_MODES = Object.keys(BERNINI_TASKS).filter((mode) => !BERNINI_IMAGE_MODES.has(mode));
+const BERNINI_DEFAULT_NEGATIVE = "bad video";
+const INPAINT_WORKFLOW_MODE = "wan_vace_inpaint";
+const INPAINT_DEFAULT_PROMPT = "Place the reference object naturally inside the painted area, matching lighting, scale, perspective, and motion.";
+const INPAINT_DEFAULT_NEGATIVE = "bad video";
+
 const state = {
   config: null,
   activeBatch: null,
   pollTimer: null,
+  batchPreviewWaits: {},
+  motionPreviewWaits: {},
+  motionPendingCounter: 0,
   historyTimer: null,
+  historyRuns: [],
   clockTimer: null,
   exampleAnimation: null,
   exampleDiagram: "",
@@ -20,7 +131,6 @@ const state = {
   motionRefPath: "",
   motionGuideVideoPath: "",
   motionGuideDuration: 4,
-  motionTrimPlaying: false,
   motionBatch: null,
   motionSubtab: "text",
   motion3d: {
@@ -47,10 +157,36 @@ const state = {
   workspace: initialWorkspace(),
   cameraWorkflowId: "",
   directorWorkflowId: "",
+  berniniWorkflowId: "bernini_t2v",
+  berniniSourceVideoPath: "",
+  berniniSourceVideoName: "",
+  berniniReferenceVideoPath: "",
+  berniniReferenceVideoName: "",
+  berniniReferenceImagePath: "",
+  berniniReferenceImageName: "",
+  inpaintWorkflowId: "wan_vace_inpaint",
+  inpaintSourceVideoPath: "",
+  inpaintSourceVideoName: "",
+  inpaintReferenceImagePath: "",
+  inpaintReferenceImageName: "",
+  inpaintMaskImagePath: "",
+  inpaintMaskPainted: false,
+  inpaintDrawing: false,
+  inpaintLastPoint: null,
   castingLines: [],
   castingLibrary: [],
   castingEdit: null,
   castingPreview: null,
+  videoClipper: {
+    slot: "",
+    path: "",
+    name: "",
+    duration: 0,
+    playing: false,
+    renderingFilmstrip: false,
+  },
+  videoPreviewRun: null,
+  frameExtractRun: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -58,7 +194,65 @@ const imageSlots = {
   source: { pathKey: "sourcePath", previewId: "sourcePreview", statusId: "sourceStatus", empty: "No image uploaded" },
   middle: { pathKey: "middlePath", previewId: "middlePreview", statusId: "middleStatus", empty: "No image uploaded" },
   end: { pathKey: "endPath", previewId: "endPreview", statusId: "endStatus", empty: "No image uploaded" },
-  motion_ref: { pathKey: "motionRefPath", previewId: "motionRefPreview", statusId: "motionRefStatus", empty: "No image uploaded" },
+  motion_ref: {
+    pathKey: "motionRefPath",
+    previewId: "motionRefPreview",
+    extraPreviewIds: ["motionScailRefPreview"],
+    statusId: "motionRefStatus",
+    empty: "No image uploaded",
+  },
+  berniniReference: {
+    pathKey: "berniniReferenceImagePath",
+    previewId: "berniniReferenceImagePreview",
+    statusId: "berniniReferenceImageStatus",
+    empty: "No image uploaded",
+  },
+  inpaintReference: {
+    pathKey: "inpaintReferenceImagePath",
+    previewId: "inpaintReferenceImagePreview",
+    statusId: "inpaintReferenceImageStatus",
+    empty: "Optional reference not uploaded",
+  },
+};
+
+const videoSlots = {
+  berniniSource: {
+    pathKey: "berniniSourceVideoPath",
+    nameKey: "berniniSourceVideoName",
+    statusId: "berniniSourceVideoStatus",
+    editId: "berniniSourceVideoEditBtn",
+    previewId: "berniniSourceVideoPreview",
+    previewWrapId: "berniniSourceVideoPreviewWrap",
+    title: "Bernini source video",
+  },
+  berniniReference: {
+    pathKey: "berniniReferenceVideoPath",
+    nameKey: "berniniReferenceVideoName",
+    statusId: "berniniReferenceVideoStatus",
+    editId: "berniniReferenceVideoEditBtn",
+    previewId: "berniniReferenceVideoPreview",
+    previewWrapId: "berniniReferenceVideoPreviewWrap",
+    title: "Bernini reference video",
+  },
+  inpaintSource: {
+    pathKey: "inpaintSourceVideoPath",
+    nameKey: "inpaintSourceVideoName",
+    statusId: "inpaintSourceVideoStatus",
+    editId: "inpaintSourceVideoEditBtn",
+    previewId: "inpaintSourceVideoPreview",
+    previewWrapId: "inpaintSourceVideoPreviewWrap",
+    title: "Inpaint source video",
+  },
+  motionGuide: {
+    pathKey: "motionGuideVideoPath",
+    nameKey: "",
+    statusId: "motionGuideUploadStatus",
+    editId: "motionGuideEditBtn",
+    extraEditIds: ["motionGuidePreviewEditBtn"],
+    previewId: "motionGuideUploadPreview",
+    previewWrapId: "motionGuideUploadPreviewWrap",
+    title: "Motion guide video",
+  },
 };
 
 const motion3dActions = [
@@ -118,6 +312,10 @@ function fillSelect(el, items, labelKey = "label") {
   if (firstEnabled) el.value = firstEnabled.value;
 }
 
+function visibleWorkflowItems(items) {
+  return items.filter((item) => !(isBerniniWorkflow(item) && BERNINI_IMAGE_MODES.has(item.mode)));
+}
+
 function currentMove() {
   const id = $("moveSelect").value;
   return state.config.camera_moves.find((m) => m.id === id);
@@ -128,32 +326,81 @@ function currentWorkflow() {
   return state.config.workflows.find((w) => w.id === id);
 }
 
+function currentDirectorWorkflow() {
+  return state.config?.workflows?.find((w) => w.id === state.directorWorkflowId)
+    || state.config?.workflows?.find((w) => w.mode === "director_ref")
+    || null;
+}
+
+function currentBerniniWorkflow() {
+  return state.config?.workflows?.find((w) => w.id === state.berniniWorkflowId) || null;
+}
+
+function currentInpaintWorkflow() {
+  return state.config?.workflows?.find((w) => w.id === state.inpaintWorkflowId)
+    || state.config?.workflows?.find((w) => w.mode === INPAINT_WORKFLOW_MODE)
+    || null;
+}
+
+function currentEditWorkflow() {
+  const wf = currentWorkflow();
+  if (isInpaintWorkflow(wf) || (isBerniniWorkflow(wf) && !BERNINI_IMAGE_MODES.has(wf.mode))) return wf;
+  const bernini = currentBerniniWorkflow();
+  if (isBerniniWorkflow(bernini) && !BERNINI_IMAGE_MODES.has(bernini.mode)) return bernini;
+  return currentInpaintWorkflow();
+}
+
 function isDirectorWorkflow() {
   const wf = currentWorkflow();
   return wf && wf.mode === "director_ref";
 }
 
+function isBerniniWorkflow(workflow = currentWorkflow()) {
+  return workflow && Object.prototype.hasOwnProperty.call(BERNINI_TASKS, workflow.mode);
+}
+
+function isInpaintWorkflow(workflow = currentWorkflow()) {
+  return workflow && workflow.mode === INPAINT_WORKFLOW_MODE;
+}
+
 function directorWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return workflow?.mode === "director_ref" && !opt.disabled;
+    return workflow?.mode === "director_ref";
+  });
+}
+
+function berniniWorkflowOption() {
+  return [...$("workflowSelect").options].find((opt) => {
+    const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
+    return isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode);
+  });
+}
+
+function inpaintWorkflowOption() {
+  return [...$("workflowSelect").options].find((opt) => {
+    const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
+    return isInpaintWorkflow(workflow);
   });
 }
 
 function cameraWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return workflow?.mode !== "director_ref" && !opt.disabled;
+    return workflow?.mode !== "director_ref" && !isBerniniWorkflow(workflow) && !isInpaintWorkflow(workflow) && !opt.disabled;
   });
 }
 
 function workflowOptionById(id, mode) {
   if (!id) return null;
-  const option = [...$("workflowSelect").options].find((opt) => opt.value === id && !opt.disabled);
+  const option = [...$("workflowSelect").options].find((opt) => opt.value === id && (["edit", "bernini", "inpaint", "director_ref"].includes(mode) || !opt.disabled));
   if (!option) return null;
   const workflow = state.config?.workflows?.find((item) => item.id === option.value);
-  if (mode && workflow?.mode !== mode) return null;
-  if (mode === "camera" && workflow?.mode === "director_ref") return null;
+  if (mode === "camera" && (workflow?.mode === "director_ref" || isBerniniWorkflow(workflow) || isInpaintWorkflow(workflow))) return null;
+  else if (mode === "edit" && !(isInpaintWorkflow(workflow) || (isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode)))) return null;
+  else if (mode === "bernini" && !isBerniniWorkflow(workflow)) return null;
+  else if (mode === "inpaint" && !isInpaintWorkflow(workflow)) return null;
+  else if (mode && !["camera", "edit", "bernini", "inpaint"].includes(mode) && workflow?.mode !== mode) return null;
   return option;
 }
 
@@ -161,10 +408,14 @@ function rememberCurrentWorkflow() {
   const workflow = currentWorkflow();
   if (!workflow) return;
   if (workflow.mode === "director_ref") state.directorWorkflowId = workflow.id;
+  else if (isBerniniWorkflow(workflow)) state.berniniWorkflowId = workflow.id;
+  else if (isInpaintWorkflow(workflow)) state.inpaintWorkflowId = workflow.id;
   else state.cameraWorkflowId = workflow.id;
 }
 
 function setWorkspace(workspace, { syncWorkflow = true } = {}) {
+  const requestedWorkspace = workspace;
+  if (workspace === "bernini" || workspace === "inpaint") workspace = "edit";
   rememberCurrentWorkflow();
   state.workspace = workspace;
   const nextHash = workspace === "camera" ? "" : `#${workspace}`;
@@ -176,16 +427,132 @@ function setWorkspace(workspace, { syncWorkflow = true } = {}) {
     if (workspace === "director") {
       const option = workflowOptionById(state.directorWorkflowId, "director_ref") || directorWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
+    } else if (workspace === "edit") {
+      const option = requestedWorkspace === "inpaint"
+        ? (workflowOptionById(state.inpaintWorkflowId, "inpaint") || inpaintWorkflowOption())
+        : (workflowOptionById(state.berniniWorkflowId, "edit") || berniniWorkflowOption() || inpaintWorkflowOption());
+      if (option) $("workflowSelect").value = option.value;
     } else if (workspace === "camera" && isDirectorWorkflow()) {
+      const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
+      if (option) $("workflowSelect").value = option.value;
+    } else if (workspace === "camera" && isBerniniWorkflow()) {
+      const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
+      if (option) $("workflowSelect").value = option.value;
+    } else if (workspace === "camera" && isInpaintWorkflow()) {
       const option = workflowOptionById(state.cameraWorkflowId, "camera") || cameraWorkflowOption();
       if (option) $("workflowSelect").value = option.value;
     }
   }
   rememberCurrentWorkflow();
   updateWorkflowFields();
+  renderScopedHistory();
   if (workspace === "photography") {
     window.dispatchEvent(new CustomEvent("camera-lab:photography-visible"));
   }
+}
+
+function setBerniniWorkflow(id) {
+  const workflow = state.config?.workflows?.find((item) => item.id === id);
+  if (!isBerniniWorkflow(workflow) || BERNINI_IMAGE_MODES.has(workflow.mode)) return;
+  const option = workflowOptionById(id, "edit");
+  state.berniniWorkflowId = id;
+  if (option) $("workflowSelect").value = id;
+  setWorkspace("edit", { syncWorkflow: false });
+  resetPrompt();
+}
+
+function setInpaintWorkflow() {
+  const option = workflowOptionById(state.inpaintWorkflowId, "inpaint") || inpaintWorkflowOption();
+  if (option) {
+    $("workflowSelect").value = option.value;
+    state.inpaintWorkflowId = option.value;
+  }
+  setWorkspace("edit", { syncWorkflow: false });
+  resetPrompt();
+}
+
+function berniniResultVideoTargets() {
+  const available = new Set((state.config?.workflows || []).map((workflow) => workflow.id));
+  const targets = [];
+  for (const [workflowId, task] of Object.entries(BERNINI_TASKS)) {
+    if (!available.has(workflowId)) continue;
+    if (task.sourceVideo) {
+      targets.push({
+        workflowId,
+        slotKey: "berniniSource",
+        label: `${task.tag} Source video`,
+      });
+    }
+    if (task.referenceVideo) {
+      targets.push({
+        workflowId,
+        slotKey: "berniniReference",
+        label: `${task.tag} Reference video`,
+      });
+    }
+  }
+  if (available.has(INPAINT_WORKFLOW_MODE)) {
+    targets.push({
+      workflowId: INPAINT_WORKFLOW_MODE,
+      slotKey: "inpaintSource",
+      label: "Inpaint Source video",
+      kind: "inpaint",
+    });
+  }
+  return targets;
+}
+
+function useResultVideoForEdit(run, workflowId, slotKey, kind = "bernini") {
+  if (!run?.video) return;
+  if (kind === "inpaint") setInpaintWorkflow();
+  else setBerniniWorkflow(workflowId);
+  setVideoSlot(slotKey, run.video, fileNameFromPath(run.video));
+  $("runHint").textContent = kind === "inpaint"
+    ? "Loaded result video into Inpaint"
+    : `Loaded result video into ${BERNINI_TASKS[workflowId]?.tag || "Bernini"}`;
+}
+
+function renderResultVideoEditMenu(run) {
+  const targets = berniniResultVideoTargets();
+  if (!run?.video || !targets.length) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "result-video-edit";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "result-video-edit-button";
+  trigger.textContent = "Edit";
+  trigger.setAttribute("aria-label", "Edit result video in Bernini");
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.querySelectorAll(".result-video-edit.open").forEach((node) => {
+      if (node !== wrap) node.classList.remove("open");
+    });
+    wrap.classList.toggle("open");
+  });
+  const menu = document.createElement("div");
+  menu.className = "result-video-edit-menu";
+  const extractItem = document.createElement("button");
+  extractItem.type = "button";
+  extractItem.textContent = "Extract frame";
+  extractItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    wrap.classList.remove("open");
+    openFrameExtract(run);
+  });
+  menu.appendChild(extractItem);
+  targets.forEach((target) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.textContent = target.label;
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      wrap.classList.remove("open");
+      useResultVideoForEdit(run, target.workflowId, target.slotKey, target.kind);
+    });
+    menu.appendChild(item);
+  });
+  wrap.append(trigger, menu);
+  return wrap;
 }
 
 function currentSize() {
@@ -200,7 +567,7 @@ function currentSize() {
 }
 
 function currentSizeContext() {
-  const useDirectorSize = state.workspace === "director" && isDirectorWorkflow() && $("directorSizePreset");
+  const useDirectorSize = state.workspace === "director" && $("directorSizePreset");
   return useDirectorSize
     ? { presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }
     : { presetId: "sizePreset", scaleId: "sizeScale", sizeId: "customSizeInput" };
@@ -237,6 +604,10 @@ function updateSizeReadout() {
   $("sourcePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("middlePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
   $("endPreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
+  if ($("berniniReferenceImagePreview")) $("berniniReferenceImagePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
+  if ($("inpaintReferenceImagePreview")) $("inpaintReferenceImagePreview").parentElement.style.aspectRatio = `${size.width} / ${size.height}`;
+  if ($("inpaintMaskStage")) $("inpaintMaskStage").style.aspectRatio = `${size.width} / ${size.height}`;
+  resizeInpaintCanvas();
 }
 
 function currentMotionSize() {
@@ -255,10 +626,49 @@ function updateMotionSizeReadout() {
   $("motionRefPreviewWrap").style.aspectRatio = `${size.width} / ${size.height}`;
 }
 
+function setMotionPromptValue(value) {
+  const text = value || "";
+  if ($("motionPrompt")) $("motionPrompt").value = text;
+  if ($("motionScailPrompt")) $("motionScailPrompt").value = text;
+}
+
+function syncMotionPrompt(sourceId) {
+  const source = $(sourceId);
+  if (!source) return;
+  const targetId = sourceId === "motionScailPrompt" ? "motionPrompt" : "motionScailPrompt";
+  const target = $(targetId);
+  if (target && target.value !== source.value) target.value = source.value;
+}
+
+function currentMotionPrompt() {
+  const scailPrompt = $("motionScailPrompt");
+  if (state.motionSubtab === "scail" && scailPrompt) {
+    return scailPrompt.value.trim() || $("motionPrompt").value.trim();
+  }
+  return $("motionPrompt").value.trim();
+}
+
 function resetPrompt() {
   const move = currentMove();
-  const workflow = currentWorkflow();
+  const workflow = state.workspace === "director"
+    ? currentDirectorWorkflow()
+    : state.workspace === "edit"
+      ? currentEditWorkflow()
+        : currentWorkflow();
   if (!move || !workflow) return;
+  if (isBerniniWorkflow(workflow)) {
+    const task = BERNINI_TASKS[workflow.mode];
+    $("promptTag").textContent = task.tag;
+    $("promptText").value = task.prompt;
+    $("negativePrompt").value = BERNINI_DEFAULT_NEGATIVE;
+    return;
+  }
+  if (isInpaintWorkflow(workflow)) {
+    $("promptTag").textContent = "INPAINT";
+    $("promptText").value = INPAINT_DEFAULT_PROMPT;
+    $("negativePrompt").value = INPAINT_DEFAULT_NEGATIVE;
+    return;
+  }
   $("promptTag").textContent = workflow.mode.toUpperCase();
   $("promptText").value = move.prompts.base || "";
   renderExample();
@@ -413,34 +823,80 @@ function drawCamera(ctx, x, y, targetX, targetY) {
 }
 
 function updateWorkflowFields() {
-  const wf = currentWorkflow();
+  const wf = state.workspace === "director"
+    ? currentDirectorWorkflow()
+    : state.workspace === "edit"
+      ? currentEditWorkflow()
+        : currentWorkflow();
   if (!wf) return;
   const isDirector = wf.mode === "director_ref";
+  const isBernini = isBerniniWorkflow(wf);
+  const isInpaint = isInpaintWorkflow(wf);
+  const berniniTask = isBernini ? BERNINI_TASKS[wf.mode] : null;
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
+  const showEditWorkspace = state.workspace === "edit" && (isBernini || isInpaint);
+  const showBerniniWorkspace = showEditWorkspace && isBernini;
+  const showInpaintWorkspace = showEditWorkspace && isInpaint;
   const showPhotographyWorkspace = state.workspace === "photography";
   const showCastingWorkspace = state.workspace === "casting";
   const showMotionWorkspace = state.workspace === "motion";
-  const showSourceImage = wf.mode !== "t2v" && !isDirector;
-  const showMiddleImage = wf.mode === "fml" || wf.mode === "fml_native";
-  const showEndImage = wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v";
+  const showSourceImage = isBernini ? !!berniniTask?.sourceImage : !isInpaint && wf.mode !== "t2v" && !isDirector;
+  const showDuration = !(isBernini && BERNINI_IMAGE_MODES.has(wf.mode));
+  const showMiddleImage = !isBernini && !isInpaint && (wf.mode === "fml" || wf.mode === "fml_native");
+  const showEndImage = !isBernini && !isInpaint && (wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v");
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
   document.body.classList.toggle("director-workspace-active", showDirectorWorkspace);
+  document.body.classList.toggle("edit-workspace-active", showEditWorkspace);
+  document.body.classList.toggle("bernini-workspace-active", showBerniniWorkspace);
+  document.body.classList.toggle("inpaint-workspace-active", showInpaintWorkspace);
   document.body.classList.toggle("photography-workspace-active", showPhotographyWorkspace);
   document.body.classList.toggle("casting-workspace-active", showCastingWorkspace);
   document.body.classList.toggle("motion-workspace-active", showMotionWorkspace);
   $("cameraWorkspaceTab").classList.toggle("active", state.workspace === "camera");
   $("directorWorkspaceTab").classList.toggle("active", showDirectorWorkspace);
+  $("editWorkspaceTab").classList.toggle("active", showEditWorkspace);
   $("photographyWorkspaceTab").classList.toggle("active", showPhotographyWorkspace);
   $("castingWorkspaceTab").classList.toggle("active", showCastingWorkspace);
   $("motionWorkspaceTab").classList.toggle("active", showMotionWorkspace);
   $("motionWorkspace").hidden = !showMotionWorkspace;
+  $("berniniModeBar").hidden = !showEditWorkspace;
+  const showBerniniSourceVideo = showBerniniWorkspace && !!berniniTask?.sourceVideo;
+  const showBerniniReferenceImage = showBerniniWorkspace && !!berniniTask?.referenceImage;
+  const showBerniniReferenceVideo = showBerniniWorkspace && !!berniniTask?.referenceVideo;
+  const showBerniniReferenceControls = showBerniniWorkspace && (showBerniniReferenceImage || showBerniniReferenceVideo);
+  const showBerniniLongVideo = showBerniniWorkspace && wf.mode === "bernini_rv2v";
+  $("berniniTaskPanel").hidden = !(
+    showBerniniSourceVideo
+    || showBerniniReferenceImage
+    || showBerniniReferenceVideo
+    || showBerniniReferenceControls
+    || showBerniniLongVideo
+  );
+  $("berniniSourceVideoWrap").style.display = showBerniniSourceVideo ? "block" : "none";
+  $("berniniPreserveAudioWrap").hidden = !showBerniniSourceVideo;
+  $("berniniReferenceImageWrap").style.display = showBerniniReferenceImage ? "block" : "none";
+  $("berniniReferenceImagePreviewWrap").style.display = showBerniniReferenceImage ? "block" : "none";
+  $("berniniReferenceVideoWrap").style.display = showBerniniReferenceVideo ? "block" : "none";
+  $("berniniReferenceControls").hidden = !showBerniniReferenceControls;
+  $("berniniLongVideoPanel").hidden = !showBerniniLongVideo;
+  $("inpaintTaskPanel").hidden = !showInpaintWorkspace;
+  $("inpaintCanvasPanel").hidden = !showInpaintWorkspace;
+  document.querySelectorAll(".bernini-mode-tab").forEach((button) => {
+    const active = button.dataset.berniniWorkflow === wf.id;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll(".inpaint-mode-tab").forEach((button) => {
+    button.classList.toggle("active", showInpaintWorkspace);
+    button.setAttribute("aria-selected", showInpaintWorkspace ? "true" : "false");
+  });
   if (showPhotographyWorkspace) return;
   if (showCastingWorkspace) return;
   if (showMotionWorkspace) {
     updateMotionSubtabs();
     return;
   }
-  $("cameraMoveWrap").style.display = isDirector ? "none" : "block";
+  $("cameraMoveWrap").style.display = isDirector || isBernini || isInpaint ? "none" : "block";
   $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
   $("directorInlineResults").style.display = showDirectorWorkspace ? "block" : "none";
@@ -450,31 +906,37 @@ function updateWorkflowFields() {
   $("middlePreviewWrap").style.display = showMiddleImage ? "block" : "none";
   $("endImageWrap").style.display = showEndImage ? "block" : "none";
   $("endPreviewWrap").style.display = showEndImage ? "block" : "none";
+  $("durationWrap").style.display = showDuration ? "block" : "none";
   $("swapSourceEndWrap").style.display = wf.mode === "flf" || wf.mode === "flf_ia2v" ? "block" : "none";
   $("swapSourceMiddleWrap").style.display = showMiddleImage ? "block" : "none";
   $("swapMiddleEndWrap").style.display = showMiddleImage ? "block" : "none";
   const audioWrap = $("audioUploadWrap");
   const audioTarget = $("audioUploadHome");
   if (audioWrap.parentElement !== audioTarget) audioTarget.appendChild(audioWrap);
-  $("audioUploadWrap").style.display = wf.mode === "ia2v" || wf.mode === "flf_ia2v" ? "block" : "none";
+  $("audioUploadWrap").style.display = !isBernini && !isInpaint && (wf.mode === "ia2v" || wf.mode === "flf_ia2v") ? "block" : "none";
   const runStrip = $("directorRunStrip");
   const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
-  $("promptTag").textContent = wf.mode.toUpperCase();
-  $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : "Prompt";
+  $("promptTag").textContent = isBernini ? BERNINI_TASKS[wf.mode].tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
+  $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : showBerniniWorkspace ? "Bernini Prompt" : showInpaintWorkspace ? "Inpaint Prompt" : "Prompt";
   if (showDirectorWorkspace) renderDirectorEditor();
 }
 
 function collectPayload() {
   const size = currentSize();
   const prompt = $("promptText").value.trim();
+  const workflow = state.workspace === "director"
+    ? currentDirectorWorkflow()
+    : state.workspace === "edit"
+      ? currentEditWorkflow()
+        : currentWorkflow();
 
-  if (isDirectorWorkflow()) {
+  if (isDirectorWorkflow(workflow)) {
     const segments = collectDirectorSegments();
     const audioSegments = collectDirectorAudioSegments();
     const duration = directorOutputDurationSeconds();
     return {
-      workflow_id: $("workflowSelect").value,
+      workflow_id: workflow.id,
       camera_move: "director_ref",
       source_path: "",
       middle_path: "",
@@ -493,6 +955,60 @@ function collectPayload() {
       reference_images: collectReferenceImages(),
       audio_path: "",
     };
+  }
+
+  if (isBerniniWorkflow(workflow)) {
+    const berniniTask = BERNINI_TASKS[workflow.mode];
+    const payload = {
+      workflow_id: workflow.id,
+      camera_move: workflow.mode,
+      source_path: state.sourcePath,
+      middle_path: "",
+      end_path: "",
+      reference_image_path: state.berniniReferenceImagePath,
+      source_video_path: state.berniniSourceVideoPath,
+      reference_video_path: state.berniniReferenceVideoPath,
+      bernini_preserve_audio: !!(berniniTask?.sourceVideo && $("berniniPreserveAudio").checked),
+      bernini_split_enabled: workflow.mode === "bernini_rv2v" && $("berniniSplitEnabled").checked,
+      bernini_split_duration: Number($("berniniSplitDuration").value) || 4,
+      bernini_split_merge: $("berniniSplitMerge").checked,
+      global_reference_strength: Math.max(0, Math.min(1, Number($("berniniReferenceStrength").value) || 0)),
+      bernini_ref_max_size: Math.max(16, Math.min(8192, Number($("berniniRefMaxSize").value) || 848)),
+      width: size.width,
+      height: size.height,
+      seed: $("seedInput").value.trim(),
+      negative_prompt: $("negativePrompt").value.trim(),
+      prompt,
+      audio_path: "",
+    };
+    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
+      payload.duration = Number($("durationInput").value);
+    }
+    return payload;
+  }
+
+  if (isInpaintWorkflow(workflow)) {
+    return {
+      workflow_id: workflow.id,
+      camera_move: workflow.mode,
+      source_path: "",
+      middle_path: "",
+      end_path: "",
+      reference_image_path: state.inpaintReferenceImagePath,
+      source_video_path: state.inpaintSourceVideoPath,
+      mask_image_path: state.inpaintMaskImagePath,
+      duration: Number($("durationInput").value),
+      width: size.width,
+      height: size.height,
+      seed: $("seedInput").value.trim(),
+      negative_prompt: $("negativePrompt").value.trim(),
+      prompt,
+      audio_path: "",
+    };
+    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
+      payload.duration = Number($("durationInput").value);
+    }
+    return payload;
   }
 
   return {
@@ -1664,14 +2180,16 @@ function mediaUrl(path) {
 
 function renderBatch(batch) {
   state.activeBatch = batch;
+  mergeHistoryRuns(batch.runs || [], true);
+  renderScopedHistory();
   updateElapsed();
-  upsertRuns(batch.runs || [], true);
 }
 
 function upsertRuns(runs, newestFirst = false) {
   for (const run of runs) {
     if (isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
+    if (!isDirectorRun(run) && !runBelongsInCurrentResults(run)) continue;
     const grid = resultsGridForRun(run);
     const card = ensureRunCard(grid, run, newestFirst);
     updateRunCard(card, run);
@@ -1679,11 +2197,12 @@ function upsertRuns(runs, newestFirst = false) {
 }
 
 function upsertMotionRuns(runs, newestFirst = false) {
-  const grid = $("motionResultsGrid");
-  if (!grid) return;
   for (const run of runs) {
     if (!isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
+    const grid = motionResultsGridForRun(run);
+    if (!grid) continue;
+    removeMotionRunFromOtherGrids(run, grid);
     const displayRun = motionDisplayRun(run);
     const card = ensureRunCard(grid, displayRun, newestFirst);
     updateRunCard(card, displayRun);
@@ -1703,7 +2222,7 @@ function ensureRunCard(grid, run, newestFirst = false) {
       else useRunPrompt(card.dataset.prompt || "");
     });
     card.querySelector(".use-seed-run").addEventListener("click", () => {
-      useRunSeed(card.dataset.seed);
+      useRunSeed(card.dataset.seed, card._run || null);
     });
     card.querySelector(".preview-run").addEventListener("click", () => {
       openVideoPreview(card._run || {});
@@ -1727,15 +2246,172 @@ function ensureRunCard(grid, run, newestFirst = false) {
 }
 
 function motionDisplayRun(run) {
+  const kind = motionRunKind(run);
   return {
     ...run,
     motion_result_video: run.video || "",
-    video: run.video || run.guide_video || "",
+    video: kind === "scail" ? (run.video || "") : (run.video || run.guide_video || ""),
+  };
+}
+
+function motionRunKind(run) {
+  const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
+  if (raw.includes("motion_3d") || raw.includes("3d motion") || raw.includes("motion-3d")) return "3d";
+  if (raw.includes("scail") || raw.includes("uploaded_motion_to_scail")) return "scail";
+  if (motionFinalVideo(run)) return "scail";
+  return "text";
+}
+
+function motionResultsGridForRun(run) {
+  const kind = motionRunKind(run);
+  if (kind === "3d") return $("motion3dResultsGrid");
+  if (kind === "scail") return $("motionScailResultsGrid");
+  return $("motionResultsGrid");
+}
+
+function removeMotionRunFromOtherGrids(run, targetGrid) {
+  for (const gridId of ["motionResultsGrid", "motionScailResultsGrid", "motion3dResultsGrid"]) {
+    const grid = $(gridId);
+    if (!grid || grid === targetGrid) continue;
+    const card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
+    if (card) card.remove();
+  }
+}
+
+function removeMotionRunCard(run) {
+  for (const gridId of ["motionResultsGrid", "motionScailResultsGrid", "motion3dResultsGrid"]) {
+    const grid = $(gridId);
+    if (!grid) continue;
+    const card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
+    if (card) card.remove();
+  }
+}
+
+function optimisticScailRun(payload, guideVideoPath) {
+  state.motionPendingCounter += 1;
+  return {
+    batch_id: `motion_pending_${Date.now()}_${state.motionPendingCounter}`,
+    run_id: "01_motion",
+    history_key: `motion_pending:${Date.now()}:${state.motionPendingCounter}`,
+    workflow_id: "uploaded_motion_to_scail",
+    workflow_mode: "motion_scail",
+    workflow_label: "SCAIL2",
+    status: "queued_video",
+    guide_video: guideVideoPath,
+    reference_image: payload.reference_path || "",
+    prompt: payload.prompt || "SCAIL2 final video",
+    duration: payload.duration || state.motionGuideDuration || 4,
+    width: payload.width,
+    height: payload.height,
+    seed: payload.seed || "",
+    steps: payload.steps,
+    pose_strength: payload.pose_strength,
+    queued_at: Date.now() / 1000,
   };
 }
 
 function resultsGridForRun(run) {
   return isDirectorRun(run) ? $("directorResultsGrid") : $("resultsGrid");
+}
+
+function mergeHistoryRuns(runs, newestFirst = false) {
+  if (!Array.isArray(runs) || !runs.length) return;
+  const existing = new Map(state.historyRuns.map((run) => [runKey(run), run]));
+  const incoming = runs.map((run) => ({ ...existing.get(runKey(run)), ...run }));
+  const incomingKeys = new Set(incoming.map((run) => runKey(run)));
+  const rest = state.historyRuns.filter((run) => !incomingKeys.has(runKey(run)));
+  state.historyRuns = newestFirst ? [...incoming, ...rest] : [...rest, ...incoming];
+}
+
+function renderScopedHistory() {
+  const visibleRuns = sortRunsNewestFirst(state.historyRuns.filter((run) => !state.hiddenRunKeys.has(runKey(run))));
+  const directorRuns = visibleRuns.filter((run) => isDirectorRun(run));
+  const motionRuns = visibleRuns.filter((run) => isMotionRun(run));
+  const resultRuns = visibleRuns.filter((run) => !isDirectorRun(run) && !isMotionRun(run) && runBelongsInCurrentResults(run));
+  syncRunGrid($("resultsGrid"), resultRuns);
+  syncRunGrid($("directorResultsGrid"), directorRuns);
+  syncRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
+  syncRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
+  syncRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+  upsertRuns(resultRuns, false);
+  upsertRuns(directorRuns, false);
+  upsertMotionRuns(motionRuns, false);
+  orderRunGrid($("resultsGrid"), resultRuns);
+  orderRunGrid($("directorResultsGrid"), directorRuns);
+  orderRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
+  orderRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
+  orderRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+}
+
+function syncRunGrid(grid, runs) {
+  if (!grid) return;
+  const keep = new Set(runs.map((run) => runKey(run)));
+  grid.querySelectorAll(".result-card").forEach((card) => {
+    if (!keep.has(card.dataset.runKey || "")) card.remove();
+  });
+}
+
+function runSortTimestamp(run) {
+  const candidates = [run.finished_at, run.started_at, run.queued_at, run.created_at];
+  return candidates.map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+}
+
+function sortRunsNewestFirst(runs) {
+  return runs
+    .map((run, index) => ({ run, index }))
+    .sort((a, b) => {
+      const delta = runSortTimestamp(b.run) - runSortTimestamp(a.run);
+      return delta || a.index - b.index;
+    })
+    .map((item) => item.run);
+}
+
+function orderRunGrid(grid, runs) {
+  if (!grid) return;
+  for (const run of runs) {
+    const card = grid.querySelector(`.result-card[data-run-key="${cssEscape(runKey(run))}"]`);
+    if (card) grid.appendChild(card);
+  }
+}
+
+function runWorkflowToken(run) {
+  return String(run.workflow_id || run.workflow_mode || run.workflow_label || "").toLowerCase();
+}
+
+function isBerniniRun(run) {
+  const id = String(run.workflow_id || "");
+  const mode = String(run.workflow_mode || "");
+  return Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)
+    || Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)
+    || runWorkflowToken(run).includes("bernini");
+}
+
+function berniniRunWorkflowId(run) {
+  const id = String(run.workflow_id || "");
+  const mode = String(run.workflow_mode || "");
+  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)) return id;
+  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)) return mode;
+  const raw = runWorkflowToken(run);
+  return Object.keys(BERNINI_TASKS).find((workflowId) => raw.includes(workflowId)) || "";
+}
+
+function isInpaintRun(run) {
+  const id = String(run.workflow_id || "");
+  const mode = String(run.workflow_mode || "");
+  return id === INPAINT_WORKFLOW_MODE || mode === INPAINT_WORKFLOW_MODE || runWorkflowToken(run).includes("inpaint");
+}
+
+function runBelongsInCurrentResults(run) {
+  if (state.workspace === "edit") {
+    const workflow = currentEditWorkflow();
+    if (isInpaintWorkflow(workflow)) return isInpaintRun(run);
+    if (isBerniniWorkflow(workflow)) return isBerniniRun(run) && berniniRunWorkflowId(run) === state.berniniWorkflowId;
+    return isBerniniRun(run) || isInpaintRun(run);
+  }
+  if (state.workspace === "camera") {
+    return !isBerniniRun(run) && !isInpaintRun(run);
+  }
+  return false;
 }
 
 function isDirectorRun(run) {
@@ -1787,20 +2463,28 @@ function updateRunCard(card, run) {
   card.querySelector(".use-seed-run").disabled = !run.seed;
   card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
+  const actions = card.querySelector(".result-text-actions");
+  const existingEditMenu = actions.querySelector(".result-video-edit");
+  if (existingEditMenu) existingEditMenu.remove();
+  const editMenu = renderResultVideoEditMenu(run);
+  if (editMenu) actions.appendChild(editMenu);
   const pinButton = card.querySelector(".pin-run");
   pinButton.title = run.pinned ? "Unpin" : "Pin";
   pinButton.setAttribute("aria-label", run.pinned ? "Unpin" : "Pin");
   pinButton.classList.toggle("active", Boolean(run.pinned));
 
   const media = card.querySelector(".media-box");
+  const placeholderText = runPlaceholderText(run);
   const mediaKey = run.video
     ? `video:${run.video}`
+    : run.image
+      ? `image:${run.image}`
     : run.contact_sheet
       ? `contact:${run.contact_sheet}`
-      : `status:${run.status}:${run.error || ""}`;
+      : `status:${run.status}:${run.error || placeholderText}`;
   if (card.dataset.mediaKey !== mediaKey) {
     card.dataset.mediaKey = mediaKey;
-    media.textContent = run.error || "waiting";
+    media.textContent = run.error || placeholderText;
     if (run.video) {
       media.innerHTML = "";
       const video = document.createElement("video");
@@ -1809,6 +2493,12 @@ function updateRunCard(card, run) {
       video.muted = false;
       video.loop = true;
       media.appendChild(video);
+    } else if (run.image) {
+      media.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = mediaUrl(run.image);
+      img.alt = "result image";
+      media.appendChild(img);
     } else if (run.contact_sheet) {
       media.innerHTML = "";
       const img = document.createElement("img");
@@ -1827,6 +2517,20 @@ function updateRunCard(card, run) {
   renderDirectorSegments(card, run);
 }
 
+function runPlaceholderText(run) {
+  if (isMotionRun(run)) {
+    const kind = motionRunKind(run);
+    const status = String(run.status || "").toLowerCase();
+    if (kind === "scail" && ["queued", "queued_video", "guide_done", "running_video"].includes(status)) {
+      return "Rendering final video";
+    }
+    if (status === "running_motion") return "Rendering motion guide";
+    if (status === "guide_done") return "Guide ready";
+    if (status.includes("queued")) return "Queued";
+  }
+  return "waiting";
+}
+
 function runDurationSeconds(run) {
   const candidates = [
     run.duration,
@@ -1837,38 +2541,222 @@ function runDurationSeconds(run) {
   return duration || 0;
 }
 
+function videoPreviewAspect(run = {}) {
+  const player = $("videoPreviewPlayer");
+  const width = Number(run.width || run.frame_width || run.output_width || player.videoWidth);
+  const height = Number(run.height || run.frame_height || run.output_height || player.videoHeight);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return 0;
+  return width / height;
+}
+
+function clearVideoPreviewLayout() {
+  const panel = document.querySelector(".video-preview-panel");
+  const frame = document.querySelector(".video-preview-frame");
+  if (!panel || !frame) return;
+  ["--video-preview-panel-width", "--video-preview-panel-height"].forEach((name) => {
+    panel.style.removeProperty(name);
+  });
+  ["--video-preview-frame-width", "--video-preview-frame-height"].forEach((name) => {
+    frame.style.removeProperty(name);
+  });
+}
+
+function updateVideoPreviewLayout(run = state.videoPreviewRun || {}) {
+  const modal = $("videoPreviewModal");
+  if (!modal.classList.contains("open")) return;
+  const panel = document.querySelector(".video-preview-panel");
+  const frame = document.querySelector(".video-preview-frame");
+  const head = panel?.querySelector(".director-modal-head");
+  if (!panel || !frame || !head) return;
+  const aspect = videoPreviewAspect(run);
+  if (!aspect) {
+    clearVideoPreviewLayout();
+    return;
+  }
+
+  const maxPanelWidth = Math.min(1380, Math.max(280, window.innerWidth - 32));
+  const maxPanelHeight = Math.min(860, Math.max(260, window.innerHeight - 32));
+  const panelStyle = getComputedStyle(panel);
+  const headStyle = getComputedStyle(head);
+  const paddingX = parseFloat(panelStyle.paddingLeft) + parseFloat(panelStyle.paddingRight);
+  const paddingY = parseFloat(panelStyle.paddingTop) + parseFloat(panelStyle.paddingBottom);
+  const headHeight = head.getBoundingClientRect().height
+    + parseFloat(headStyle.marginTop)
+    + parseFloat(headStyle.marginBottom);
+  const availableWidth = Math.max(220, maxPanelWidth - paddingX);
+  const availableHeight = Math.max(160, maxPanelHeight - paddingY - headHeight);
+
+  let frameWidth = availableWidth;
+  let frameHeight = frameWidth / aspect;
+  if (frameHeight > availableHeight) {
+    frameHeight = availableHeight;
+    frameWidth = frameHeight * aspect;
+  }
+
+  panel.style.setProperty("--video-preview-panel-width", `${Math.ceil(frameWidth + paddingX)}px`);
+  panel.style.setProperty("--video-preview-panel-height", `${Math.ceil(frameHeight + paddingY + headHeight)}px`);
+  frame.style.setProperty("--video-preview-frame-width", `${Math.ceil(frameWidth)}px`);
+  frame.style.setProperty("--video-preview-frame-height", `${Math.ceil(frameHeight)}px`);
+}
+
 function openVideoPreview(run) {
   if (!run.video) return;
   const modal = $("videoPreviewModal");
   const player = $("videoPreviewPlayer");
+  state.videoPreviewRun = run;
   $("videoPreviewTitle").textContent = run.run_id || run.batch_id || "Preview";
+  clearVideoPreviewLayout();
   player.src = mediaUrl(run.video);
   player.loop = true;
+  player.onloadedmetadata = () => updateVideoPreviewLayout(state.videoPreviewRun || {});
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => updateVideoPreviewLayout(run));
   player.focus();
 }
 
 function closeVideoPreview() {
   const modal = $("videoPreviewModal");
   const player = $("videoPreviewPlayer");
+  state.videoPreviewRun = null;
+  player.onloadedmetadata = null;
   player.pause();
   player.removeAttribute("src");
   player.load();
+  clearVideoPreviewLayout();
   modal.classList.remove("open");
   modal.setAttribute("aria-hidden", "true");
 }
 
+function frameExtractDuration(run = state.frameExtractRun || {}) {
+  const player = $("frameExtractPlayer");
+  const candidates = [
+    player.duration,
+    run.duration,
+    run.duration_seconds,
+    run.director_timeline?.duration_seconds,
+  ];
+  return candidates.map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+}
+
+function updateFrameExtractReadout(value = $("frameExtractTime").value) {
+  const time = Math.max(0, Number(value) || 0);
+  $("frameExtractTimeReadout").textContent = `${time.toFixed(2)}s`;
+}
+
+function syncFrameExtractTime(value) {
+  const player = $("frameExtractPlayer");
+  const duration = frameExtractDuration();
+  const time = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, Number(value) || 0));
+  $("frameExtractTime").value = String(time);
+  updateFrameExtractReadout(time);
+  if (Number.isFinite(time)) player.currentTime = time;
+}
+
+function updateFrameExtractBounds() {
+  const duration = frameExtractDuration();
+  const slider = $("frameExtractTime");
+  slider.max = duration ? String(duration) : "0";
+  slider.step = "0.01";
+  updateFrameExtractReadout(slider.value);
+}
+
+function openFrameExtract(run) {
+  if (!run?.video) return;
+  const modal = $("frameExtractModal");
+  const player = $("frameExtractPlayer");
+  state.frameExtractRun = run;
+  $("frameExtractTitle").textContent = run.run_id || run.batch_id || "Frame";
+  $("frameExtractStatus").textContent = "";
+  player.src = mediaUrl(run.video);
+  player.loop = false;
+  $("frameExtractTime").value = "0";
+  updateFrameExtractBounds();
+  player.onloadedmetadata = () => {
+    updateFrameExtractBounds();
+    syncFrameExtractTime(Math.min(player.currentTime || 0, frameExtractDuration(run)));
+  };
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  player.focus();
+}
+
+function closeFrameExtract() {
+  const modal = $("frameExtractModal");
+  const player = $("frameExtractPlayer");
+  state.frameExtractRun = null;
+  player.onloadedmetadata = null;
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+  $("frameExtractStatus").textContent = "";
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function frameExtractFilename(run, time) {
+  const base = String(run.run_id || run.batch_id || "frame").replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return `${base}_${time.toFixed(2)}s.png`;
+}
+
+function saveFrameExtract() {
+  const run = state.frameExtractRun || {};
+  const player = $("frameExtractPlayer");
+  if (!run.video) return;
+  const width = player.videoWidth || Number(run.width) || 1280;
+  const height = player.videoHeight || Number(run.height) || 720;
+  const time = Math.max(0, Number($("frameExtractTime").value) || player.currentTime || 0);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(player, 0, 0, width, height);
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      $("frameExtractStatus").textContent = "Frame save failed";
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = frameExtractFilename(run, time);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("frameExtractStatus").textContent = "Frame downloaded";
+  }, "image/png");
+}
+
 function runModeLabel(run) {
   const raw = String(run.workflow_mode || run.workflow_id || "").toLowerCase();
-  if (raw.includes("motion")) return "MOTION";
+  const berniniWorkflowId = berniniRunWorkflowId(run);
+  if (berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return BERNINI_TASKS[berniniWorkflowId].tag;
+  if (isInpaintRun(run)) return "INPAINT";
+  if (isMotionRun(run)) {
+    const kind = motionRunKind(run);
+    if (kind === "3d") return "3D";
+    if (kind === "scail") return "SCAIL2";
+    return "GUIDE";
+  }
   if (raw.includes("director")) return "DIR";
+  if (raw.includes("ads2v")) return "ADS2V";
+  if (raw.includes("vrc2v")) return "VRC2V";
+  if (raw.includes("rv2v")) return "RV2V";
+  if (raw.includes("mv2v")) return "MV2V";
+  if (raw.includes("vi2v")) return "VI2V";
+  if (raw.includes("r2v")) return "R2V";
+  if (raw.includes("r2i")) return "R2I";
+  if (raw.includes("i2i")) return "I2I";
+  if (raw.includes("t2i")) return "T2I";
   if (raw.includes("ia2v")) return "IA2V";
   if (raw.includes("fml") || raw.includes("fmf")) return "FML";
   if (raw.includes("flf")) return "FLF";
+  if (raw.includes("v2v")) return "V2V";
   if (raw.includes("t2v")) return "T2V";
   if (raw.includes("i2v")) return "I2V";
-  return "GEN";
+  if (raw) return raw.replace(/^bernini_/, "").replace(/[_-]+/g, " ").toUpperCase();
+  return "MODE";
 }
 
 function waitForVideoEvent(video, eventName) {
@@ -1918,11 +2806,24 @@ async function captureRunLastFrame(card) {
   $("runHint").textContent = "Last frame saved";
 }
 
-function useRunSeed(seed) {
+function setInputValueIfPresent(id, value) {
+  const input = $(id);
+  if (input) input.value = value;
+}
+
+function useRunSeed(seed, run = null) {
   if (!seed) return;
-  $("seedInput").value = seed;
-  const directorSeedInput = $("directorSeedInput");
-  if (directorSeedInput) directorSeedInput.value = seed;
+  setInputValueIfPresent("seedInput", seed);
+  setInputValueIfPresent("directorSeedInput", seed);
+  if (run && isMotionRun(run)) {
+    const kind = motionRunKind(run);
+    if (kind === "text") setInputValueIfPresent("motionSeed", seed);
+    if (kind === "scail") setInputValueIfPresent("motionScailSeed", seed);
+    if (kind === "3d") {
+      setInputValueIfPresent("motion3dSeed", seed);
+      setInputValueIfPresent("motionScailSeed", seed);
+    }
+  }
   $("runHint").textContent = `Seed set to ${seed}`;
 }
 
@@ -1963,20 +2864,6 @@ function restoreMotionSize(run) {
   updateMotionSizeReadout();
 }
 
-function restoreMotionTrim(run) {
-  const start = Number(run.guide_trim_start ?? run.trim_start);
-  const end = Number(run.guide_trim_end ?? run.trim_end);
-  if (Number.isFinite(start)) {
-    $("motionTrimStart").value = String(Math.max(0, start));
-    $("motionTrimStartRange").value = $("motionTrimStart").value;
-  }
-  if (Number.isFinite(end) && end > 0) {
-    $("motionTrimEnd").value = String(end);
-    $("motionTrimEndRange").value = $("motionTrimEnd").value;
-  }
-  updateMotionTrimDisplay();
-}
-
 function restoreMotionGuide(run) {
   if (!run.guide_video) return false;
   state.motionBatch = null;
@@ -1986,8 +2873,8 @@ function restoreMotionGuide(run) {
   guide.src = mediaUrl(run.guide_video);
   $("motionGuideUploadStatus").textContent = fileNameFromPath(run.guide_video);
   $("motionGuideState").textContent = "ready";
-  setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
-  restoreMotionTrim(run);
+  state.motionGuideDuration = Number(run.duration) || motionGuideDurationFallback();
+  updateVideoClipperButtons();
   return true;
 }
 
@@ -2001,13 +2888,14 @@ function restoreMotionReference(run) {
 function useMotionRun(run) {
   if (!run || !run.guide_video) return;
   setWorkspace("motion", { syncWorkflow: false });
-  if (run.prompt) $("motionPrompt").value = run.prompt;
+  if (run.prompt) setMotionPromptValue(run.prompt);
   setInputIfPresent("motionDuration", run.duration);
   setInputIfPresent("motionSeed", run.seed);
   setInputIfPresent("motionScailSeed", run.seed);
   setInputIfPresent("motionSteps", run.steps);
   setInputIfPresent("motionPoseStrength", run.pose_strength);
   setInputIfPresent("motionCfg", run.cfg_scale);
+  if (run.use_pose_video_mask !== undefined) $("motionUsePoseMask").checked = run.use_pose_video_mask !== false;
   $("motionPoseReadout").textContent = Number($("motionPoseStrength").value).toFixed(2);
   $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
   restoreMotionSize(run);
@@ -2049,6 +2937,9 @@ function updateMotionSubtabs() {
   moveMotionVideoPanel();
   moveMotionGuidePreview();
   moveMotionPreviewCards();
+  if (state.motionSubtab === "scail" && $("motionScailPrompt") && !$("motionScailPrompt").value) {
+    $("motionScailPrompt").value = $("motionPrompt").value;
+  }
   if (state.motionSubtab === "3d") {
     window.setTimeout(() => window.dispatchEvent(new Event("resize")), 0);
   }
@@ -2056,7 +2947,7 @@ function updateMotionSubtabs() {
 
 function moveMotionGuidePreview() {
   const panel = $("motionGuidePreviewCard");
-  const target = $(state.motionSubtab === "scail" ? "motionScailGuideMount" : "motionTextGuideMount");
+  const target = $(state.motionSubtab === "scail" ? "motionHiddenPreviewParking" : "motionTextGuideMount");
   if (panel && target && panel.parentElement !== target) {
     target.appendChild(panel);
   }
@@ -2073,7 +2964,7 @@ function moveMotionVideoPanel() {
 function moveMotionPreviewCards() {
   const inScail = state.motionSubtab === "scail";
   const resultCard = $("motionResultPreviewCard");
-  const resultTarget = $(inScail ? "motionScailResultMount" : "motionTextResultMount");
+  const resultTarget = $(inScail ? "motionHiddenPreviewParking" : "motionTextResultMount");
   if (resultCard && resultTarget && resultCard.parentElement !== resultTarget) {
     resultTarget.appendChild(resultCard);
   }
@@ -2412,6 +3303,8 @@ async function generateMotion3dScail() {
       steps: Math.max(1, Number($("motion3dSteps").value) || 8),
       seed: $("motion3dSeed").value.trim(),
       pose_strength: Math.max(0, Math.min(1, Number($("motion3dPoseStrength").value) || 1)),
+      use_pose_video_mask: $("motionUsePoseMask").checked,
+      motion_type: "3d",
     };
     $("motion3dStatus").textContent = "Submitting SCAIL2 job...";
     const batch = await api("/api/text-to-motion-video-final", { method: "POST", body: JSON.stringify(payload) });
@@ -2524,15 +3417,19 @@ function imageSlotValue(kind) {
 
 function setImagePreview(kind, src) {
   const slot = imageSlots[kind];
-  const preview = $(slot.previewId);
-  const previewBox = preview.parentElement;
-  if (src) {
-    preview.src = src;
-    previewBox.classList.add("has-image");
-    return;
+  const previewIds = [slot.previewId, ...(slot.extraPreviewIds || [])].filter(Boolean);
+  for (const previewId of previewIds) {
+    const preview = $(previewId);
+    if (!preview) continue;
+    const previewBox = preview.parentElement;
+    if (src) {
+      preview.src = src;
+      previewBox.classList.add("has-image");
+    } else {
+      preview.removeAttribute("src");
+      previewBox.classList.remove("has-image");
+    }
   }
-  preview.removeAttribute("src");
-  previewBox.classList.remove("has-image");
 }
 
 function setImageSlotValue(kind, value) {
@@ -2579,13 +3476,35 @@ function formatDuration(seconds) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+function runHasPreviewOutput(run) {
+  return Boolean(run && (run.video || run.image || run.contact_sheet));
+}
+
+function doneBatchNeedsPreview(batch) {
+  if (!batch || batch.status !== "done") return false;
+  return (batch.runs || []).some((run) => {
+    if (!run || run.error || run.status === "canceled") return false;
+    if (!["done", "running_video"].includes(run.status)) return false;
+    return !runHasPreviewOutput(run);
+  });
+}
+
+function shouldPollForLatePreview(batch, waits, limit = 8) {
+  if (!doneBatchNeedsPreview(batch)) return false;
+  const key = batch.batch_id || "active";
+  const count = waits[key] || 0;
+  if (count >= limit) return false;
+  waits[key] = count + 1;
+  return true;
+}
+
 async function pollBatch() {
   if (!state.activeBatch) return;
   try {
     const batch = await api(`/api/batches/${state.activeBatch.batch_id}`);
     renderBatch(batch);
-    if (!["done", "error"].includes(batch.status)) {
-      state.pollTimer = setTimeout(pollBatch, 5000);
+    if (!["done", "error"].includes(batch.status) || shouldPollForLatePreview(batch, state.batchPreviewWaits)) {
+      state.pollTimer = setTimeout(pollBatch, batch.status === "done" ? 1000 : 5000);
     } else {
       await loadHistory({ replace: false });
     }
@@ -2598,12 +3517,11 @@ async function pollBatch() {
 async function loadHistory({ replace = true } = {}) {
   const data = await api("/api/history?limit=200");
   if (replace) {
-    $("resultsGrid").innerHTML = "";
-    $("directorResultsGrid").innerHTML = "";
-    $("motionResultsGrid").innerHTML = "";
+    state.historyRuns = data.runs || [];
+  } else {
+    mergeHistoryRuns(data.runs || [], false);
   }
-  upsertRuns(data.runs || [], false);
-  upsertMotionRuns(data.runs || [], false);
+  renderScopedHistory();
 }
 
 function startHistoryRefresh() {
@@ -2622,8 +3540,7 @@ async function updateHistoryState(key, action) {
   });
   if (action === "delete") {
     state.hiddenRunKeys.add(key);
-    const card = document.querySelector(`#resultsGrid .result-card[data-run-key="${cssEscape(key)}"], #directorResultsGrid .result-card[data-run-key="${cssEscape(key)}"], #motionResultsGrid .result-card[data-run-key="${cssEscape(key)}"]`);
-    if (card) card.remove();
+    renderScopedHistory();
     const recycled = result.recycled || [];
     const canceled = result.cancel || [];
     $("runHint").textContent = recycled.length
@@ -2636,14 +3553,47 @@ async function updateHistoryState(key, action) {
   await loadHistory();
 }
 
+function inpaintCanvasHasPaint() {
+  return !!state.inpaintMaskPainted;
+}
+
+function exportInpaintMaskDataUrl() {
+  const canvas = $("inpaintMaskCanvas");
+  if (!canvas || !canvas.width || !canvas.height) throw new Error("Mask canvas is not ready");
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(canvas, 0, 0);
+  return out.toDataURL("image/png");
+}
+
+async function prepareInpaintMaskForRun() {
+  if (!state.inpaintSourceVideoPath) throw new Error("Upload a source video first");
+  if (!inpaintCanvasHasPaint()) throw new Error("Paint the area to replace first");
+  const data = exportInpaintMaskDataUrl();
+  const uploaded = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ name: "inpaint_mask.png", data }),
+  });
+  state.inpaintMaskImagePath = uploaded.path;
+  $("inpaintMaskStatus").textContent = "Mask ready";
+}
+
 async function startBatch() {
   $("runBtn").disabled = true;
   $("runBtn").textContent = "Queueing...";
   try {
+    if (isInpaintWorkflow(state.workspace === "edit" ? currentEditWorkflow() : currentWorkflow())) {
+      await prepareInpaintMaskForRun();
+    }
     const batch = await api("/api/run", {
       method: "POST",
       body: JSON.stringify(collectPayload()),
     });
+    state.batchPreviewWaits[batch.batch_id] = 0;
     renderBatch(batch);
     if (state.clockTimer) clearInterval(state.clockTimer);
     state.clockTimer = setInterval(updateElapsed, 1000);
@@ -2664,7 +3614,7 @@ function motionPayload(seedInputId = "motionSeed") {
   const poseStrength = Number($("motionPoseStrength").value);
   const cfgScale = Number($("motionCfg").value);
   return {
-    prompt: $("motionPrompt").value.trim(),
+    prompt: currentMotionPrompt(),
     reference_path: state.motionRefPath,
     duration: Number.isFinite(duration) && duration > 0 ? duration : 4,
     width: size.width,
@@ -2673,6 +3623,7 @@ function motionPayload(seedInputId = "motionSeed") {
     seed: $(seedInputId).value.trim(),
     rewrite: $("motionRewrite").checked,
     pose_strength: Number.isFinite(poseStrength) ? poseStrength : 1,
+    use_pose_video_mask: $("motionUsePoseMask").checked,
     cfg_scale: Number.isFinite(cfgScale) ? cfgScale : 5,
   };
 }
@@ -2682,8 +3633,6 @@ function roundMotionTime(value) {
   return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
 }
 
-const MOTION_TRIM_GAP = 0.05;
-
 function motionGuideDurationFallback() {
   const videoDuration = Number($("motionGuide").duration);
   if (Number.isFinite(videoDuration) && videoDuration > 0) return videoDuration;
@@ -2692,91 +3641,234 @@ function motionGuideDurationFallback() {
   return state.motionGuideDuration || 4;
 }
 
-function setMotionTrimBounds(duration, reset = false) {
-  const max = Math.max(0.05, roundMotionTime(duration || motionGuideDurationFallback()));
-  state.motionGuideDuration = max;
-  for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
-    const input = $(id);
-    input.max = String(max);
-  }
-  if (reset || Number($("motionTrimEnd").value) <= 0) {
-    $("motionTrimStart").value = "0";
-    $("motionTrimStartRange").value = "0";
-    $("motionTrimEnd").value = String(max);
-    $("motionTrimEndRange").value = String(max);
-  }
-  updateMotionTrimDisplay();
+function videoClipperDurationFallback() {
+  const duration = Number($("videoClipperPlayer").duration);
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  return state.videoClipper.duration || 1;
 }
 
-function motionTrimValues(sourceId = "") {
-  const max = motionGuideDurationFallback();
-  let start = roundMotionTime($("motionTrimStart").value);
-  let end = roundMotionTime($("motionTrimEnd").value);
-  const startChanged = sourceId === "motionTrimStart" || sourceId === "motionTrimStartRange";
-  const endChanged = sourceId === "motionTrimEnd" || sourceId === "motionTrimEndRange";
-  if (!end) end = max;
-  if (startChanged) {
-    end = Math.min(Math.max(MOTION_TRIM_GAP, end), max);
-    start = Math.min(Math.max(0, start), Math.max(0, end - MOTION_TRIM_GAP));
-  } else if (endChanged) {
-    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
-    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+function setVideoClipperBounds(duration, reset = false) {
+  const max = Math.max(0.05, roundMotionTime(duration || videoClipperDurationFallback()));
+  state.videoClipper.duration = max;
+  for (const id of ["videoClipperStart", "videoClipperEnd", "videoClipperStartRange", "videoClipperEndRange"]) {
+    $(id).max = String(max);
+  }
+  if (reset || Number($("videoClipperEnd").value) <= 0) {
+    $("videoClipperStart").value = "0";
+    $("videoClipperStartRange").value = "0";
+    $("videoClipperEnd").value = String(max);
+    $("videoClipperEndRange").value = String(max);
+  }
+  updateVideoClipperDisplay();
+}
+
+function videoClipperValues(sourceId = "") {
+  const max = videoClipperDurationFallback();
+  let start = roundMotionTime($("videoClipperStart").value);
+  let end = roundMotionTime($("videoClipperEnd").value);
+  const startChanged = sourceId === "videoClipperStart" || sourceId === "videoClipperStartRange";
+  const endChanged = sourceId === "videoClipperEnd" || sourceId === "videoClipperEndRange";
+  start = Math.max(0, Math.min(start, Math.max(0, max - 0.05)));
+  end = Math.max(0.05, Math.min(end || max, max));
+  if (start >= end) {
+    if (startChanged) end = Math.min(max, start + 0.05);
+    else if (endChanged) start = Math.max(0, end - 0.05);
+    else end = Math.min(max, start + 0.05);
+  }
+  return { start, end, duration: Math.max(0.05, roundMotionTime(end - start)) };
+}
+
+function updateVideoClipperDisplay(sourceId = "") {
+  const { start, end, duration } = videoClipperValues(sourceId);
+  $("videoClipperStart").value = String(start);
+  $("videoClipperEnd").value = String(end);
+  $("videoClipperStartRange").value = String(start);
+  $("videoClipperEndRange").value = String(end);
+  $("videoClipperStartReadout").textContent = `${start.toFixed(2)}s`;
+  $("videoClipperEndReadout").textContent = `${end.toFixed(2)}s`;
+  $("videoClipperDurationReadout").textContent = `${duration.toFixed(2)}s`;
+}
+
+function renderVideoClipperPlaceholders() {
+  const filmstrip = $("videoClipperFilmstrip");
+  filmstrip.innerHTML = "";
+  for (let i = 0; i < 8; i += 1) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "clipper-frame-placeholder";
+    filmstrip.appendChild(placeholder);
+  }
+}
+
+function resetVideoClipperLayout() {
+  const preview = document.querySelector(".video-clipper-preview");
+  if (!preview) return;
+  preview.style.removeProperty("--video-clipper-preview-width");
+  preview.style.removeProperty("--video-clipper-preview-height");
+}
+
+function videoClipperAspectRatio() {
+  const video = $("videoClipperPlayer");
+  const width = Number(video.videoWidth);
+  const height = Number(video.videoHeight);
+  if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+    return width / height;
+  }
+  return 16 / 9;
+}
+
+function updateVideoClipperLayout() {
+  const modal = $("videoClipperModal");
+  if (!modal?.classList.contains("open")) return;
+  const preview = document.querySelector(".video-clipper-preview");
+  const grid = document.querySelector(".video-clipper-grid");
+  if (!preview || !grid) return;
+
+  const compact = window.matchMedia("(max-width: 620px), (max-height: 620px)").matches;
+  const maxHeight = compact
+    ? Math.min(170, Math.max(120, window.innerHeight * 0.30))
+    : Math.min(360, Math.max(150, window.innerHeight * 0.36));
+  const firstColumn = parseFloat(getComputedStyle(grid).gridTemplateColumns.split(" ")[0]);
+  const maxWidth = Number.isFinite(firstColumn) && firstColumn > 0
+    ? firstColumn
+    : grid.getBoundingClientRect().width;
+  const aspect = Math.max(0.1, Math.min(8, videoClipperAspectRatio()));
+  let width = maxWidth;
+  let height = width / aspect;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspect;
+  }
+  preview.style.setProperty("--video-clipper-preview-width", `${Math.max(80, Math.floor(width))}px`);
+  preview.style.setProperty("--video-clipper-preview-height", `${Math.max(80, Math.floor(height))}px`);
+}
+
+function openVideoClipper(slotKey) {
+  const slot = videoSlots[slotKey];
+  const path = slot ? state[slot.pathKey] : "";
+  if (!slot || !path) return;
+  state.videoClipper.slot = slotKey;
+  state.videoClipper.path = path;
+  state.videoClipper.name = state[slot.nameKey] || fileNameFromPath(path);
+  state.videoClipper.duration = 0;
+  $("videoClipperTitle").textContent = slot.title;
+  $("videoClipperStatus").textContent = state.videoClipper.name;
+  const modal = $("videoClipperModal");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  resetVideoClipperLayout();
+  const video = $("videoClipperPlayer");
+  video.src = mediaUrl(path);
+  video.load();
+  setVideoClipperBounds(1, true);
+  requestAnimationFrame(updateVideoClipperLayout);
+  renderVideoClipperPlaceholders();
+}
+
+function closeVideoClipper() {
+  const modal = $("videoClipperModal");
+  const video = $("videoClipperPlayer");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+  state.videoClipper.playing = false;
+  state.videoClipper.slot = "";
+  state.videoClipper.path = "";
+  state.videoClipper.name = "";
+  $("videoClipperStatus").textContent = "Choose a range.";
+  resetVideoClipperLayout();
+}
+
+function drawVideoFrameContain(ctx, source, width, height) {
+  const sourceWidth = Number(source.videoWidth) || width;
+  const sourceHeight = Number(source.videoHeight) || height;
+  const sourceAspect = sourceWidth / Math.max(1, sourceHeight);
+  const targetAspect = width / Math.max(1, height);
+  let drawWidth = width;
+  let drawHeight = height;
+  if (sourceAspect > targetAspect) {
+    drawHeight = width / sourceAspect;
   } else {
-    start = Math.min(Math.max(0, start), Math.max(0, max - MOTION_TRIM_GAP));
-    end = Math.min(Math.max(start + MOTION_TRIM_GAP, end), max);
+    drawWidth = height * sourceAspect;
   }
-  return { start, end, duration: roundMotionTime(end - start) };
+  const x = (width - drawWidth) / 2;
+  const y = (height - drawHeight) / 2;
+  ctx.fillStyle = "#070706";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, x, y, drawWidth, drawHeight);
 }
 
-function updateMotionTrimDisplay(sourceId = "") {
-  const { start, end, duration } = motionTrimValues(sourceId);
-  $("motionTrimStart").value = String(start);
-  $("motionTrimEnd").value = String(end);
-  $("motionTrimStartRange").value = String(start);
-  $("motionTrimEndRange").value = String(end);
-  $("motionTrimStartReadout").textContent = `${start.toFixed(2)}s`;
-  $("motionTrimEndReadout").textContent = `${end.toFixed(2)}s`;
-  $("motionTrimDuration").textContent = `${duration.toFixed(2)}s`;
+async function renderVideoClipperFilmstrip() {
+  if (state.videoClipper.renderingFilmstrip || !state.videoClipper.path) return;
+  const duration = videoClipperDurationFallback();
+  if (!Number.isFinite(duration) || duration <= 0) return;
+  state.videoClipper.renderingFilmstrip = true;
+  const filmstrip = $("videoClipperFilmstrip");
+  renderVideoClipperPlaceholders();
+  const source = document.createElement("video");
+  source.muted = true;
+  source.playsInline = true;
+  source.preload = "auto";
+  source.src = mediaUrl(state.videoClipper.path);
+  try {
+    await new Promise((resolve, reject) => {
+      source.addEventListener("loadedmetadata", resolve, { once: true });
+      source.addEventListener("error", reject, { once: true });
+      source.load();
+    });
+    filmstrip.innerHTML = "";
+    const count = 8;
+    for (let i = 0; i < count; i += 1) {
+      const time = Math.max(0, Math.min(duration - 0.02, (duration * (i + 0.5)) / count));
+      await new Promise((resolve, reject) => {
+        source.addEventListener("seeked", resolve, { once: true });
+        source.addEventListener("error", reject, { once: true });
+        source.currentTime = time;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = 180;
+      canvas.height = 102;
+      const ctx = canvas.getContext("2d");
+      drawVideoFrameContain(ctx, source, canvas.width, canvas.height);
+      filmstrip.appendChild(canvas);
+    }
+  } catch (_err) {
+    renderVideoClipperPlaceholders();
+  } finally {
+    state.videoClipper.renderingFilmstrip = false;
+  }
 }
 
-function motionTrimPayload() {
-  const { start, end } = motionTrimValues();
-  return {
-    guide_trim_start: start,
-    guide_trim_end: end,
-  };
-}
-
-function playMotionTrim() {
-  const video = $("motionGuide");
-  if (!video.getAttribute("src")) return;
-  const { start } = motionTrimValues();
-  state.motionTrimPlaying = true;
+function playVideoClipperSelection() {
+  const video = $("videoClipperPlayer");
+  const { start } = videoClipperValues();
+  state.videoClipper.playing = true;
   video.currentTime = start;
   const promise = video.play();
   if (promise?.catch) promise.catch(() => {
-    state.motionTrimPlaying = false;
+    state.videoClipper.playing = false;
   });
 }
 
-function setMotionTrimBoundaryFromPlayhead(boundary) {
-  const max = motionGuideDurationFallback();
-  const currentTime = Number($("motionGuide").currentTime);
-  const time = Math.min(roundMotionTime(Number.isFinite(currentTime) ? currentTime : 0), max);
-  let start = roundMotionTime($("motionTrimStart").value);
-  let end = roundMotionTime($("motionTrimEnd").value) || max;
-  if (boundary === "start") {
-    start = Math.min(time, Math.max(0, max - MOTION_TRIM_GAP));
-    if (end <= start) end = max;
-    $("motionTrimStart").value = String(start);
-    $("motionTrimEnd").value = String(end);
-    updateMotionTrimDisplay("motionTrimStart");
-  } else {
-    end = Math.max(time, MOTION_TRIM_GAP);
-    if (start >= end) start = 0;
-    $("motionTrimStart").value = String(start);
-    $("motionTrimEnd").value = String(end);
-    updateMotionTrimDisplay("motionTrimEnd");
+async function saveVideoClipperSelection() {
+  const slotKey = state.videoClipper.slot;
+  const path = state.videoClipper.path;
+  if (!slotKey || !path) return;
+  const { start, end, duration } = videoClipperValues();
+  $("videoClipperUseBtn").disabled = true;
+  $("videoClipperStatus").textContent = "Creating clip...";
+  try {
+    const clipped = await api("/api/trim-video", {
+      method: "POST",
+      body: JSON.stringify({ video_path: path, start, end }),
+    });
+    setVideoSlot(slotKey, clipped.path, clipped.name, { duration: clipped.duration || duration, trimmed: true });
+    closeVideoClipper();
+  } catch (err) {
+    $("videoClipperStatus").textContent = err.message;
+  } finally {
+    $("videoClipperUseBtn").disabled = false;
   }
 }
 
@@ -2795,7 +3887,7 @@ function updateMotionRunAvailability() {
 function clearMotionVideos() {
   state.motionGuideVideoPath = "";
   $("motionGuideUploadStatus").textContent = "No video uploaded";
-  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
+  updateVideoClipperButtons();
   for (const id of ["motionGuide", "motionResult"]) {
     const video = $(id);
     video.pause();
@@ -2822,12 +3914,15 @@ function renderMotionBatch(batch) {
   $("motionStatus").textContent = `${batch.batch_id} / ${run.status || batch.status} ${elapsedText(run)}`;
   if (run.error) $("motionStatus").textContent = run.error;
   if (run.guide_video) {
+    state.motionGuideVideoPath = run.guide_video;
     const guideSrc = mediaUrl(run.guide_video);
     if ($("motionGuide").getAttribute("src") !== guideSrc) {
       $("motionGuide").src = guideSrc;
     }
-    setMotionTrimBounds(Number(run.duration) || motionGuideDurationFallback(), true);
+    $("motionGuideUploadStatus").textContent = fileNameFromPath(run.guide_video);
+    state.motionGuideDuration = Number(run.duration) || motionGuideDurationFallback();
     $("motionGuideState").textContent = "ready";
+    updateVideoClipperButtons();
     updateMotionRunAvailability();
   } else if (run.status === "running_motion") {
     $("motionGuideState").textContent = "rendering";
@@ -2853,8 +3948,8 @@ async function pollMotion() {
   try {
     const batch = await api(`/api/batches/${state.motionBatch.batch_id}`);
     renderMotionBatch(batch);
-    if (!["done", "error"].includes(batch.status)) {
-      state.pollTimer = setTimeout(pollMotion, 5000);
+    if (!["done", "error"].includes(batch.status) || shouldPollForLatePreview(batch, state.motionPreviewWaits)) {
+      state.pollTimer = setTimeout(pollMotion, batch.status === "done" ? 1000 : 5000);
     } else {
       await loadHistory({ replace: false });
     }
@@ -2909,15 +4004,19 @@ async function startMotionFinal() {
   $("motionRunBtn").disabled = true;
   $("motionRunBtn").textContent = "Rendering...";
   clearMotionResult();
+  const pendingRun = optimisticScailRun(payload, guideVideoPath);
+  upsertMotionRuns([pendingRun], true);
   try {
     const endpoint = state.motionBatch && run.guide_video ? "/api/text-to-motion-final" : "/api/text-to-motion-video-final";
     const body = endpoint === "/api/text-to-motion-final"
-      ? { ...payload, ...motionTrimPayload(), batch_id: state.motionBatch.batch_id, run_id: run.run_id }
-      : { ...payload, ...motionTrimPayload(), guide_video_path: guideVideoPath };
+      ? { ...payload, batch_id: state.motionBatch.batch_id, run_id: run.run_id }
+      : { ...payload, guide_video_path: guideVideoPath, motion_type: "scail" };
     const batch = await api(endpoint, {
       method: "POST",
       body: JSON.stringify(body),
     });
+    state.motionPreviewWaits[batch.batch_id] = 0;
+    removeMotionRunCard(pendingRun);
     renderMotionBatch(batch);
     if (state.clockTimer) clearInterval(state.clockTimer);
     state.clockTimer = setInterval(updateElapsed, 1000);
@@ -2925,6 +4024,11 @@ async function startMotionFinal() {
     state.pollTimer = setTimeout(pollMotion, 1500);
   } catch (err) {
     $("motionStatus").textContent = err.message;
+    updateRunCard(ensureRunCard(motionResultsGridForRun(pendingRun), pendingRun, true), {
+      ...pendingRun,
+      status: "error",
+      error: err.message,
+    });
     $("motionRunBtn").disabled = false;
   } finally {
     $("motionRunBtn").textContent = "Render Final Video";
@@ -2937,17 +4041,7 @@ async function uploadMotionGuideVideo(file) {
   const form = new FormData();
   form.append("file", file, file.name);
   const uploaded = await uploadFile("/api/upload-video", form);
-  state.motionGuideVideoPath = uploaded.path;
-  state.motionBatch = null;
-  const video = $("motionGuide");
-  video.pause();
-  video.src = mediaUrl(uploaded.path);
-  setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
-  $("motionGuideState").textContent = "uploaded";
-  $("motionGuideUploadStatus").textContent = uploaded.name;
-  clearMotionResult();
-  $("motionStatus").textContent = "Guide video uploaded. Ready for SCAIL2.";
-  updateMotionRunAvailability();
+  setVideoSlot("motionGuide", uploaded.path, uploaded.name);
 }
 
 function fillPythonFormatTemplate(template, text) {
@@ -3057,6 +4151,191 @@ async function uploadImage(file, kind) {
   setImagePreview(kind, mediaUrl(uploaded.path));
   status.textContent = uploaded.name;
   if (kind === "motion_ref") updateMotionRunAvailability();
+}
+
+function updateVideoClipperButtons() {
+  for (const [key, slot] of Object.entries(videoSlots)) {
+    const buttonIds = [slot.editId, ...(slot.extraEditIds || [])].filter(Boolean);
+    for (const id of buttonIds) {
+      const button = $(id);
+      if (!button) continue;
+      button.disabled = !state[slot.pathKey];
+      button.dataset.videoSlot = key;
+    }
+  }
+}
+
+function updateVideoUploadPreview(slot, path) {
+  if (!slot.previewId) return;
+  const video = $(slot.previewId);
+  const wrap = slot.previewWrapId ? $(slot.previewWrapId) : video?.parentElement;
+  if (!video || !wrap) return;
+  if (!path) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    wrap.hidden = true;
+    return;
+  }
+  const src = mediaUrl(path);
+  if (video.getAttribute("src") !== src) {
+    video.src = src;
+    video.load();
+  }
+  wrap.hidden = false;
+}
+
+function setVideoSlot(slotKey, path, name, options = {}) {
+  const slot = videoSlots[slotKey];
+  if (!slot) throw new Error("unknown video slot");
+  state[slot.pathKey] = path || "";
+  if (slot.nameKey) state[slot.nameKey] = name || "";
+  const status = $(slot.statusId);
+  if (status) status.textContent = name || (path ? fileNameFromPath(path) : "No video uploaded");
+  updateVideoUploadPreview(slot, path);
+
+  if (slotKey === "inpaintSource") {
+    state.inpaintMaskImagePath = "";
+    const video = $("inpaintMaskVideo");
+    if (video && path) {
+      video.src = mediaUrl(path);
+      video.load();
+    }
+    if (path) clearInpaintMask();
+  }
+
+  if (slotKey === "motionGuide") {
+    state.motionBatch = null;
+    const video = $("motionGuide");
+    if (video && path) {
+      video.pause();
+      video.src = mediaUrl(path);
+      video.load();
+    }
+    state.motionGuideDuration = Number(options.duration) || Number($("motionDuration").value) || 4;
+    $("motionGuideState").textContent = options.trimmed ? "clipped" : "uploaded";
+    clearMotionResult();
+    $("motionStatus").textContent = options.trimmed ? "Guide video clipped. Ready for SCAIL2." : "Guide video uploaded. Ready for SCAIL2.";
+    updateMotionRunAvailability();
+  }
+
+  updateVideoClipperButtons();
+}
+
+async function uploadVideo(file, slotKey) {
+  if (!file) return;
+  const slot = videoSlots[slotKey];
+  if (!slot) throw new Error("unknown video slot");
+  const status = $(slot.statusId);
+  status.textContent = "Uploading...";
+  const data = await readFileAsDataUrl(file);
+  const uploaded = await api("/api/upload-video", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, data }),
+  });
+  setVideoSlot(slotKey, uploaded.path, uploaded.name);
+}
+
+function resizeInpaintCanvas() {
+  const canvas = $("inpaintMaskCanvas");
+  if (!canvas) return;
+  const size = currentSize();
+  const width = Math.max(8, size.width);
+  const height = Math.max(8, size.height);
+  if (canvas.width === width && canvas.height === height) return;
+  canvas.width = width;
+  canvas.height = height;
+  state.inpaintMaskPainted = false;
+  state.inpaintMaskImagePath = "";
+  if ($("inpaintMaskStatus")) $("inpaintMaskStatus").textContent = "No mask painted";
+}
+
+function inpaintPointerPoint(event) {
+  const canvas = $("inpaintMaskCanvas");
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function drawInpaintStroke(from, to) {
+  const canvas = $("inpaintMaskCanvas");
+  const ctx = canvas.getContext("2d");
+  const brush = Math.max(4, Number($("inpaintBrushSize").value) || 48);
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.strokeStyle = "#fff";
+  ctx.fillStyle = "#fff";
+  ctx.lineWidth = brush;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, brush / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  state.inpaintMaskPainted = true;
+  state.inpaintMaskImagePath = "";
+  $("inpaintMaskStatus").textContent = "Mask painted";
+}
+
+function beginInpaintDraw(event) {
+  if (!state.inpaintSourceVideoPath) return;
+  event.preventDefault();
+  resizeInpaintCanvas();
+  const point = inpaintPointerPoint(event);
+  state.inpaintDrawing = true;
+  state.inpaintLastPoint = point;
+  drawInpaintStroke(point, point);
+  $("inpaintMaskCanvas").setPointerCapture(event.pointerId);
+}
+
+function moveInpaintDraw(event) {
+  if (!state.inpaintDrawing || !state.inpaintLastPoint) return;
+  event.preventDefault();
+  const point = inpaintPointerPoint(event);
+  drawInpaintStroke(state.inpaintLastPoint, point);
+  state.inpaintLastPoint = point;
+}
+
+function endInpaintDraw(event) {
+  if (!state.inpaintDrawing) return;
+  state.inpaintDrawing = false;
+  state.inpaintLastPoint = null;
+  try {
+    $("inpaintMaskCanvas").releasePointerCapture(event.pointerId);
+  } catch (_err) {
+    // Pointer capture may already be released by the browser.
+  }
+}
+
+function clearInpaintMask() {
+  const canvas = $("inpaintMaskCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  state.inpaintMaskPainted = false;
+  state.inpaintMaskImagePath = "";
+  $("inpaintMaskStatus").textContent = "No mask painted";
+}
+
+function updateInpaintBrushReadout() {
+  if ($("inpaintBrushReadout")) $("inpaintBrushReadout").textContent = `${$("inpaintBrushSize").value}px`;
+}
+
+async function uploadInpaintSourceVideo(file) {
+  if (!file) return;
+  $("inpaintSourceVideoStatus").textContent = "Uploading...";
+  const data = await readFileAsDataUrl(file);
+  const uploaded = await api("/api/upload-video", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, data }),
+  });
+  setVideoSlot("inpaintSource", uploaded.path, uploaded.name);
 }
 
 // --- Casting tab ---
@@ -3841,8 +5120,15 @@ async function saveCustomVoice() {
 
 async function loadConfig() {
   state.config = await api("/api/config");
-  fillSelect($("workflowSelect"), state.config.workflows);
+  fillSelect($("workflowSelect"), visibleWorkflowItems(state.config.workflows));
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
+  if (state.workspace === "edit") {
+    const option = workflowOptionById(state.berniniWorkflowId, "edit") || berniniWorkflowOption() || inpaintWorkflowOption();
+    if (option) $("workflowSelect").value = option.value;
+  } else if (state.workspace === "director") {
+    const option = workflowOptionById(state.directorWorkflowId, "director_ref") || directorWorkflowOption();
+    if (option) $("workflowSelect").value = option.value;
+  }
   rememberCurrentWorkflow();
   $("negativePrompt").value = state.config.default_negative;
   $("comfyStatus").textContent = state.config.comfy.ok ? "ComfyUI: online" : "ComfyUI: offline";
@@ -3863,16 +5149,36 @@ $("workflowSelect").addEventListener("change", () => {
     setWorkspace("director", { syncWorkflow: false });
     return;
   }
+  if (isBerniniWorkflow()) {
+    setWorkspace("edit", { syncWorkflow: false });
+    resetPrompt();
+    return;
+  }
+  if (isInpaintWorkflow()) {
+    setWorkspace("edit", { syncWorkflow: false });
+    resetPrompt();
+    return;
+  }
   setWorkspace("camera", { syncWorkflow: false });
 });
 $("cameraWorkspaceTab").addEventListener("click", () => setWorkspace("camera"));
 $("directorWorkspaceTab").addEventListener("click", () => setWorkspace("director"));
+$("editWorkspaceTab").addEventListener("click", () => {
+  setWorkspace("edit");
+  resetPrompt();
+});
 $("castingWorkspaceTab").addEventListener("click", () => { setWorkspace("casting", { syncWorkflow: false }); refreshCastingLibrary(); });
 $("motionWorkspaceTab").addEventListener("click", () => setWorkspace("motion", { syncWorkflow: false }));
 $("photographyWorkspaceTab").addEventListener("click", () => setWorkspace("photography", { syncWorkflow: false }));
 $("motionTextTab").addEventListener("click", () => setMotionSubtab("text"));
 $("motionScailTab").addEventListener("click", () => setMotionSubtab("scail"));
 $("motion3dTab").addEventListener("click", () => setMotionSubtab("3d"));
+document.querySelectorAll(".bernini-mode-tab").forEach((button) => {
+  button.addEventListener("click", () => setBerniniWorkflow(button.dataset.berniniWorkflow));
+});
+document.querySelectorAll(".inpaint-mode-tab").forEach((button) => {
+  button.addEventListener("click", () => setInpaintWorkflow());
+});
 $("castingAnalyzeBtn").addEventListener("click", analyzeCasting);
 $("castingAddLineBtn").addEventListener("click", addCastingLine);
 $("castingGenerateBtn").addEventListener("click", generateCasting);
@@ -3905,37 +5211,80 @@ $("motionRefInput").addEventListener("change", () => uploadImage($("motionRefInp
 $("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($("motionGuideInput").files[0]).catch((err) => {
   state.motionGuideVideoPath = "";
   $("motionGuideUploadStatus").textContent = err.message;
+  updateVideoClipperButtons();
   updateMotionRunAvailability();
 }));
-for (const id of ["motionTrimStart", "motionTrimEnd", "motionTrimStartRange", "motionTrimEndRange"]) {
+$("motionGuide").addEventListener("loadedmetadata", () => {
+  state.motionGuideDuration = $("motionGuide").duration || motionGuideDurationFallback();
+});
+for (const [slotKey, slot] of Object.entries(videoSlots)) {
+  const buttonIds = [slot.editId, ...(slot.extraEditIds || [])].filter(Boolean);
+  for (const id of buttonIds) {
+    const button = $(id);
+    if (button) button.addEventListener("click", () => openVideoClipper(slotKey));
+  }
+}
+for (const id of ["videoClipperStart", "videoClipperEnd", "videoClipperStartRange", "videoClipperEndRange"]) {
   $(id).addEventListener("input", () => {
-    if (id === "motionTrimStartRange") $("motionTrimStart").value = $("motionTrimStartRange").value;
-    if (id === "motionTrimEndRange") $("motionTrimEnd").value = $("motionTrimEndRange").value;
-    updateMotionTrimDisplay(id);
+    if (id === "videoClipperStartRange") $("videoClipperStart").value = $("videoClipperStartRange").value;
+    if (id === "videoClipperEndRange") $("videoClipperEnd").value = $("videoClipperEndRange").value;
+    updateVideoClipperDisplay(id);
   });
 }
-$("motionGuide").addEventListener("loadedmetadata", () => {
-  setMotionTrimBounds($("motionGuide").duration || motionGuideDurationFallback(), true);
+$("videoClipperPlayer").addEventListener("loadedmetadata", () => {
+  setVideoClipperBounds($("videoClipperPlayer").duration || 1, true);
+  updateVideoClipperLayout();
+  renderVideoClipperFilmstrip();
 });
-$("motionGuide").addEventListener("timeupdate", () => {
-  if (!state.motionTrimPlaying) return;
-  const { end } = motionTrimValues();
-  if ($("motionGuide").currentTime >= end) {
-    $("motionGuide").pause();
-    state.motionTrimPlaying = false;
+$("videoClipperPlayer").addEventListener("timeupdate", () => {
+  if (!state.videoClipper.playing) return;
+  const { end } = videoClipperValues();
+  if ($("videoClipperPlayer").currentTime >= end) {
+    $("videoClipperPlayer").pause();
+    state.videoClipper.playing = false;
   }
 });
-$("motionGuide").addEventListener("pause", () => {
-  state.motionTrimPlaying = false;
+$("videoClipperPlayer").addEventListener("pause", () => {
+  state.videoClipper.playing = false;
 });
-$("motionTrimSetStart").addEventListener("click", () => {
-  setMotionTrimBoundaryFromPlayhead("start");
+$("videoClipperPlayBtn").addEventListener("click", playVideoClipperSelection);
+$("videoClipperUseBtn").addEventListener("click", () => saveVideoClipperSelection());
+$("videoClipperCancelBtn").addEventListener("click", closeVideoClipper);
+$("closeVideoClipperBtn").addEventListener("click", closeVideoClipper);
+$("videoClipperModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-video-clipper]")) closeVideoClipper();
 });
-$("motionTrimSetEnd").addEventListener("click", () => {
-  setMotionTrimBoundaryFromPlayhead("end");
-});
-$("motionTrimPlay").addEventListener("click", playMotionTrim);
-$("motionTrimReset").addEventListener("click", () => setMotionTrimBounds(motionGuideDurationFallback(), true));
+$("berniniReferenceImageInput").addEventListener("change", () => uploadImage($("berniniReferenceImageInput").files[0], "berniniReference").catch((err) => {
+  state.berniniReferenceImagePath = "";
+  $("berniniReferenceImageStatus").textContent = err.message;
+}));
+$("berniniSourceVideoInput").addEventListener("change", () => uploadVideo($("berniniSourceVideoInput").files[0], "berniniSource").catch((err) => {
+  state.berniniSourceVideoPath = "";
+  $("berniniSourceVideoStatus").textContent = err.message;
+  updateVideoClipperButtons();
+}));
+$("berniniReferenceVideoInput").addEventListener("change", () => uploadVideo($("berniniReferenceVideoInput").files[0], "berniniReference").catch((err) => {
+  state.berniniReferenceVideoPath = "";
+  $("berniniReferenceVideoStatus").textContent = err.message;
+  updateVideoClipperButtons();
+}));
+$("inpaintSourceVideoInput").addEventListener("change", () => uploadInpaintSourceVideo($("inpaintSourceVideoInput").files[0]).catch((err) => {
+  state.inpaintSourceVideoPath = "";
+  $("inpaintSourceVideoStatus").textContent = err.message;
+  updateVideoClipperButtons();
+}));
+$("inpaintReferenceImageInput").addEventListener("change", () => uploadImage($("inpaintReferenceImageInput").files[0], "inpaintReference").catch((err) => {
+  state.inpaintReferenceImagePath = "";
+  $("inpaintReferenceImageStatus").textContent = err.message;
+}));
+$("inpaintMaskVideo").addEventListener("loadedmetadata", resizeInpaintCanvas);
+$("inpaintMaskCanvas").addEventListener("pointerdown", beginInpaintDraw);
+$("inpaintMaskCanvas").addEventListener("pointermove", moveInpaintDraw);
+$("inpaintMaskCanvas").addEventListener("pointerup", endInpaintDraw);
+$("inpaintMaskCanvas").addEventListener("pointercancel", endInpaintDraw);
+$("inpaintMaskCanvas").addEventListener("pointerleave", endInpaintDraw);
+$("inpaintClearMaskBtn").addEventListener("click", clearInpaintMask);
+$("inpaintBrushSize").addEventListener("input", updateInpaintBrushReadout);
 $("swapSourceEndBtn").addEventListener("click", () => swapImageSlots("source", "end"));
 $("swapSourceMiddleBtn").addEventListener("click", () => swapImageSlots("source", "middle"));
 $("swapMiddleEndBtn").addEventListener("click", () => swapImageSlots("middle", "end"));
@@ -3967,8 +5316,10 @@ $("motionCfg").addEventListener("input", () => {
   $("motionCfgReadout").textContent = Number($("motionCfg").value).toFixed(1);
 });
 $("motionDuration").addEventListener("input", () => {
-  if (!hasMotionGuideVideo()) setMotionTrimBounds(Number($("motionDuration").value) || 4, true);
+  if (!hasMotionGuideVideo()) state.motionGuideDuration = Number($("motionDuration").value) || 4;
 });
+$("motionPrompt").addEventListener("input", () => syncMotionPrompt("motionPrompt"));
+$("motionScailPrompt").addEventListener("input", () => syncMotionPrompt("motionScailPrompt"));
 $("directorSizePreset").addEventListener("change", () => onPresetSizeChange({ presetId: "directorSizePreset", scaleId: "directorSizeScale", sizeId: "directorCustomSizeInput" }));
 $("directorSizeScale").addEventListener("input", updateSizeReadout);
 $("directorCustomSizeInput").addEventListener("input", onCustomSizeInput);
@@ -4001,8 +5352,26 @@ $("closeVideoPreviewBtn").addEventListener("click", closeVideoPreview);
 $("videoPreviewModal").addEventListener("click", (event) => {
   if (event.target.matches("[data-close-video-preview]")) closeVideoPreview();
 });
+$("closeFrameExtractBtn").addEventListener("click", closeFrameExtract);
+$("frameExtractModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-frame-extract]")) closeFrameExtract();
+});
+$("frameExtractTime").addEventListener("input", () => syncFrameExtractTime($("frameExtractTime").value));
+$("frameExtractPlayer").addEventListener("timeupdate", () => {
+  if ($("frameExtractPlayer").seeking) return;
+  const time = $("frameExtractPlayer").currentTime || 0;
+  $("frameExtractTime").value = String(time);
+  updateFrameExtractReadout(time);
+});
+$("saveFrameExtractBtn").addEventListener("click", saveFrameExtract);
+window.addEventListener("resize", () => {
+  updateVideoPreviewLayout();
+  updateVideoClipperLayout();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && $("videoPreviewModal").classList.contains("open")) closeVideoPreview();
+  if (event.key === "Escape" && $("frameExtractModal").classList.contains("open")) closeFrameExtract();
+  if (event.key === "Escape" && $("videoClipperModal").classList.contains("open")) closeVideoClipper();
 });
 $("storyboardImportInput").addEventListener("change", () => {
   $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";
@@ -4015,6 +5384,7 @@ $("applyStoryboardImportBtn").addEventListener("click", () => {
 });
 $("globalAddRefBtn").addEventListener("click", addReferenceSlot);
 renderReferenceSlots();
+updateVideoClipperButtons();
 $("exampleVideo").addEventListener("loadedmetadata", () => {
   const video = $("exampleVideo");
   const start = Number(video.dataset.segmentStart || 0);

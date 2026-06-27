@@ -79,7 +79,13 @@ export default defineConfig({
   base: '/static/3dmotion/',
   build: {
     outDir: path.resolve(__dirname, '..', '..', 'frontend', '3dmotion'),
-    emptyOutDir: true,
+    emptyOutDir: false,
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name][extname]',
+        entryFileNames: 'assets/index.js',
+      },
+    },
   },
   plugins: [react(), scailDriveVideoPlugin()],
   server: {

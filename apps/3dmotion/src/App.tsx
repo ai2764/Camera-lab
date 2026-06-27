@@ -8,25 +8,30 @@ import {
   Plus,
   RefreshCcw,
   RotateCcw,
+  RotateCw,
+  ScanFace,
   Square,
   Trash2,
   Video,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { type CameraKeyframe, sampleCameraTake } from './cameraTake';
-import { makeComfyScailClient, type ComfyOutputVideo } from './comfyScailClient';
+import { getCameraTakeDuration, type CameraKeyframe, sampleCameraTake, sanitizeCameraTake } from './cameraTake';
+import { createCanvasRecorder } from './canvasRecorder';
+import { type CameraLabScailOutput, submitCameraLabScailFinal, waitForCameraLabScailOutput } from './cameraLabScailFinal';
 import { makeDefaultIdleTimeline } from './defaultMotion';
 import { makeDemoMotionTimeline } from './demoMotion';
 import { makeId } from './id';
 import { makeImportedClipId, normalizeImportedClipName, type ImportedClipId } from './importedClips';
 import { type ClipName, type MotionClipId, type TimelineAction } from './motionTypes';
-import { prepareScailDriveVideo } from './scailDriveVideo';
+import { saveMotionRecordingToHistory } from './motionRecordingHistory';
 import { waitForRecordingWarmup } from './recordingWarmup';
 import { makeScailSeed, resolveScailSize, scailSizePresets } from './scailSettings';
-import { buildScailPrompt, makeScailFrameCount } from './scailWorkflow';
+import { advanceRecordingElapsed, makeExportFrameTimes, resolveStageDelta, resolveTimelinePlayhead } from './stageClock';
 import { getRecordTakeControl } from './takeControls';
 import {
   appendTimelineAction,
@@ -34,6 +39,10 @@ import {
   removeTimelineAction,
   updateTimelineActionDuration,
 } from './timelineEditing';
+import { type CameraPreset, makeCameraPresetTake } from './cameraPresets';
+import { toggleCameraPreset, type ActiveCameraPresets } from './cameraPresetSelection';
+import { applyLiveCameraMotions } from './liveCameraMotion';
+import { resolveFaceFocus } from './faceFocus';
 
 type ExportUrls = {
   rgb?: string;
@@ -46,6 +55,10 @@ type StageApi = {
   play: () => void;
   pause: () => void;
   reset: () => void;
+  getCameraKeyframe: () => CameraKeyframe;
+  focusOnFace: () => void;
+  isRecordingCameraTake: () => boolean;
+  setLiveCameraMotions: (presets: ActiveCameraPresets) => boolean;
   startCameraTake: () => Promise<void>;
   stopCameraTake: () => CameraKeyframe[];
   clearCameraTake: () => void;
@@ -59,7 +72,7 @@ type ImportedClipMeta = {
   duration: number;
 };
 
-type ScailGeneratedVideo = ComfyOutputVideo & {
+type ScailGeneratedVideo = CameraLabScailOutput & {
   id: string;
   createdAt: number;
 };
@@ -86,12 +99,11 @@ function getClipLabel(clip: MotionClipId) {
   return clipLabels[clip as ClipName];
 }
 
-const scailClient = makeComfyScailClient();
 const scailFps = 24;
+const recordingFps = scailFps;
 const defaultScailSizePreset = '480x832';
-const defaultScailPrompt = 'a pirate character following the source motion, cinematic, detailed, high quality, smooth motion';
-const defaultScailNegative = 'blurry, low quality, distorted, deformed, watermark, static';
 const recordingWarmupFrames = 3;
+const recorderStartWarmupFrames = 2;
 const nodeMotionGuide = {
   basePath: `${import.meta.env.BASE_URL}mesh2motion/human-base-animations.glb`,
   addonPath: `${import.meta.env.BASE_URL}mesh2motion/human-addon-animations.glb`,
@@ -489,29 +501,6 @@ function disposeObjectTree(root: THREE.Object3D) {
   });
 }
 
-function createRecorder(canvas: HTMLCanvasElement, filename: string) {
-  const stream = canvas.captureStream(30);
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-    ? 'video/webm;codecs=vp9'
-    : 'video/webm';
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-  return {
-    start: () => recorder.start(),
-    stop: () =>
-      new Promise<{ url: string; filename: string; blob: Blob }>((resolve) => {
-        recorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          resolve({ url: URL.createObjectURL(blob), filename, blob });
-        };
-        recorder.stop();
-      }),
-  };
-}
-
 function downloadUrl(url: string, filename: string) {
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -523,16 +512,6 @@ function wait(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-}
-
-async function waitForScailOutput(promptId: string, onTick: (message: string) => void): Promise<ComfyOutputVideo> {
-  for (let attempt = 0; attempt < 240; attempt += 1) {
-    const output = await scailClient.getOutputVideo(promptId);
-    if (output) return output;
-    onTick(`SCAIL is running... ${promptId.slice(0, 8)}`);
-    await wait(3000);
-  }
-  throw new Error('SCAIL generation timed out.');
 }
 
 function useStage(
@@ -607,10 +586,11 @@ function useStage(
     let playhead = 0;
     let playing = false;
     let exporting = false;
+    let deterministicExporting = false;
     let exportStopAt = 0;
     let frame = 0;
-    let rgbRecorder: ReturnType<typeof createRecorder> | null = null;
-    let maskRecorder: ReturnType<typeof createRecorder> | null = null;
+    let rgbRecorder: ReturnType<typeof createCanvasRecorder> | null = null;
+    let maskRecorder: ReturnType<typeof createCanvasRecorder> | null = null;
     let exportResolve: ((urls: ExportUrls) => void) | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let rafId = 0;
@@ -620,9 +600,10 @@ function useStage(
     let loadedActions = new Map<ImportedClipId, THREE.AnimationAction>();
     let currentImportedClip: ImportedClipId | null = null;
     let recordingCameraTake = false;
-    let cameraTakeStart = 0;
+    let cameraRecordingElapsed = 0;
     let cameraTake: CameraKeyframe[] = [];
     let replayCameraTake: CameraKeyframe[] | null = null;
+    let liveCameraMotions: ActiveCameraPresets = [];
 
     function resize() {
       const rect = mount.getBoundingClientRect();
@@ -642,29 +623,10 @@ function useStage(
     }
     resize();
 
-    async function finishExport() {
-      if (!rgbRecorder || !maskRecorder || !exportResolve) return;
-      exporting = false;
-      playing = false;
-      onPlaying(false);
-      const [rgb, mask] = await Promise.all([rgbRecorder.stop(), maskRecorder.stop()]);
-      exportResolve({ rgb: rgb.url, mask: mask.url, rgbBlob: rgb.blob, maskBlob: mask.blob });
-      rgbRecorder = null;
-      maskRecorder = null;
-      exportResolve = null;
-    }
-
-    function animate() {
-      if (disposed) return;
-      const delta = Math.min(clock.getDelta(), 1 / 20);
-      const duration = getTimelineDuration(timelineRef.current);
-      if (playing || exporting) {
-        playhead += delta;
-        if (!exporting && playhead > duration) playhead = 0;
-      }
-      if (exporting && playhead >= exportStopAt) void finishExport();
-
-      const importedSegment = findActiveImportedTimelineAction(timelineRef.current, playhead);
+    function renderStageFrame(delta: number, requestExportFrame = false) {
+      const timelineDuration = getTimelineDuration(timelineRef.current);
+      const timelinePlayhead = resolveTimelinePlayhead(playhead, timelineDuration, Boolean(replayCameraTake || exporting));
+      const importedSegment = findActiveImportedTimelineAction(timelineRef.current, timelinePlayhead);
       if (loadedMixer && importedSegment) {
         const importedClip = importedSegment.action.clip;
         if (importedClip !== currentImportedClip) {
@@ -684,7 +646,7 @@ function useStage(
           loadedMixer?.stopAllAction();
           currentImportedClip = null;
         }
-        applyTimelinePose(rig, timelineRef.current, playhead);
+        applyTimelinePose(rig, timelineRef.current, timelinePlayhead);
       }
 
       if (replayCameraTake) {
@@ -692,14 +654,26 @@ function useStage(
         camera.position.set(...sample.position);
         controls.target.set(...sample.target);
       }
-      controls.update();
+      if (recordingCameraTake && liveCameraMotions.length > 0) {
+        const state = {
+          position: [camera.position.x, camera.position.y, camera.position.z] as [number, number, number],
+          target: [controls.target.x, controls.target.y, controls.target.z] as [number, number, number],
+        };
+        applyLiveCameraMotions(state, liveCameraMotions, delta);
+        camera.position.set(...state.position);
+        controls.target.set(...state.target);
+      }
+      if (replayCameraTake || exporting || (recordingCameraTake && liveCameraMotions.length > 0)) {
+        camera.lookAt(controls.target);
+      } else {
+        controls.update();
+      }
 
-      if (recordingCameraTake && frame % 2 === 0) {
-        cameraTake.push({
-          time: Math.max(0, playhead - cameraTakeStart),
-          position: [camera.position.x, camera.position.y, camera.position.z],
-          target: [controls.target.x, controls.target.y, controls.target.z],
-        });
+      if (recordingCameraTake) {
+        cameraRecordingElapsed = advanceRecordingElapsed(cameraRecordingElapsed, delta);
+      }
+      if (recordingCameraTake && (liveCameraMotions.length > 0 || frame % 2 === 0)) {
+        appendCameraKeyframe();
       }
 
       setMaskMode(scene, false);
@@ -711,8 +685,28 @@ function useStage(
       maskRenderer.render(maskScene, camera);
 
       setMaskMode(scene, false);
+      if (requestExportFrame) {
+        rgbRecorder?.requestFrame();
+        maskRecorder?.requestFrame();
+      }
       if (frame % 3 === 0) onTime(playhead);
       frame += 1;
+    }
+
+    function animate() {
+      if (disposed) return;
+      const rawDelta = clock.getDelta();
+      if (deterministicExporting) {
+        rafId = requestAnimationFrame(animate);
+        return;
+      }
+      const delta = resolveStageDelta(rawDelta, exporting);
+      const duration = getTimelineDuration(timelineRef.current);
+      if (playing) {
+        playhead += delta;
+        if (playhead > duration) playhead = 0;
+      }
+      renderStageFrame(delta);
       rafId = requestAnimationFrame(animate);
     }
     animate();
@@ -723,6 +717,30 @@ function useStage(
         position: [camera.position.x, camera.position.y, camera.position.z],
         target: [controls.target.x, controls.target.y, controls.target.z],
       };
+    }
+
+    function appendCameraKeyframe() {
+      if (!recordingCameraTake) return;
+      const next = makeCameraKeyframe(cameraRecordingElapsed);
+      const last = cameraTake[cameraTake.length - 1];
+      if (last && Math.abs(next.time - last.time) <= 0.001) {
+        cameraTake[cameraTake.length - 1] = { ...next, time: last.time };
+      } else {
+        cameraTake.push(next);
+      }
+    }
+
+    function focusOnFace() {
+      const subject = loadedAvatar ?? rig.root;
+      const box = new THREE.Box3().setFromObject(subject);
+      if (box.isEmpty()) return;
+      const focus = resolveFaceFocus({
+        min: [box.min.x, box.min.y, box.min.z],
+        max: [box.max.x, box.max.y, box.max.z],
+      });
+      controls.target.set(...focus);
+      camera.lookAt(controls.target);
+      appendCameraKeyframe();
     }
 
     apiRef.current = {
@@ -737,14 +755,29 @@ function useStage(
       reset: () => {
         playhead = 0;
         replayCameraTake = null;
+        liveCameraMotions = [];
+        cameraRecordingElapsed = 0;
         currentImportedClip = null;
         onTime(0);
+      },
+      getCameraKeyframe: () => makeCameraKeyframe(0),
+      focusOnFace,
+      isRecordingCameraTake: () => recordingCameraTake,
+      setLiveCameraMotions: (presets) => {
+        if (!recordingCameraTake) return false;
+        liveCameraMotions = [...presets];
+        appendCameraKeyframe();
+        playing = true;
+        onPlaying(true);
+        clock.getDelta();
+        return true;
       },
       startCameraTake: async () => {
         playhead = 0;
         cameraTake = [];
-        cameraTakeStart = 0;
+        cameraRecordingElapsed = 0;
         recordingCameraTake = false;
+        liveCameraMotions = [];
         playing = false;
         onPlaying(false);
         onTime(0);
@@ -752,6 +785,7 @@ function useStage(
         await waitForRecordingWarmup(requestAnimationFrame, recordingWarmupFrames);
         if (disposed) return;
         cameraTake = [makeCameraKeyframe(0)];
+        cameraRecordingElapsed = 0;
         recordingCameraTake = true;
         playing = true;
         clock.getDelta();
@@ -759,38 +793,63 @@ function useStage(
       },
       stopCameraTake: () => {
         recordingCameraTake = false;
+        liveCameraMotions = [];
+        cameraTake = sanitizeCameraTake(cameraTake);
         return [...cameraTake];
       },
       clearCameraTake: () => {
         recordingCameraTake = false;
+        liveCameraMotions = [];
+        cameraRecordingElapsed = 0;
         cameraTake = [];
       },
       exportTake: async (duration: number, recordedCameraTake?: CameraKeyframe[]) => {
         playhead = 0;
         exportStopAt = duration;
         currentImportedClip = null;
-        replayCameraTake = recordedCameraTake && recordedCameraTake.length > 0 ? recordedCameraTake : null;
-        exporting = false;
+        replayCameraTake = recordedCameraTake && recordedCameraTake.length > 0 ? sanitizeCameraTake(recordedCameraTake) : null;
+        deterministicExporting = true;
+        exporting = true;
         playing = false;
         onTime(0);
         onPlaying(false);
         clock.getDelta();
-        await waitForRecordingWarmup(requestAnimationFrame, recordingWarmupFrames);
-        if (disposed) throw new Error('3D stage was closed before export started.');
-        rgbRecorder = createRecorder(renderer.domElement, 'rendered_v2.webm');
-        maskRecorder = createRecorder(maskRenderer.domElement, 'rendered_mask_v2.webm');
-        rgbRecorder.start();
-        maskRecorder.start();
-        exporting = true;
-        playing = true;
-        clock.getDelta();
-        onPlaying(true);
-        return new Promise((resolve) => {
-          exportResolve = (urls) => {
-            replayCameraTake = null;
-            resolve(urls);
-          };
-        });
+        try {
+          await waitForRecordingWarmup(requestAnimationFrame, recordingWarmupFrames);
+          if (disposed) throw new Error('3D stage was closed before export started.');
+          rgbRecorder = createCanvasRecorder(renderer.domElement, 'rendered_v2.webm', {
+            fps: recordingFps,
+            prepareFrame: () => renderer.getContext().finish(),
+          });
+          maskRecorder = createCanvasRecorder(maskRenderer.domElement, 'rendered_mask_v2.webm', {
+            fps: recordingFps,
+            prepareFrame: () => maskRenderer.getContext().finish(),
+          });
+          rgbRecorder.start();
+          maskRecorder.start();
+          await waitForRecordingWarmup(requestAnimationFrame, recorderStartWarmupFrames);
+          if (disposed) throw new Error('3D stage was closed before export started.');
+
+          const frameTimes = makeExportFrameTimes(duration, recordingFps);
+          const frameDelayMs = 1000 / recordingFps;
+          for (const frameTime of frameTimes) {
+            if (disposed) throw new Error('3D stage was closed before export completed.');
+            playhead = frameTime;
+            renderStageFrame(1 / recordingFps, true);
+            await wait(frameDelayMs);
+          }
+
+          const [rgb, mask] = await Promise.all([rgbRecorder.stop(), maskRecorder.stop()]);
+          return { rgb: rgb.url, mask: mask.url, rgbBlob: rgb.blob, maskBlob: mask.blob };
+        } finally {
+          deterministicExporting = false;
+          exporting = false;
+          playing = false;
+          replayCameraTake = null;
+          rgbRecorder = null;
+          maskRecorder = null;
+          onPlaying(false);
+        }
       },
       loadMotionGuide: async (baseFile: File, addonFile?: File) => {
         const baseUrl = URL.createObjectURL(baseFile);
@@ -883,11 +942,15 @@ export function App() {
   const [scailSteps, setScailSteps] = useState(8);
   const [scailSeedText, setScailSeedText] = useState('');
   const [scailPoseStrength, setScailPoseStrength] = useState(1);
+  const [usePoseVideoMask, setUsePoseVideoMask] = useState(true);
   const [importedClips, setImportedClips] = useState<ImportedClipMeta[]>([]);
   const [stageError, setStageError] = useState('');
   const [isRecordingTake, setIsRecordingTake] = useState(false);
+  const [liveCameraPresets, setLiveCameraPresets] = useState<ActiveCameraPresets>([]);
   const [cameraTake, setCameraTake] = useState<CameraKeyframe[]>([]);
+  const [cameraTakeDuration, setCameraTakeDuration] = useState<number | null>(null);
   const duration = useMemo(() => getTimelineDuration(timeline), [timeline]);
+  const activeExportDuration = cameraTakeDuration ?? duration;
   const recordTakeControl = getRecordTakeControl({ isRecordingTake, isExporting });
   const scailSize = useMemo(() => resolveScailSize(scailSizeText, scailSizeScale), [scailSizeText, scailSizeScale]);
 
@@ -927,15 +990,23 @@ export function App() {
     stageApi.current?.reset();
   }
 
-  async function renderTake(recordedCameraTake: CameraKeyframe[]) {
+  async function renderTake(recordedCameraTake: CameraKeyframe[], exportDuration = getCameraTakeDuration(recordedCameraTake, duration)) {
     if (!stageApi.current || isExporting) return;
     setIsExporting(true);
     setExports({});
     setIsPreviewOpen(false);
     try {
-      const urls = await stageApi.current.exportTake(duration, recordedCameraTake);
+      const urls = await stageApi.current.exportTake(exportDuration, recordedCameraTake);
       setExports(urls);
       if (urls.rgb) setIsPreviewOpen(true);
+      if (urls.rgbBlob) {
+        try {
+          await saveMotionRecordingToHistory(urls.rgbBlob, { duration: exportDuration });
+          setScailStatus('Motion guide saved to Results.');
+        } catch (error) {
+          setScailStatus(error instanceof Error ? error.message : 'Motion guide saved locally, but Results update failed.');
+        }
+      }
     } finally {
       setIsExporting(false);
     }
@@ -946,17 +1017,45 @@ export function App() {
 
     if (isRecordingTake) {
       const recordedCameraTake = stageApi.current.stopCameraTake();
+      const recordedDuration = getCameraTakeDuration(recordedCameraTake, duration);
       setCameraTake(recordedCameraTake);
+      setCameraTakeDuration(recordedDuration);
       setIsRecordingTake(false);
-      await renderTake(recordedCameraTake);
+      setLiveCameraPresets([]);
+      await renderTake(recordedCameraTake, recordedDuration);
       return;
     }
 
     setExports({});
     setIsPreviewOpen(false);
     setCameraTake([]);
+    setCameraTakeDuration(null);
     await stageApi.current.startCameraTake();
     setIsRecordingTake(true);
+    setLiveCameraPresets([]);
+  }
+
+  async function renderPresetTake(preset: CameraPreset) {
+    if (!stageApi.current || isRecordingTake || isExporting) return;
+    const presetTake = makeCameraPresetTake(preset, stageApi.current.getCameraKeyframe(), duration);
+    setCameraTake(presetTake);
+    setCameraTakeDuration(duration);
+    await renderTake(presetTake, duration);
+  }
+
+  async function useCameraPreset(preset: CameraPreset) {
+    if (!stageApi.current || isExporting) return;
+    if (stageApi.current.isRecordingCameraTake()) {
+      const nextPresets = toggleCameraPreset(liveCameraPresets, preset);
+      if (!stageApi.current.setLiveCameraMotions(nextPresets)) return;
+      setLiveCameraPresets(nextPresets);
+      return;
+    }
+    await renderPresetTake(preset);
+  }
+
+  function focusCameraOnFace() {
+    stageApi.current?.focusOnFace();
   }
 
   async function generateScailVideo() {
@@ -965,35 +1064,29 @@ export function App() {
     setScailStatus('Exporting the current motion guide...');
     try {
       const timestamp = Date.now();
-      const urls = await stageApi.current.exportTake(duration, cameraTake);
+      const exportDuration = cameraTake.length > 0 ? activeExportDuration : duration;
+      const urls = await stageApi.current.exportTake(exportDuration, cameraTake);
       if (!urls.rgb || !urls.rgbBlob) throw new Error('Motion guide export did not return a video.');
       setExports(urls);
 
-      setScailStatus('Uploading reference image and preparing MP4 motion guide...');
-      const referenceImage = await scailClient.uploadInput(scailReference);
-      const driveVideo = await prepareScailDriveVideo(urls.rgbBlob, `drive_${timestamp}.webm`);
-
-      const frameCount = makeScailFrameCount(duration, scailFps);
+      setScailStatus('Uploading reference image and motion guide...');
       const steps = Math.max(1, Math.min(100, Math.round(scailSteps)));
       const poseStrength = clamp(scailPoseStrength, 0, 1);
-      const prompt = buildScailPrompt({
-        referenceImage,
-        driveVideo,
-        positivePrompt: defaultScailPrompt,
-        negativePrompt: defaultScailNegative,
+
+      setScailStatus(`Submitting SCAIL2 job (${scailSize.width}x${scailSize.height})...`);
+      const batch = await submitCameraLabScailFinal({
+        reference: scailReference,
+        guide: urls.rgbBlob,
+        guideName: `drive_${timestamp}.webm`,
+        duration: exportDuration,
         width: scailSize.width,
         height: scailSize.height,
-        fps: scailFps,
-        frameCount,
         seed: makeScailSeed(scailSeedText),
         steps,
         poseStrength,
-        outputPrefix: `scail/3dmotion_${timestamp}`,
+        usePoseVideoMask,
       });
-
-      setScailStatus(`Submitting SCAIL-2 job (${frameCount} frames, ${scailSize.width}x${scailSize.height})...`);
-      const promptId = await scailClient.queuePrompt(prompt);
-      const output = await waitForScailOutput(promptId, setScailStatus);
+      const output = await waitForCameraLabScailOutput(batch.batch_id, setScailStatus);
       setScailOutputs((items) => [{ ...output, id: `${timestamp}-${items.length}`, createdAt: timestamp }, ...items]);
       setScailStatus('SCAIL-2 video is ready.');
     } catch (error) {
@@ -1123,6 +1216,23 @@ export function App() {
                 {recordTakeControl.icon === 'square' ? <Square size={17} /> : <Video size={17} />}
                 {recordTakeControl.label}
               </button>
+              <div className="camera-preset-strip" aria-label="Camera presets">
+                <button className={`icon-button ${liveCameraPresets.includes('zoom_in') ? 'active' : ''}`} type="button" onClick={() => void useCameraPreset('zoom_in')} disabled={isExporting} title="Uniform zoom in">
+                  <ZoomIn size={17} />
+                </button>
+                <button className={`icon-button ${liveCameraPresets.includes('zoom_out') ? 'active' : ''}`} type="button" onClick={() => void useCameraPreset('zoom_out')} disabled={isExporting} title="Uniform zoom out">
+                  <ZoomOut size={17} />
+                </button>
+                <button className={`icon-button ${liveCameraPresets.includes('orbit_left') ? 'active' : ''}`} type="button" onClick={() => void useCameraPreset('orbit_left')} disabled={isExporting} title="Uniform orbit left">
+                  <RotateCcw size={17} />
+                </button>
+                <button className={`icon-button ${liveCameraPresets.includes('orbit_right') ? 'active' : ''}`} type="button" onClick={() => void useCameraPreset('orbit_right')} disabled={isExporting} title="Uniform orbit right">
+                  <RotateCw size={17} />
+                </button>
+                <button className="icon-button" type="button" onClick={focusCameraOnFace} disabled={isExporting} title="Focus on face">
+                  <ScanFace size={17} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1184,7 +1294,7 @@ export function App() {
               <p className="eyebrow">Video</p>
               <h2>Generate with SCAIL-2</h2>
             </div>
-            <span className="video-duration">{duration.toFixed(2)}s</span>
+            <span className="video-duration">{activeExportDuration.toFixed(2)}s</span>
           </div>
 
           <label className="reference-picker">
@@ -1293,6 +1403,18 @@ export function App() {
               </label>
             </div>
           </details>
+
+          <label className="settings-field scail-mask-toggle">
+            <input
+              type="checkbox"
+              checked={usePoseVideoMask}
+              onChange={(event) => setUsePoseVideoMask(event.target.checked)}
+            />
+            <span>
+              <strong>Keep background</strong>
+              <small>Replace only the person when rendering with SCAIL2.</small>
+            </span>
+          </label>
 
           <button
             className="primary-button wide"

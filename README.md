@@ -10,6 +10,7 @@ It runs as a lightweight Python HTTP server, serves a static frontend, and submi
 
 - **Camera Lab** queues image-to-video and multi-image workflow runs with reusable camera move presets, prompts, seeds, reference images, and result history.
 - **Director** assembles shot timelines, audio cues, reference images, and workflow settings for longer structured video runs.
+- **Edit** groups WAN2.2 Bernini video editing modes and WAN VACE Inpaint into one workspace. Bernini supports T2V, I2V, V2V, MV2V, VI2V, VRC2V, R2V, RV2V, and ADS2V modes; Inpaint lets you upload a source video, paint a replacement mask, and optionally provide a reference image.
 - **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
 - **Motion** drives the SCAIL-2 video model to animate a reference character from a guide pose video. It has three tools: **Text to Motion** (HY-Motion turns a text prompt into a pose video), **SCAIL2** (renders a pose video onto a reference character), and **3D Motion** (poses a rigged 3D character in the browser, then feeds that as the guide).
 
@@ -218,6 +219,27 @@ Expected local Casting paths:
 
 If only the LLM is missing, script analysis is disabled but manual line editing still works. If only CosyVoice is missing, TTS generation is disabled but script analysis can still work. If both are missing, Camera Lab still starts and the Casting tab reports both missing dependency groups.
 
+## Edit Workspace
+
+The Edit workspace is the shared UI for Bernini and Inpaint workflows.
+
+Bernini modes:
+
+- **T2V**: text to video.
+- **I2V**: source image to video.
+- **V2V / MV2V / VRC2V**: source video edits.
+- **VI2V / RV2V**: source video edits with a reference image.
+- **R2V**: reference image to video.
+- **ADS2V**: source video plus reference video.
+
+Inpaint mode:
+
+- Requires a source video and a painted mask.
+- Reference image is optional.
+- The mask is drawn in the center canvas and uploaded before the workflow is queued.
+
+Generated video result cards include an **Edit** menu when the output can be reused as an input. The menu can send a result video into compatible Bernini or Inpaint source slots. Video upload fields share the same clip editor modal so a trimmed clip can be reused consistently across Edit and Motion inputs.
+
 ## Browser E2E Tests
 
 Camera Lab uses Playwright for browser-level smoke tests of the web UI.
@@ -268,6 +290,19 @@ Current dropdown mapping:
 - `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
 - `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
 - `LTX Director Reference MVP`: `workflows/app/ltx_director_reference_mvp.json`
+- `WAN2.2 Bernini T2V`: `workflows/app/wan22_bernini_t2v.ui.json`
+- `WAN2.2 Bernini T2I`: `workflows/app/wan22_bernini_t2i.ui.json`
+- `WAN2.2 Bernini I2V`: `workflows/app/wan22_bernini_i2v.ui.json`
+- `WAN2.2 Bernini I2I`: `workflows/app/wan22_bernini_i2i.ui.json`
+- `WAN2.2 Bernini V2V`: `workflows/app/wan22_bernini_v2v.ui.json`
+- `WAN2.2 Bernini MV2V`: `workflows/app/wan22_bernini_mv2v.ui.json`
+- `WAN2.2 Bernini VI2V`: `workflows/app/wan22_bernini_vi2v.ui.json`
+- `WAN2.2 Bernini VRC2V`: `workflows/app/wan22_bernini_vrc2v.ui.json`
+- `WAN2.2 Bernini R2V`: `workflows/app/wan22_bernini_r2v.ui.json`
+- `WAN2.2 Bernini R2I`: `workflows/app/wan22_bernini_r2i.ui.json`
+- `WAN2.2 Bernini RV2V`: `workflows/app/wan22_bernini_rv2v.ui.json`
+- `WAN2.2 Bernini ADS2V`: `workflows/app/wan22_bernini_ads2v.ui.json`
+- `WAN VACE Inpaint`: `workflows/app/wan_vace_inpainting.ui.json`
 
 ## Global Reference Injection Path (Director)
 

@@ -60,6 +60,47 @@ Do not commit `.env`.
 - `tests/`: Python and browser smoke tests
 - `tasks/`: local-only scratch space ignored by git
 
+## Current Workspaces
+
+- `Camera Lab`: standard LTX image/video workflows.
+- `Director`: timeline/reference/audio assembly.
+- `Edit`: combined Bernini and Inpaint workspace.
+- `Casting`: script, voice, and TTS preparation.
+- `Motion`: Text to Motion, SCAIL2, and 3D Motion.
+
+The old Bernini and Inpaint top-level routes should resolve into `#edit`. Do not add separate visible top-level tabs for Bernini or Inpaint unless the product direction changes.
+
+## Edit Workspace Notes
+
+Edit uses a mode bar, not the old workflow dropdown as the primary user control.
+
+Bernini UI modes currently shown in Edit:
+
+- `bernini_t2v`
+- `bernini_i2v`
+- `bernini_v2v`
+- `bernini_mv2v`
+- `bernini_vi2v`
+- `bernini_vrc2v`
+- `bernini_r2v`
+- `bernini_rv2v`
+- `bernini_ads2v`
+
+Bernini image-only modes are registered server-side for workflow support but hidden from the Edit UI:
+
+- `bernini_t2i`
+- `bernini_i2i`
+- `bernini_r2i`
+
+Inpaint uses workflow id and mode `wan_vace_inpaint`. It requires:
+
+- source video
+- painted mask image
+
+The Inpaint reference image is optional. Do not reintroduce it as a required input.
+
+Generated result cards may expose an `Edit` menu when they have a video output. That menu routes the result video into compatible Bernini/Inpaint video input slots. Video inputs should use the shared clip editor modal and show an inline preview under the upload field.
+
 ## External Dependencies
 
 This repo does not vendor ComfyUI, models, or custom nodes.
@@ -126,3 +167,26 @@ Frontend workflow dropdown mapping:
 - `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
 - `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
 - `LTX Director Reference MVP`: `workflows/app/ltx_director_reference_mvp.json`
+- `WAN2.2 Bernini T2V`: `workflows/app/wan22_bernini_t2v.ui.json`
+- `WAN2.2 Bernini T2I`: `workflows/app/wan22_bernini_t2i.ui.json`
+- `WAN2.2 Bernini I2V`: `workflows/app/wan22_bernini_i2v.ui.json`
+- `WAN2.2 Bernini I2I`: `workflows/app/wan22_bernini_i2i.ui.json`
+- `WAN2.2 Bernini V2V`: `workflows/app/wan22_bernini_v2v.ui.json`
+- `WAN2.2 Bernini MV2V`: `workflows/app/wan22_bernini_mv2v.ui.json`
+- `WAN2.2 Bernini VI2V`: `workflows/app/wan22_bernini_vi2v.ui.json`
+- `WAN2.2 Bernini VRC2V`: `workflows/app/wan22_bernini_vrc2v.ui.json`
+- `WAN2.2 Bernini R2V`: `workflows/app/wan22_bernini_r2v.ui.json`
+- `WAN2.2 Bernini R2I`: `workflows/app/wan22_bernini_r2i.ui.json`
+- `WAN2.2 Bernini RV2V`: `workflows/app/wan22_bernini_rv2v.ui.json`
+- `WAN2.2 Bernini ADS2V`: `workflows/app/wan22_bernini_ads2v.ui.json`
+- `WAN VACE Inpaint`: `workflows/app/wan_vace_inpainting.ui.json`
+
+## Commit Scope Notes
+
+Bernini/Inpaint/Edit-menu work is separable from SCAIL2/Motion/3D Motion work. When preparing a commit for only the Edit workspace, avoid staging:
+
+- `apps/3dmotion/**`
+- `frontend/3dmotion/**`
+- Motion-only SCAIL2 seed/prompt/result-card changes
+- Motion-only backend tests
+- `dependency-manifest.json` unless the dependency summary actually changed for the target commit
