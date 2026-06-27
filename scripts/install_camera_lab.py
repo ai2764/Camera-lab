@@ -14,20 +14,45 @@ from camera_lab_common import (
     load_env,
     python_executable,
 )
+from camera_lab_setup.hardware import detect_hardware
+from camera_lab_setup.modules import MODULES, module_ids
 
 
 def run(command: list[str]) -> None:
     subprocess.run(command, cwd=REPO_ROOT, check=True)
 
 
+def parse_modules(raw: str | None, all_modules: bool) -> list[str] | None:
+    if all_modules:
+        return module_ids()
+    if not raw:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Bootstrap Camera Lab repo-side dependencies for coding agents.")
+    parser = argparse.ArgumentParser(description="Install Camera Lab with optional modules.")
+    parser.add_argument("--list-modules", action="store_true", help="List installable modules and exit.")
+    parser.add_argument("--modules", help="Comma-separated module ids to install.")
+    parser.add_argument("--all", action="store_true", help="Install all modules.")
     parser.add_argument("--skip-node", action="store_true", help="Skip npm install.")
     parser.add_argument("--install-playwright-browser", action="store_true", help="Install Playwright Chromium.")
     parser.add_argument("--skip-workflow-install", action="store_true", help="Do not install workflows into ComfyUI.")
-    parser.add_argument("--include-experimental-workflows", action="store_true", help="Also install workflows/experimental.")
-    parser.add_argument("--modules", help="Comma-separated module ids to install workflows for.")
     args = parser.parse_args()
+
+    if args.list_modules:
+        for module in MODULES:
+            print(f"{module.id}: {module.label} - {module.description}")
+        return 0
+
+    selected = parse_modules(args.modules, args.all)
+    hardware = detect_hardware(repo_root=REPO_ROOT, comfy_root=comfy_root_from_env())
+    print(
+        f"Hardware: GPU={hardware.gpu_name or 'unknown'}, "
+        f"VRAM={hardware.vram_gb or 'unknown'} GiB, OS={hardware.os_name}, Python={hardware.python_version}"
+    )
+    for warning in hardware.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
 
     if not ENV_PATH.exists():
         if not ENV_EXAMPLE_PATH.exists():
@@ -46,28 +71,21 @@ def main() -> int:
             run([npm, "install"])
             if args.install_playwright_browser:
                 npx = shutil.which("npx")
-                if not npx:
-                    print("npx was not found. Skipping Playwright browser install.", file=sys.stderr)
-                else:
-                    print("Installing Playwright Chromium...")
+                if npx:
                     run([npx, "playwright", "install", "chromium"])
+                else:
+                    print("npx was not found. Skipping Playwright browser install.", file=sys.stderr)
         else:
-            print("npm was not found. Skipping Node dependencies and browser smoke-test setup.", file=sys.stderr)
+            print("npm was not found. Skipping Node dependencies.", file=sys.stderr)
 
     load_env()
     comfy_root = comfy_root_from_env()
-    module_ids = [item.strip() for item in args.modules.split(",") if item.strip()] if args.modules else None
     if not args.skip_workflow_install and comfy_root and comfy_root.exists():
-        install_workflows(include_experimental=args.include_experimental_workflows, module_ids=module_ids)
+        install_workflows(module_ids=selected)
     elif not args.skip_workflow_install:
         print("COMFYUI_ROOT is not configured or does not exist. Skipping workflow install.", file=sys.stderr)
-
-    print()
-    print("Agent setup finished.")
-    print("Next: edit .env if needed, start ComfyUI, then run python scripts/check_setup.py.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

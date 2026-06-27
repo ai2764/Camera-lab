@@ -4,6 +4,7 @@ from scripts.camera_lab_setup.modules import MODULES, ModelRef, get_module, modu
 from scripts.camera_lab_setup.resolver import resolve_module
 from scripts.camera_lab_setup.visibility import model_visible, node_visible, visibility_from_object_info
 from scripts.camera_lab_setup.visibility import ComfyVisibility
+from scripts.camera_lab_common import workflow_sources
 
 
 def test_module_registry_contains_user_facing_workspaces():
@@ -118,3 +119,11 @@ def test_resolver_reports_risky_when_hardware_is_below_profile():
     assert status.ready is True
     assert status.recommendation == "risky"
     assert any("8 GiB VRAM" in warning for warning in status.warnings)
+
+
+def test_workflow_sources_can_filter_by_module():
+    sources = workflow_sources(module_ids=["director"])
+
+    assert len(sources) == 1
+    assert sources[0][0] == "app"
+    assert sources[0][2] == ("ltx_director_reference_mvp.json",)
