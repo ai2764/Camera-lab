@@ -6,6 +6,51 @@ It runs as a lightweight Python HTTP server, serves a static frontend, and submi
 
 ![Camera Lab ComfyUI video workbench](docs/images/camera-lab-hero.png)
 
+## System Architecture
+
+```mermaid
+flowchart TB
+  USER["User in browser"]
+  UI["Static frontend<br/>Camera Lab / Director / Edit / Motion / Casting"]
+  SERVER["Python HTTP server<br/>media staging, validation, prompt patching, polling"]
+  RUNS["Local run state<br/>tasks/, uploads, outputs, history"]
+
+  subgraph Workflows["Workflow layer"]
+    LTX["LTX shot and Director workflows"]
+    WAN["WAN Bernini and VACE Inpaint workflows"]
+    MOTION["HY-Motion and SCAIL2 workflows"]
+    CAST["Casting analysis and TTS jobs"]
+  end
+
+  subgraph Comfy["Local generation services"]
+    COMFY_MAIN["ComfyUI main instance<br/>COMFYUI_URL"]
+    COMFY_MOTION["Optional motion ComfyUI<br/>COMFYUI_MOTION_URL"]
+  end
+
+  subgraph Models["Model assets outside this repo"]
+    LTX_MODEL["LTX 2.3 model stack"]
+    WAN_MODEL["WAN2.2 / VACE / Bernini model stack"]
+    SCAIL_MODEL["HY-Motion / SCAIL2 model stack"]
+    VOICE_MODEL["Optional LLM + CosyVoice"]
+  end
+
+  OUT["Generated media<br/>videos, images, audio, metadata"]
+
+  USER --> UI --> SERVER
+  SERVER --> RUNS
+  SERVER --> Workflows
+  LTX --> COMFY_MAIN --> LTX_MODEL
+  WAN --> COMFY_MAIN --> WAN_MODEL
+  MOTION --> COMFY_MOTION --> SCAIL_MODEL
+  CAST --> VOICE_MODEL
+  LTX_MODEL --> OUT
+  WAN_MODEL --> OUT
+  SCAIL_MODEL --> OUT
+  VOICE_MODEL --> OUT
+  OUT --> RUNS
+  RUNS --> UI
+```
+
 ## What It Does
 
 - **Camera Lab** queues image-to-video and multi-image workflow runs with reusable camera move presets, prompts, seeds, reference images, and result history.
@@ -13,6 +58,158 @@ It runs as a lightweight Python HTTP server, serves a static frontend, and submi
 - **Edit** groups WAN2.2 Bernini video editing modes and WAN VACE Inpaint into one workspace. Bernini supports T2V, I2V, V2V, MV2V, VI2V, VRC2V, R2V, RV2V, and ADS2V modes; Inpaint lets you upload a source video, paint a replacement mask, and optionally provide a reference image.
 - **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
 - **Motion** drives the SCAIL-2 video model to animate a reference character from a guide pose video. It has three tools: **Text to Motion** (HY-Motion turns a text prompt into a pose video), **SCAIL2** (renders a pose video onto a reference character), and **3D Motion** (poses a rigged 3D character in the browser, then feeds that as the guide).
+
+## Tab Architecture
+
+Legend used in the tab diagrams:
+
+- `[UI]`: browser controls in `frontend/`
+- `[API]`: request handling and prompt patching in `server/camera_lab_server.py`
+- `[WF]`: bundled workflow JSON or server-side workflow builder
+- `[MODEL]`: local ComfyUI model files and custom nodes
+- `[OUT]`: generated run files and history under `tasks/`
+
+### Camera Lab Tab
+
+**High-level overview:**
+
+```mermaid
+flowchart LR
+  UI["[UI] Camera Lab tab<br/>prompt, seed, size, source images, camera move"]
+  API["[API] collectPayload + run_batch_worker"]
+  WF1["[WF] LTX I2V / IA2V JSON workflows"]
+  WF2["[WF] Built-in FLF / FML builders"]
+  MODEL["[MODEL] LTX 2.3 checkpoint<br/>Gemma text encoder<br/>distilled LoRA<br/>TTP Toolset"]
+  OUT["[OUT] result video/image<br/>contact sheet<br/>history card"]
+
+  UI --> API
+  API --> WF1
+  API --> WF2
+  WF1 --> MODEL
+  WF2 --> MODEL
+  MODEL --> OUT
+```
+
+**High-level description:** Camera Lab is the core shot-generation workspace for creating short AI video clips from prompts, image references, camera moves, and reusable LTX workflow presets. The browser collects prompt, seed, frame size, duration, camera move, and source images, then the Python server validates media, patches the selected LTX workflow or built-in workflow builder, submits it to ComfyUI, and records generated media back into run history.
+
+### Director Tab
+
+**High-level overview:**
+
+```mermaid
+flowchart LR
+  UI["[UI] Director tab<br/>timeline segments, audio cues, reference images"]
+  API["[API] build_ltx_director_reference_api"]
+  WF["[WF] ltx_director_reference_mvp.json"]
+  PATCH["[API] timeline patching<br/>global reference injection<br/>audio segment injection"]
+  MODEL["[MODEL] LTX 2.3 stack<br/>LTXDirector / LTXVAddGuideMulti<br/>Gemma encoder"]
+  OUT["[OUT] structured video run<br/>timeline metadata<br/>history card"]
+
+  UI --> API --> WF --> PATCH --> MODEL --> OUT
+```
+
+**High-level description:** Director is the structured timeline workspace for assembling longer videos from ordered segments, global references, local references, prompts, and audio cues. The UI builds a timeline payload, while the backend converts that payload into `LTXDirector` inputs, injects reference guides and audio data when needed, submits the patched Director workflow to ComfyUI, and stores the resulting video with timeline metadata for reuse.
+
+### Edit Tab
+
+**High-level overview:**
+
+```mermaid
+flowchart TB
+  UI["[UI] Edit tab<br/>mode bar + prompt + inputs"]
+  MENU["[UI] result card Edit menu<br/>send video output into edit inputs"]
+  CLIP["[UI] shared clip editor<br/>trim source/reference videos"]
+  API["[API] Bernini/Inpaint media validation<br/>workflow patching<br/>split/merge and preserve audio"]
+
+  subgraph Bernini["Bernini workflows"]
+    BMODES["[UI] T2V, I2V, V2V, MV2V, VI2V,<br/>VRC2V, R2V, RV2V, ADS2V"]
+    BWF["[WF] workflows/app/wan22_bernini_*.ui.json"]
+    BMODEL["[MODEL] Wan22 Bernini HIGH/LOW<br/>WAN2.2 LightX2V LoRAs<br/>UMT5 XXL<br/>Wan 2.1 VAE"]
+    BMODES --> BWF --> BMODEL
+  end
+
+  subgraph Inpaint["Inpaint workflow"]
+    IINPUT["[UI] source video + painted mask<br/>optional reference image"]
+    IWF["[WF] workflows/app/wan_vace_inpainting.ui.json"]
+    IMODEL["[MODEL] Wan2.1 VACE 14B<br/>UMT5 XXL<br/>Wan 2.1 VAE<br/>SAM3 mask model"]
+    IINPUT --> IWF --> IMODEL
+  end
+
+  OUT["[OUT] edited video<br/>history scoped to selected edit mode"]
+
+  MENU --> UI
+  CLIP --> UI
+  UI --> API
+  API --> Bernini
+  API --> Inpaint
+  BMODEL --> OUT
+  IMODEL --> OUT
+```
+
+**High-level description:** Edit is the post-generation editing workspace for changing existing images or videos through Bernini modes and masked VACE inpainting. The UI routes users into Bernini or Inpaint modes, gathers source media, reference media, masks, prompts, split settings, and trim data, then the backend stages those assets, patches the corresponding WAN workflow, optionally preserves audio or merges split RV2V segments, and saves edited results into scoped history cards.
+
+### Motion Tab
+
+**High-level overview:**
+
+```mermaid
+flowchart TB
+  UI["[UI] Motion tab<br/>Text to Motion / SCAIL2 / 3D Motion"]
+  API["[API] motion endpoints<br/>guide upload, final render, polling"]
+  OUT["[OUT] guide videos<br/>SCAIL2 final videos<br/>typed Motion history"]
+
+  subgraph TextMotion["Text to Motion"]
+    TUI["[UI] motion prompt + duration + seed"]
+    TWF["[WF] HY-Motion guide workflow"]
+    TMODEL["[MODEL] HY-Motion model stack"]
+    GUIDE["[OUT] pose guide video"]
+    TUI --> TWF --> TMODEL --> GUIDE
+  end
+
+  subgraph Scail["SCAIL2"]
+    SUI["[UI] guide video + reference image<br/>prompt, seed, size, pose strength<br/>Keep background mask"]
+    SWF["[WF] workflows/app/scail2_video.api.json"]
+    SMODEL["[MODEL] wan2.1_14B_SCAIL_2<br/>LightX2V I2V LoRA<br/>CLIP Vision H<br/>UMT5 XXL<br/>Wan 2.1 VAE<br/>SAM3 when mask enabled"]
+    SUI --> SWF --> SMODEL
+  end
+
+  subgraph ThreeD["3D Motion"]
+    D3UI["[UI] browser 3D stage<br/>actions, camera presets, recording"]
+    D3OUT["[OUT] recorded_3d.mp4"]
+    D3UI --> D3OUT
+  end
+
+  UI --> API
+  API --> TextMotion
+  API --> Scail
+  API --> ThreeD
+  GUIDE --> SUI
+  D3OUT --> SUI
+  SMODEL --> OUT
+```
+
+**High-level description:** Motion is the character-motion workspace for turning text, uploaded guide videos, or browser-recorded 3D motion into SCAIL2 character animation. Text to Motion produces pose guide videos, 3D Motion records browser-generated guide clips, and SCAIL2 combines a guide video with a reference character image; the backend patches motion workflows, handles reference masks and pose masks, polls the motion ComfyUI endpoint, and stores guide/final videos by motion subtype.
+
+### Casting Tab
+
+**High-level overview:**
+
+```mermaid
+flowchart LR
+  UI["[UI] Casting tab<br/>script lines, speakers, emotions, voice library"]
+  API["[API] casting endpoints<br/>library, analysis, TTS jobs"]
+  LLM["[MODEL] optional OpenAI-compatible LLM<br/>script analysis"]
+  TTS["[MODEL] optional CosyVoice<br/>voice synthesis"]
+  OUT["[OUT] voice clips<br/>tts/library<br/>line metadata"]
+
+  UI --> API
+  API --> LLM
+  API --> TTS
+  LLM --> UI
+  TTS --> OUT
+```
+
+**High-level description:** Casting is the dialogue and voice-preparation workspace for converting scripts into speaker lines, voice assignments, emotion metadata, and generated speech clips. The UI manages script lines and voice-library state, while optional LLM analysis can structure dialogue and optional CosyVoice synthesis can render audio; the server keeps these integrations isolated so the tab remains usable when either external dependency is unavailable.
 
 ## Quick Start
 
