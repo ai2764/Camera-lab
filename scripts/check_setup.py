@@ -6,17 +6,36 @@ import sys
 import urllib.error
 from pathlib import Path
 
-from camera_lab_common import (
-    ENV_EXAMPLE_PATH,
-    ENV_PATH,
-    REQUIRED_MODELS,
-    REPO_ROOT,
-    comfy_root_from_env,
-    comfy_url_from_env,
-    http_json,
-    installed_workflow_root,
-    load_env,
-)
+try:
+    from camera_lab_common import (
+        ENV_EXAMPLE_PATH,
+        ENV_PATH,
+        REPO_ROOT,
+        comfy_root_from_env,
+        comfy_url_from_env,
+        http_json,
+        installed_workflow_root,
+        load_env,
+    )
+    from camera_lab_setup.hardware import detect_hardware
+    from camera_lab_setup.modules import selected_modules
+    from camera_lab_setup.resolver import resolve_modules
+    from camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
+except ModuleNotFoundError:
+    from scripts.camera_lab_common import (
+        ENV_EXAMPLE_PATH,
+        ENV_PATH,
+        REPO_ROOT,
+        comfy_root_from_env,
+        comfy_url_from_env,
+        http_json,
+        installed_workflow_root,
+        load_env,
+    )
+    from scripts.camera_lab_setup.hardware import detect_hardware
+    from scripts.camera_lab_setup.modules import selected_modules
+    from scripts.camera_lab_setup.resolver import resolve_modules
+    from scripts.camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
 
 
 def add_check(checks: list[bool], name: str, ok: bool, detail: object) -> None:
@@ -25,9 +44,22 @@ def add_check(checks: list[bool], name: str, ok: bool, detail: object) -> None:
     checks.append(ok)
 
 
+def parse_module_ids(raw: str | None) -> list[str] | None:
+    return [item.strip() for item in raw.split(",") if item.strip()] if raw else None
+
+
+def workflow_names_for_modules(module_ids: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    names: list[str] = []
+    for module in selected_modules(module_ids):
+        names.extend(module.workflows)
+    return list(dict.fromkeys(names))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check Camera Lab local setup.")
-    parser.parse_args()
+    parser.add_argument("--modules", help="Comma-separated module ids to check.")
+    args = parser.parse_args()
+    module_ids = parse_module_ids(args.modules)
 
     load_env()
     checks: list[bool] = []
@@ -57,14 +89,32 @@ def main() -> int:
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         add_check(checks, "ComfyUI server", False, f"start ComfyUI, then check {comfy_url}: {exc}")
 
-    model_root = comfy_root / "models"
-    for model in REQUIRED_MODELS:
-        path = model_root / Path(model)
-        add_check(checks, f"Model {model}", path.exists(), path)
+    visibility = ComfyVisibility(nodes=frozenset(), models={}, source="offline")
+    try:
+        visibility = visibility_from_object_info(http_json(f"{comfy_url}/object_info", timeout=30.0))
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"[WARN] ComfyUI object_info unavailable - shared model paths cannot be confirmed: {exc}")
+
+    hardware = detect_hardware(repo_root=REPO_ROOT, comfy_root=comfy_root if comfy_root.exists() else None)
+    print(f"[INFO] Hardware - GPU={hardware.gpu_name or 'unknown'}, VRAM={hardware.vram_gb or 'unknown'} GiB")
+    for warning in hardware.warnings:
+        print(f"[WARN] Hardware - {warning}")
+
+    statuses = resolve_modules(selected_modules(module_ids), hardware, visibility)
+    for status in statuses.values():
+        add_check(checks, f"Module {status.id}", status.ready, f"profile={status.profile or 'none'} recommendation={status.recommendation}")
+        for missing in status.missing:
+            add_check(checks, f"Module {status.id} dependency {missing}", False, missing)
+        for warning in status.warnings:
+            print(f"[WARN] Module {status.id} - {warning}")
 
     app_workflow_root = REPO_ROOT / "workflows" / "app"
     installed_app_workflow_root = installed_workflow_root(comfy_root) / "app"
-    for workflow in sorted(app_workflow_root.glob("*.json")):
+    requested_workflows = set(workflow_names_for_modules(module_ids))
+    workflows = sorted(app_workflow_root.glob("*.json"))
+    if module_ids is not None:
+        workflows = [workflow for workflow in workflows if workflow.name in requested_workflows]
+    for workflow in workflows:
         installed = installed_app_workflow_root / workflow.name
         add_check(checks, f"Repo workflow {workflow.name}", workflow.exists(), workflow)
         add_check(checks, f"Installed ComfyUI workflow {workflow.name}", installed.exists(), installed)
