@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a hardware-aware modular installer that recommends Camera Lab modules and model profiles, installs selected workflows, reports module readiness, and lets the frontend hide unavailable workspace tabs.
+**Goal:** Build a hardware-aware modular installer that recommends Camera Lab modules and model profiles, installs selected workflows, reports module readiness, and lets the frontend grey out unavailable workspace tabs.
 
 **Architecture:** Add a focused setup package under `scripts/camera_lab_setup/` for module metadata, hardware detection, model visibility, and install resolution. Keep existing scripts as compatibility wrappers around the new shared code. Expose module status through `/api/config` and apply it in `frontend/app.js` without changing generation behavior.
 
@@ -14,7 +14,7 @@
 - Do not install ComfyUI, model weights, or third-party custom nodes automatically.
 - Prefer ComfyUI `/object_info` for model visibility because it includes `extra_model_paths.yaml`.
 - Continue repo-side setup when ComfyUI or hardware facts are unavailable.
-- Hide frontend tabs when their module is disabled or not ready; direct hashes must redirect to a ready workspace.
+- Keep frontend tabs visible but disabled and greyed out when their module is disabled or not ready; direct hashes must redirect to a ready workspace.
 - Keep first installer as CLI: `python scripts/install_camera_lab.py`.
 
 ---
@@ -32,7 +32,7 @@
 - Modify `scripts/agent_setup.py`: call the new module-aware workflow install path.
 - Modify `scripts/check_setup.py`: module-aware checks and `/object_info` model visibility.
 - Modify `server/camera_lab_server.py`: include module status in `/api/config`.
-- Modify `frontend/app.js`: hide unavailable workspace tabs and redirect hashes.
+- Modify `frontend/app.js`: disable and grey out unavailable workspace tabs and redirect hashes.
 - Modify `README.md`: document the new installer.
 - Test with `tests/test_modular_install.py`, `tests/test_check_setup_modules.py`, `tests/test_config_modules.py`, and `tests/e2e/home.spec.js`.
 
@@ -1134,7 +1134,7 @@ git commit -m "feat: expose module readiness in config"
 
 ---
 
-### Task 8: Frontend Tab Hiding
+### Task 8: Frontend Disabled Tabs
 
 **Files:**
 - Modify: `frontend/app.js`
@@ -1142,14 +1142,14 @@ git commit -m "feat: expose module readiness in config"
 
 **Interfaces:**
 - Consumes: `state.config.modules`.
-- Produces: hidden workspace tab behavior and hash redirect.
+- Produces: disabled/greyed workspace tab behavior and hash redirect.
 
 - [ ] **Step 1: Add failing Playwright test**
 
 Append to `tests/e2e/home.spec.js`:
 
 ```javascript
-test("unready modules hide workspace tabs and direct hashes fall back to camera", async ({ page }) => {
+test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {
       workflows: [{ id: "i2v_mock", label: "Mock I2V", mode: "i2v", available: true }],
@@ -1170,17 +1170,19 @@ test("unready modules hide workspace tabs and direct hashes fall back to camera"
   });
   await page.goto("/#director");
 
-  await expect(page.locator("#directorWorkspaceTab")).toBeHidden();
-  await expect(page.locator("#editWorkspaceTab")).toBeHidden();
+  await expect(page.locator("#directorWorkspaceTab")).toBeVisible();
+  await expect(page.locator("#directorWorkspaceTab")).toBeDisabled();
+  await expect(page.locator("#editWorkspaceTab")).toBeVisible();
+  await expect(page.locator("#editWorkspaceTab")).toBeDisabled();
   await expect(page.locator("#cameraWorkspaceTab")).toHaveClass(/active/);
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx playwright test tests/e2e/home.spec.js --grep "unready modules hide" --reporter=line`
+Run: `npx playwright test tests/e2e/home.spec.js --grep "unready modules disable" --reporter=line`
 
-Expected: FAIL because `#directorWorkspaceTab` remains visible or hash activates Director.
+Expected: FAIL because `#directorWorkspaceTab` is still enabled or hash activates Director.
 
 - [ ] **Step 3: Add frontend module helpers**
 
@@ -1210,10 +1212,21 @@ function firstReadyWorkspace() {
   return ["camera", "director", "edit", "casting", "motion"].find(workspaceReady) || "camera";
 }
 
-function applyModuleVisibility() {
+function moduleUnavailableReason(moduleId) {
+  const module = state.config?.modules?.[moduleId];
+  if (!module) return "";
+  if (Array.isArray(module.missing) && module.missing.length) return module.missing.join(", ");
+  return module.ready === false || module.enabled === false ? "Module unavailable" : "";
+}
+
+function applyModuleAvailability() {
   for (const [workspace, moduleId] of Object.entries(workspaceModules)) {
     const tab = $(`${workspace}WorkspaceTab`);
-    if (tab) tab.hidden = !moduleReady(moduleId);
+    if (!tab) continue;
+    const ready = moduleReady(moduleId);
+    tab.disabled = !ready;
+    tab.classList.toggle("module-unavailable", !ready);
+    tab.title = ready ? "" : moduleUnavailableReason(moduleId);
   }
 }
 ```
@@ -1230,7 +1243,7 @@ if (!workspaceReady(workspace)) {
 In `loadConfig`, after `state.config = await api("/api/config");`:
 
 ```javascript
-applyModuleVisibility();
+applyModuleAvailability();
 if (!workspaceReady(state.workspace)) state.workspace = firstReadyWorkspace();
 ```
 
@@ -1245,7 +1258,7 @@ If the code does not have `hashToWorkspace`, implement it by adapting the existi
 
 - [ ] **Step 4: Run Playwright test**
 
-Run: `npx playwright test tests/e2e/home.spec.js --grep "unready modules hide" --reporter=line`
+Run: `npx playwright test tests/e2e/home.spec.js --grep "unready modules disable" --reporter=line`
 
 Expected: PASS.
 
@@ -1253,13 +1266,13 @@ Expected: PASS.
 
 Run: `npx playwright test tests/e2e/home.spec.js --reporter=line`
 
-Expected: PASS or only known pre-existing failures unrelated to module visibility. If failures are due to tests expecting all tabs visible, update those tests to provide ready modules in their mocked config.
+Expected: PASS or only known pre-existing failures unrelated to module availability. If failures are due to tests expecting all tabs enabled, update those tests to provide ready modules in their mocked config.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add frontend/app.js tests/e2e/home.spec.js
-git commit -m "feat: hide unavailable workspace modules"
+git commit -m "feat: grey unavailable workspace modules"
 ```
 
 ---
@@ -1377,10 +1390,10 @@ python scripts/install_camera_lab.py --list-modules
 python scripts/check_setup.py --modules director
 ```
 
-- [ ] Run frontend smoke test affected by module visibility:
+- [ ] Run frontend smoke test affected by module availability:
 
 ```powershell
-npx playwright test tests/e2e/home.spec.js --grep "unready modules hide" --reporter=line
+npx playwright test tests/e2e/home.spec.js --grep "unready modules disable" --reporter=line
 ```
 
 - [ ] Check git status:

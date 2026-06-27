@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create a module-based setup path for Camera Lab so the installer can evaluate the user's hardware, recommend installable workspaces, choose suitable model profiles, setup checks understand optional capabilities, and the frontend can hide tabs whose required dependencies are unavailable.
+Create a module-based setup path for Camera Lab so the installer can evaluate the user's hardware, recommend installable workspaces, choose suitable model profiles, setup checks understand optional capabilities, and the frontend can grey out tabs whose required dependencies are unavailable.
 
 ## Scope
 
@@ -122,7 +122,7 @@ The backend config endpoint should expose module readiness in a stable shape:
 }
 ```
 
-The frontend should hide a workspace tab when `enabled` is false or `ready` is false. Hidden modules should not break routing: direct hashes like `#director` should redirect to the first ready workspace and show a concise status message. If a module is ready but a profile-specific optional capability is missing, the tab stays visible and the specific controls are hidden or disabled.
+The frontend should keep workspace tabs visible but disabled and greyed out when `enabled` is false or `ready` is false. Disabled tabs should expose the module's missing dependency or recommendation summary through a tooltip or adjacent status text. Disabled modules should not break routing: direct hashes like `#director` should redirect to the first ready workspace and show a concise status message. If a module is ready but a profile-specific optional capability is missing, the tab stays enabled and the specific controls are disabled with local status messaging.
 
 ## Error Handling
 
@@ -130,7 +130,7 @@ The installer should never claim full setup success when ComfyUI, required nodes
 
 ## Testing
 
-Tests should cover the module registry, hardware profile parsing, model profile selection, workflow selection, object-info model detection, offline fallback behavior, and config payload shape. Existing browser smoke tests should be adjusted so a deliberately missing module hides the matching tab while ready modules remain visible.
+Tests should cover the module registry, hardware profile parsing, model profile selection, workflow selection, object-info model detection, offline fallback behavior, and config payload shape. Existing browser smoke tests should be adjusted so a deliberately missing module greys out and disables the matching tab while ready modules remain enabled.
 
 ## Migration
 
