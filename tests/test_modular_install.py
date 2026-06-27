@@ -1,4 +1,5 @@
 from scripts.camera_lab_setup.modules import MODULES, get_module, module_ids, selected_modules
+from scripts.camera_lab_setup.hardware import detect_hardware
 
 
 def test_module_registry_contains_user_facing_workspaces():
@@ -28,3 +29,32 @@ def test_selected_modules_preserves_registry_order_and_rejects_unknown_ids():
         assert "unknown module: unknown" in str(exc)
     else:
         raise AssertionError("unknown module id should fail")
+
+
+def test_detect_hardware_parses_nvidia_smi_csv():
+    def fake_nvidia_smi():
+        return "NVIDIA GeForce RTX 4090, 24564\n"
+
+    profile = detect_hardware(
+        nvidia_smi=fake_nvidia_smi,
+        disk_usage=lambda path: (100, 40, 60),
+        platform_name="Windows",
+        python_version="3.12.7",
+    )
+
+    assert profile.gpu_name == "NVIDIA GeForce RTX 4090"
+    assert profile.vram_gb == 24
+    assert profile.os_name == "Windows"
+    assert profile.python_version == "3.12.7"
+
+
+def test_detect_hardware_keeps_unknown_gpu_as_warning():
+    profile = detect_hardware(
+        nvidia_smi=lambda: "",
+        disk_usage=lambda path: (100, 40, 60),
+        platform_name="Linux",
+        python_version="3.11",
+    )
+
+    assert profile.gpu_name is None
+    assert "GPU VRAM could not be detected" in profile.warnings
