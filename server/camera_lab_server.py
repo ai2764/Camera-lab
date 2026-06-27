@@ -34,6 +34,7 @@ UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+SUPPORTED_VIDEO_SUFFIXES = VIDEO_UPLOAD_SUFFIXES
 MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
 
@@ -178,6 +179,113 @@ CASTING_EMOTIONS: dict[str, str] = {
 
 REFERENCE_IMAGES: list[dict[str, str]] = []
 
+BERNINI_INPUT_REQUIREMENTS = {
+    "bernini_t2v": {"source_image": False, "reference_image": False, "source_video": False, "reference_video": False},
+    "bernini_t2i": {"source_image": False, "reference_image": False, "source_video": False, "reference_video": False},
+    "bernini_i2v": {"source_image": True, "reference_image": False, "source_video": False, "reference_video": False},
+    "bernini_i2i": {"source_image": True, "reference_image": False, "source_video": False, "reference_video": False},
+    "bernini_v2v": {"source_image": False, "reference_image": False, "source_video": True, "reference_video": False},
+    "bernini_mv2v": {"source_image": False, "reference_image": False, "source_video": True, "reference_video": False},
+    "bernini_vi2v": {"source_image": False, "reference_image": True, "source_video": True, "reference_video": False},
+    "bernini_vrc2v": {"source_image": False, "reference_image": False, "source_video": True, "reference_video": False},
+    "bernini_r2v": {"source_image": False, "reference_image": True, "source_video": False, "reference_video": False},
+    "bernini_r2i": {"source_image": False, "reference_image": True, "source_video": False, "reference_video": False},
+    "bernini_rv2v": {"source_image": False, "reference_image": True, "source_video": True, "reference_video": False},
+    "bernini_ads2v": {"source_image": False, "reference_image": False, "source_video": True, "reference_video": True},
+}
+BERNINI_IMAGE_MODES = {"bernini_t2i", "bernini_i2i", "bernini_r2i"}
+BERNINI_DEFAULT_NEGATIVE = "bad video"
+VIDEO_OUTPUT_SUFFIXES = {".mp4", ".webm", ".mov"}
+IMAGE_OUTPUT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+BERNINI_PROMPT_PREFIXES = {
+    "bernini_t2v": "You are a helpful assistant specialized in text-to-video generation.",
+    "bernini_t2i": "You are a helpful assistant specialized in text-to-image generation.",
+    "bernini_i2v": "You are a helpful assistant specialized in image-to-video generation.",
+    "bernini_i2i": "You are a helpful assistant specialized in image editing.",
+    "bernini_v2v": "You are a helpful assistant specialized in video editing.",
+    "bernini_mv2v": "You are a helpful assistant for editing. You might need to adjust the video's style, lighting, colors, textures, and the subject's pose or action.",
+    "bernini_vi2v": "You are a helpful assistant specialized in video editing on content propagation.",
+    "bernini_vrc2v": "You are a helpful assistant for editing. You may need to adjust the subject's action or position.",
+    "bernini_r2v": "You are a helpful assistant specialized in subject-to-video generation.",
+    "bernini_r2i": "You are a helpful assistant specialized in subject-to-image generation.",
+    "bernini_rv2v": "You are a helpful assistant specialized in video editing with reference.",
+    "bernini_ads2v": "You are a helpful assistant specialized in ads insertion.",
+}
+INPAINT_MODE = "wan_vace_inpaint"
+INPAINT_FPS = 24
+INPAINT_DEFAULT_NEGATIVE = "bad video"
+
+
+def is_bernini_mode(mode: str) -> bool:
+    return mode in BERNINI_INPUT_REQUIREMENTS
+
+
+def is_inpaint_mode(mode: str) -> bool:
+    return mode == INPAINT_MODE
+
+
+def bernini_required_inputs(mode: str) -> dict[str, bool]:
+    return dict(BERNINI_INPUT_REQUIREMENTS.get(mode, {}))
+
+
+def bernini_prompt_text(mode: str, prompt: str) -> str:
+    text = str(prompt or "").strip()
+    prefix = BERNINI_PROMPT_PREFIXES.get(mode, "").strip()
+    if prefix and text and not text.startswith(prefix):
+        return f"{prefix} {text}"
+    return text
+
+
+def is_supported_video_upload(name: str) -> bool:
+    return Path(name).suffix.lower() in SUPPORTED_VIDEO_SUFFIXES
+
+
+def validate_bernini_media_paths(mode: str, payload: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    required = bernini_required_inputs(mode)
+    paths = {
+        "source": {"path": ""},
+        "reference_image": {"path": ""},
+        "source_video": {"path": ""},
+        "reference_video": {"path": ""},
+    }
+    source_path = payload.get("source_path") or ""
+    reference_image_path = payload.get("reference_image_path") or ""
+    source_video_path = payload.get("source_video_path") or ""
+    reference_video_path = payload.get("reference_video_path") or ""
+    if required.get("source_image") and not source_path:
+        raise ValueError("source image is required")
+    if required.get("reference_image") and not reference_image_path:
+        raise ValueError("reference image is required")
+    if required.get("source_video") and not source_video_path:
+        raise ValueError("source video is required")
+    if required.get("reference_video") and not reference_video_path:
+        raise ValueError("reference video is required")
+    if source_path:
+        paths["source"] = {"path": str(safe_media_path(source_path))}
+    if reference_image_path:
+        paths["reference_image"] = {"path": str(safe_media_path(reference_image_path))}
+    if source_video_path:
+        paths["source_video"] = {"path": str(safe_media_path(source_video_path))}
+    if reference_video_path:
+        paths["reference_video"] = {"path": str(safe_media_path(reference_video_path))}
+    return paths
+
+
+def validate_inpaint_media_paths(payload: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    source_video_path = payload.get("source_video_path") or ""
+    reference_image_path = payload.get("reference_image_path") or ""
+    mask_image_path = payload.get("mask_image_path") or ""
+    if not source_video_path:
+        raise ValueError("source video is required")
+    if not mask_image_path:
+        raise ValueError("painted mask is required")
+    return {
+        "source_video": {"path": str(safe_media_path(source_video_path))},
+        "reference_image": {"path": str(safe_media_path(reference_image_path)) if reference_image_path else ""},
+        "mask_image": {"path": str(safe_media_path(mask_image_path))},
+    }
+
+
 WORKFLOWS = [
     {
         "id": "i2v_official_local",
@@ -234,6 +342,84 @@ WORKFLOWS = [
         "mode": "director_ref",
         "path": str(DIRECTOR_WORKFLOW_PATH),
         "builder": "ltx_director_reference_mvp",
+    },
+    {
+        "id": "bernini_t2v",
+        "label": "WAN2.2 Bernini T2V",
+        "mode": "bernini_t2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_t2v.ui.json"),
+    },
+    {
+        "id": "bernini_t2i",
+        "label": "WAN2.2 Bernini T2I",
+        "mode": "bernini_t2i",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_t2i.ui.json"),
+    },
+    {
+        "id": "bernini_i2v",
+        "label": "WAN2.2 Bernini I2V",
+        "mode": "bernini_i2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_i2v.ui.json"),
+    },
+    {
+        "id": "bernini_i2i",
+        "label": "WAN2.2 Bernini I2I",
+        "mode": "bernini_i2i",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_i2i.ui.json"),
+    },
+    {
+        "id": "bernini_v2v",
+        "label": "WAN2.2 Bernini V2V",
+        "mode": "bernini_v2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_v2v.ui.json"),
+    },
+    {
+        "id": "bernini_mv2v",
+        "label": "WAN2.2 Bernini MV2V",
+        "mode": "bernini_mv2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_mv2v.ui.json"),
+    },
+    {
+        "id": "bernini_vi2v",
+        "label": "WAN2.2 Bernini VI2V",
+        "mode": "bernini_vi2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_vi2v.ui.json"),
+    },
+    {
+        "id": "bernini_vrc2v",
+        "label": "WAN2.2 Bernini VRC2V",
+        "mode": "bernini_vrc2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_vrc2v.ui.json"),
+    },
+    {
+        "id": "bernini_r2v",
+        "label": "WAN2.2 Bernini R2V",
+        "mode": "bernini_r2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_r2v.ui.json"),
+    },
+    {
+        "id": "bernini_r2i",
+        "label": "WAN2.2 Bernini R2I",
+        "mode": "bernini_r2i",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_r2i.ui.json"),
+    },
+    {
+        "id": "bernini_rv2v",
+        "label": "WAN2.2 Bernini RV2V",
+        "mode": "bernini_rv2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_rv2v.ui.json"),
+    },
+    {
+        "id": "bernini_ads2v",
+        "label": "WAN2.2 Bernini ADS2V",
+        "mode": "bernini_ads2v",
+        "path": str(APP_WORKFLOW_ROOT / "wan22_bernini_ads2v.ui.json"),
+    },
+    {
+        "id": INPAINT_MODE,
+        "label": "WAN VACE Inpaint",
+        "mode": INPAINT_MODE,
+        "path": str(APP_WORKFLOW_ROOT / "wan_vace_inpainting.ui.json"),
     },
 ]
 
@@ -567,7 +753,7 @@ def resolve_link(link_id: int, nodes_by_id: dict[int, dict], links: dict[int, tu
 
 
 def workflow_to_api(workflow: dict) -> dict:
-    workflow = expand_subgraphs(workflow)
+    workflow = expand_subgraphs_recursive(workflow)
     workflow = inline_set_get_nodes(workflow)
     nodes = workflow.get("nodes", [])
     nodes_by_id = {int(node["id"]): node for node in nodes}
@@ -612,6 +798,24 @@ def workflow_to_api(workflow: dict) -> dict:
         widget_idx = fill_widget_inputs_from_object_info(node_type, inputs, widget_values, widget_idx, info, widget_map)
         api[str(node["id"])] = {"class_type": node_type, "inputs": inputs, "_meta": {"title": node.get("title", "")}}
     return api
+
+
+def workflow_subgraph_ids(workflow: dict) -> set[str]:
+    return {str(sg.get("id")) for sg in workflow.get("definitions", {}).get("subgraphs", []) if sg.get("id")}
+
+
+def workflow_has_subgraph_nodes(workflow: dict) -> bool:
+    subgraph_ids = workflow_subgraph_ids(workflow)
+    return bool(subgraph_ids) and any(str(node.get("type")) in subgraph_ids for node in workflow.get("nodes", []))
+
+
+def expand_subgraphs_recursive(workflow: dict, max_passes: int = 8) -> dict:
+    expanded = workflow
+    for _ in range(max_passes):
+        if not workflow_has_subgraph_nodes(expanded):
+            return expanded
+        expanded = expand_subgraphs(expanded)
+    return expanded
 
 
 def inline_set_get_nodes(workflow: dict) -> dict:
@@ -1191,6 +1395,16 @@ def build_scail_api(
     api["11"]["inputs"]["file"] = guide_name
     if run.get("reference_name"):
         api["9"]["inputs"]["image"] = str(run["reference_name"])
+    if run.get("reference_mask_name"):
+        mask_node_id = str(next_free_api_id(api, 18))
+        api[mask_node_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": str(run["reference_mask_name"])},
+            "_meta": {"title": "SCAIL reference alpha mask"},
+        }
+        api["13"]["inputs"]["reference_image_mask"] = [mask_node_id, 0]
+    if run.get("use_pose_video_mask"):
+        add_scail_pose_video_mask(api, str(run.get("pose_video_mask_prompt") or "person"))
     api["13"]["inputs"]["width"] = int(run["width"])
     api["13"]["inputs"]["height"] = int(run["height"])
     api["13"]["inputs"]["length"] = int(length)
@@ -1199,6 +1413,76 @@ def build_scail_api(
     api["14"]["inputs"]["steps"] = int(run["steps"])
     api["17"]["inputs"]["filename_prefix"] = str(run["prefix"])
     return api
+
+
+def add_scail_pose_video_mask(api: dict[str, dict], prompt: str = "person") -> None:
+    model_id = str(next_free_api_id(api, 18))
+    text_id = str(next_free_api_id(api, int(model_id) + 1))
+    track_id = str(next_free_api_id(api, int(text_id) + 1))
+    color_mask_id = str(next_free_api_id(api, int(track_id) + 1))
+
+    api[model_id] = {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {"ckpt_name": "sam3.1_multiplex_fp16.safetensors"},
+        "_meta": {"title": "SCAIL SAM3 mask model"},
+    }
+    api[text_id] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"clip": [model_id, 1], "text": prompt.strip() or "person"},
+        "_meta": {"title": "SCAIL pose mask prompt"},
+    }
+    api[track_id] = {
+        "class_type": "SAM3_VideoTrack",
+        "inputs": {
+            "images": ["12", 0],
+            "model": [model_id, 0],
+            "conditioning": [text_id, 0],
+            "detection_threshold": 0.5,
+            "max_objects": 1,
+            "detect_interval": 2,
+        },
+        "_meta": {"title": "SCAIL pose video person track"},
+    }
+    api[color_mask_id] = {
+        "class_type": "SCAIL2ColoredMask",
+        "inputs": {
+            "driving_track_data": [track_id, 0],
+            "object_indices": "",
+            "sort_by": "area",
+            "replacement_mode": True,
+        },
+        "_meta": {"title": "SCAIL pose video replacement mask"},
+    }
+    api["13"]["inputs"]["pose_video_mask"] = [color_mask_id, 0]
+    api["13"]["inputs"]["replacement_mode"] = True
+
+
+def prepare_scail_reference_assets(reference: Path, input_dir: Path, reference_name: str) -> dict[str, str]:
+    input_dir.mkdir(parents=True, exist_ok=True)
+    destination = input_dir / reference_name
+    image = Image.open(reference)
+    result = {"reference_name": reference_name}
+
+    if "A" not in image.getbands():
+        shutil.copy2(reference, destination)
+        return result
+
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    if alpha.getextrema() == (255, 255):
+        rgba.convert("RGB").save(destination)
+        return result
+
+    rgb = rgba.convert("RGB")
+    gray = Image.new("RGB", rgba.size, (127, 127, 127))
+    gray.paste(rgb, mask=alpha)
+    gray.save(destination)
+
+    mask_name = f"{Path(reference_name).stem}_mask.png"
+    mask = Image.merge("RGB", (alpha, alpha, alpha))
+    mask.save(input_dir / mask_name)
+    result["reference_mask_name"] = mask_name
+    return result
 
 
 def patch_director_custom_audio(api: dict[str, dict], run: dict[str, Any]) -> None:
@@ -1649,6 +1933,287 @@ def patch_load_images(api: dict, mode: str, input_names: dict[str, str]) -> None
         load_images[1]["inputs"]["image"] = input_names["end"]
 
 
+def bernini_frame_length(duration: Any) -> int:
+    return max(1, int(float(duration or 1) * 24) + 1)
+
+
+def bernini_conditioning_length(mode: str, duration: Any) -> int:
+    if mode in BERNINI_IMAGE_MODES:
+        return 1
+    return bernini_frame_length(duration)
+
+
+def clamp_float(value: Any, default: float, min_value: float, max_value: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(min_value, min(max_value, number))
+
+
+def clamp_int(value: Any, default: int, min_value: int, max_value: int) -> int:
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        number = default
+    return max(min_value, min(max_value, number))
+
+
+def inpaint_frame_length(duration: Any) -> int:
+    return max(1, int(float(duration or 1) * INPAINT_FPS) + 1)
+
+
+def patch_bernini_api(api: dict, mode: str, run: dict, input_names: dict[str, str]) -> None:
+    if "3" in api and api["3"]["class_type"] == "CLIPTextEncode":
+        api["3"]["inputs"]["text"] = bernini_prompt_text(mode, run["prompt"])
+    if "4" in api and api["4"]["class_type"] == "CLIPTextEncode":
+        api["4"]["inputs"]["text"] = str(run.get("negative_prompt") or BERNINI_DEFAULT_NEGATIVE).strip()
+
+    length = bernini_conditioning_length(mode, run.get("duration"))
+    reference_strength = clamp_float(run.get("global_reference_strength"), 0.35, 0.0, 1.0)
+    ref_max_size = clamp_int(run.get("bernini_ref_max_size"), 848, 16, 8192)
+    seed = int(run.get("seed") or 0)
+    for node in api.values():
+        inputs = node["inputs"]
+        if node["class_type"] == "BerniniConditioning":
+            inputs["width"] = int(run["width"])
+            inputs["height"] = int(run["height"])
+            inputs["length"] = length
+            if "ref_max_size" in inputs:
+                inputs["ref_max_size"] = ref_max_size
+            if "reference_strength" in inputs:
+                inputs["reference_strength"] = reference_strength
+            for key in list(inputs):
+                if key.startswith("reference_images.") and "strength" in key:
+                    inputs[key] = reference_strength
+        if node["class_type"] == "VHS_LoadVideo" and "frame_load_cap" in node["inputs"]:
+            node["inputs"]["frame_load_cap"] = length
+        if seed:
+            if "noise_seed" in inputs:
+                inputs["noise_seed"] = seed
+            if "seed" in inputs:
+                inputs["seed"] = seed
+        if "filename_prefix" in inputs:
+            inputs["filename_prefix"] = f"camera_lab/{run.get('batch_id', 'dry')}/{run.get('run_id', 'bernini')}"
+
+    if mode in {"bernini_i2v", "bernini_i2i"} and input_names.get("source"):
+        patch_first_load_image(api, input_names["source"])
+    if mode in {"bernini_r2v", "bernini_r2i", "bernini_vi2v", "bernini_rv2v"} and input_names.get("reference_image"):
+        patch_bernini_reference_image(api, input_names["reference_image"])
+    if mode in {"bernini_v2v", "bernini_mv2v", "bernini_vi2v", "bernini_vrc2v", "bernini_rv2v"} and input_names.get("source_video"):
+        patch_load_videos(api, [input_names["source_video"]])
+    if mode == "bernini_ads2v":
+        patch_load_videos(api, [input_names["source_video"], input_names["reference_video"]])
+    bypass_sage_attention_patches(api)
+
+
+def patch_first_load_image(api: dict, image_name: str) -> None:
+    for node in api.values():
+        if node["class_type"] == "LoadImage":
+            node["inputs"]["image"] = image_name
+            return
+
+
+def patch_bernini_reference_image(api: dict, image_name: str) -> None:
+    reference = None
+    conditioning_node = None
+    for node in api.values():
+        if node["class_type"] != "BerniniConditioning":
+            continue
+        conditioning_node = node
+        inputs = node.get("inputs") or {}
+        reference = inputs.pop("reference_images", None)
+        break
+    if not reference:
+        image_node_id = next_api_node_id(api)
+        api[image_node_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": image_name},
+            "_meta": {"title": "Camera Lab reference image"},
+        }
+        if conditioning_node is not None:
+            conditioning_node["inputs"]["reference_images.reference_image_0"] = [image_node_id, 0]
+        return
+
+    ref_node_id = str(reference[0])
+    ref_node = api.get(ref_node_id)
+    if ref_node and ref_node.get("class_type") == "BatchImagesNode":
+        reference = ref_node.get("inputs", {}).get("images.image0") or reference
+
+    load_node = api.get(str(reference[0]))
+    if load_node and load_node.get("class_type") == "LoadImage":
+        load_node["inputs"]["image"] = image_name
+
+    for node in api.values():
+        if node["class_type"] == "BerniniConditioning":
+            node["inputs"]["reference_images.reference_image_0"] = reference
+            return
+
+
+def patch_load_videos(api: dict, video_names: list[str]) -> None:
+    video_nodes = [node for node in api.values() if node["class_type"] == "VHS_LoadVideo"]
+    for node, video_name in zip(video_nodes, video_names):
+        node["inputs"]["video"] = video_name
+
+
+def next_api_node_id(api: Mapping[str, Any]) -> str:
+    numeric = [int(node_id) for node_id in api if str(node_id).isdigit()]
+    return str(max(numeric + [0]) + 1)
+
+
+def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None:
+    length = inpaint_frame_length(run.get("duration"))
+    width = int(run["width"])
+    height = int(run["height"])
+    load_video_id = ""
+    reference_id = ""
+    reference_name = input_names.get("reference_image") or ""
+    source_frames: list[Any] | None = None
+
+    for node_id, node in list(api.items()):
+        class_type = node.get("class_type")
+        inputs = node.get("inputs") or {}
+        title = str(node.get("_meta", {}).get("title") or "").lower()
+        if class_type == "LoadVideo":
+            inputs["file"] = input_names["source_video"]
+            load_video_id = node_id
+        elif class_type == "LoadImage" and reference_name and not reference_id:
+            inputs["image"] = reference_name
+            reference_id = node_id
+        elif class_type == "GetVideoComponents":
+            source_frames = [node_id, 0]
+        elif class_type == "CLIPTextEncode":
+            if "negative" in title:
+                inputs["text"] = str(run.get("negative_prompt") or INPAINT_DEFAULT_NEGATIVE).strip()
+            elif "positive" in title:
+                inputs["text"] = str(run.get("prompt") or "").strip()
+        elif class_type == "KSampler":
+            inputs["seed"] = int(run.get("seed") or 0)
+            inputs["sampler_name"] = "uni_pc"
+            inputs["scheduler"] = "simple"
+            inputs["denoise"] = 1.0
+        elif class_type == "CreateVideo":
+            inputs["fps"] = INPAINT_FPS
+        if "filename_prefix" in inputs:
+            inputs["filename_prefix"] = f"camera_lab/{run.get('batch_id', 'dry')}/{run.get('run_id', 'inpaint')}"
+        if "filename" in inputs and class_type == "SaveVideo":
+            inputs["filename"] = f"camera_lab/{run.get('batch_id', 'dry')}/{run.get('run_id', 'inpaint')}"
+
+    if not load_video_id:
+        raise RuntimeError("inpaint workflow is missing LoadVideo")
+    if reference_name and not reference_id:
+        raise RuntimeError("inpaint workflow is missing LoadImage")
+
+    mask_id = next_api_node_id(api)
+    api[mask_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": input_names["mask_image"]},
+        "_meta": {"title": "Camera Lab painted mask"},
+    }
+    image_to_mask_id = next_api_node_id(api)
+    api[image_to_mask_id] = {
+        "class_type": "ImageToMask",
+        "inputs": {"image": [mask_id, 0], "channel": "red"},
+        "_meta": {"title": "Camera Lab mask to VACE"},
+    }
+
+    for node in api.values():
+        if node.get("class_type") != "WanVaceToVideo":
+            continue
+        inputs = node.setdefault("inputs", {})
+        inputs["width"] = width
+        inputs["height"] = height
+        inputs["length"] = length
+        inputs["batch_size"] = 1
+        if reference_id:
+            inputs["reference_image"] = [reference_id, 0]
+        else:
+            inputs.pop("reference_image", None)
+        inputs["control_masks"] = [image_to_mask_id, 0]
+        if source_frames:
+            inputs["control_video"] = source_frames
+        break
+    else:
+        raise RuntimeError("inpaint workflow is missing WanVaceToVideo")
+
+    for node_id, node in list(api.items()):
+        if node.get("class_type") in {"SAM3_Detect", "ResizeImageMaskNode", "GrowMask", "ImageCompositeMasked", "MaskPreview", "PreviewImage"}:
+            api.pop(node_id, None)
+
+
+def comfy_safe_filename(value: str) -> str:
+    return safe_filename(value).replace(" ", "_")
+
+
+def stage_bernini_inputs(run: dict[str, Any], width: int, height: int, run_dir: Path) -> dict[str, str]:
+    input_names: dict[str, str] = {}
+    mode = str(run.get("workflow_mode") or "")
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+
+    def copy_image(field: str, role: str, key: str) -> None:
+        src = Path(run.get(field) or "")
+        if not src.exists():
+            raise FileNotFoundError(f"{role} image is missing")
+        frame = run_dir / f"{role}_{width}x{height}.png"
+        resize_cover(src, frame, width=width, height=height)
+        name = f"{run['run_id']}_{role}.png"
+        shutil.copy2(frame, COMFY_INPUT / name)
+        input_names[key] = name
+
+    def copy_video(field: str, key: str) -> None:
+        src = Path(run.get(field) or "")
+        if not src.exists():
+            raise FileNotFoundError(f"{key.replace('_', ' ')} is missing")
+        name = f"{run['run_id']}_{comfy_safe_filename(src.name)}"
+        shutil.copy2(src, COMFY_INPUT / name)
+        input_names[key] = name
+
+    if mode in {"bernini_i2v", "bernini_i2i"}:
+        copy_image("source_image", "source", "source")
+    if mode in {"bernini_r2v", "bernini_r2i", "bernini_vi2v", "bernini_rv2v"}:
+        copy_image("reference_image", "reference", "reference_image")
+    if mode in {"bernini_v2v", "bernini_mv2v", "bernini_vi2v", "bernini_vrc2v", "bernini_rv2v", "bernini_ads2v"}:
+        copy_video("source_video", "source_video")
+    if mode == "bernini_ads2v":
+        copy_video("reference_video", "reference_video")
+    return input_names
+
+
+def stage_inpaint_inputs(run: dict[str, Any], width: int, height: int, run_dir: Path) -> dict[str, str]:
+    input_names: dict[str, str] = {}
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+
+    source_video = Path(run.get("source_video") or "")
+    reference_image = Path(run.get("reference_image") or "") if run.get("reference_image") else None
+    mask_image = Path(run.get("mask_image") or "")
+    if not source_video.exists():
+        raise FileNotFoundError("source video is missing")
+    if reference_image is not None and not reference_image.exists():
+        raise FileNotFoundError("reference image is missing")
+    if not mask_image.exists():
+        raise FileNotFoundError("painted mask is missing")
+
+    source_name = f"{run['run_id']}_{comfy_safe_filename(source_video.name)}"
+    shutil.copy2(source_video, COMFY_INPUT / source_name)
+    input_names["source_video"] = source_name
+
+    if reference_image is not None:
+        reference_frame = run_dir / f"reference_{width}x{height}.png"
+        resize_cover(reference_image, reference_frame, width=width, height=height)
+        reference_name = f"{run['run_id']}_reference.png"
+        shutil.copy2(reference_frame, COMFY_INPUT / reference_name)
+        input_names["reference_image"] = reference_name
+
+    mask_frame = run_dir / f"mask_{width}x{height}.png"
+    mask = Image.open(mask_image).convert("L").resize((width, height), Image.Resampling.NEAREST)
+    mask_rgb = Image.merge("RGB", (mask, mask, mask))
+    mask_rgb.save(mask_frame)
+    mask_name = f"{run['run_id']}_mask.png"
+    shutil.copy2(mask_frame, COMFY_INPUT / mask_name)
+    input_names["mask_image"] = mask_name
+    return input_names
+
+
 def patch_model_names(api: dict, run: dict) -> None:
     model_names: dict[str, str] = {}
     for node in api.values():
@@ -1702,7 +2267,7 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         bypass_sage_attention_patches(data)
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
-    for folder, name in required_models(expand_subgraphs(data)):
+    for folder, name in required_models(expand_subgraphs_recursive(data)):
         if model_missing(folder, name, avail):
             missing.append(f"models/{folder}/{name}")
     if missing:
@@ -1848,6 +2413,353 @@ def video_frame_count(path: Path) -> int:
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     return int(out)
+
+
+def video_duration_seconds(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    return max(0.0, float(out or 0))
+
+
+def bernini_split_options(mode: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    enabled = mode == "bernini_rv2v" and bool(payload.get("bernini_split_enabled"))
+    duration = max(1.0, min(5.0, float(payload.get("bernini_split_duration") or 4.0)))
+    return {
+        "enabled": enabled,
+        "duration": duration,
+        "merge": bool(payload.get("bernini_split_merge", True)),
+    }
+
+
+def bernini_segment_specs(total_duration: float, segment_duration: float) -> list[dict[str, float | int]]:
+    total = max(0.0, float(total_duration or 0))
+    segment = max(0.1, float(segment_duration or 4.0))
+    if total <= 0:
+        return [{"index": 1, "start": 0.0, "duration": segment}]
+    specs: list[dict[str, float | int]] = []
+    start = 0.0
+    index = 1
+    while start < total - 0.001:
+        duration = min(segment, total - start)
+        specs.append({"index": index, "start": round(start, 3), "duration": round(duration, 3)})
+        start += duration
+        index += 1
+    return specs
+
+
+def split_video_segments(
+    source: Path,
+    output_dir: Path,
+    segment_duration: float,
+    *,
+    runner: Any = subprocess.run,
+) -> list[Path]:
+    total_duration = video_duration_seconds(source)
+    specs = bernini_segment_specs(total_duration, segment_duration)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    segments: list[Path] = []
+    for spec in specs:
+        index = int(spec["index"])
+        output = output_dir / f"segment_{index:03d}.mp4"
+        runner(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                f"{float(spec['start']):.3f}",
+                "-t",
+                f"{float(spec['duration']):.3f}",
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                str(output),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if not output.exists():
+            raise FileNotFoundError(f"video segment was not created: {output}")
+        segments.append(output)
+    return segments
+
+
+def merge_segment_videos(
+    videos: list[Path],
+    output: Path,
+    *,
+    runner: Any = subprocess.run,
+) -> Path:
+    if not videos:
+        raise ValueError("no segment videos to merge")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    concat_list = output.with_suffix(".txt")
+    lines = []
+    for video in videos:
+        safe_path = str(video.resolve()).replace("\\", "/").replace("'", "'\\''")
+        lines.append(f"file '{safe_path}'")
+    concat_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    runner(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(output)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if not output.exists():
+        raise FileNotFoundError(f"merged video was not created: {output}")
+    return output
+
+
+def trim_video_clip(
+    source: Path,
+    output_dir: Path,
+    start: float,
+    end: float,
+    *,
+    runner: Any = subprocess.run,
+) -> Path:
+    start_time = max(0.0, float(start))
+    end_time = max(0.0, float(end))
+    if end_time <= start_time + 0.001:
+        raise ValueError("end must be after start")
+    duration = end_time - start_time
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stem = re.sub(r"[^a-zA-Z0-9._-]+", "_", source.stem)[:80] or "clip"
+    output = output_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{stem}_{start_time:.2f}_{end_time:.2f}.mp4"
+    runner(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{start_time:.3f}",
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if not output.exists():
+        raise FileNotFoundError(f"trimmed video was not created: {output}")
+    return output
+
+
+def preserve_video_audio(
+    generated_video: Path,
+    source_video: Path,
+    *,
+    runner: Any = subprocess.run,
+) -> Path:
+    if not generated_video.exists():
+        raise FileNotFoundError(f"generated video is missing: {generated_video}")
+    if not source_video.exists():
+        raise FileNotFoundError(f"source video is missing: {source_video}")
+    output = generated_video.with_name(f"{generated_video.stem}_preserve_audio.mp4")
+    runner(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(generated_video),
+            "-i",
+            str(source_video),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0?",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if not output.exists():
+        raise FileNotFoundError(f"audio-preserved video was not created: {output}")
+    return output
+
+
+def apply_bernini_preserve_audio(run: dict[str, Any], video: Path) -> Path:
+    if not run.get("bernini_preserve_audio"):
+        return video
+    source = Path(run.get("source_video") or "")
+    if not source.exists():
+        run["video"] = str(video)
+        run["bernini_audio_preserved"] = False
+        run["bernini_audio_warning"] = f"source video is missing for audio preservation: {source}"
+        return video
+    try:
+        output = preserve_video_audio(video, source)
+    except Exception as exc:
+        run["video"] = str(video)
+        run["bernini_audio_preserved"] = False
+        run["bernini_audio_warning"] = str(exc)
+        return video
+    run["video"] = str(output)
+    run["bernini_audio_preserved"] = True
+    run["bernini_audio_source"] = str(source)
+    copied = run.setdefault("copied", [])
+    if str(output) not in copied:
+        copied.append(str(output))
+    return output
+
+
+def image_outputs_from_paths(paths: list[Any]) -> list[Path]:
+    return [Path(path) for path in paths if Path(path).suffix.lower() in IMAGE_OUTPUT_SUFFIXES]
+
+
+def hydrate_run_image_outputs(run: dict[str, Any]) -> None:
+    if run.get("video") or run.get("image"):
+        return
+    images = image_outputs_from_paths(run.get("copied") or [])
+    if not images:
+        return
+    run["image"] = str(images[0])
+    run["images"] = [str(path) for path in images]
+
+
+def record_run_media_outputs(run: dict[str, Any], copied: list[Path], workflow_mode: str, run_dir: Path) -> None:
+    run["copied"] = [str(path) for path in copied]
+    videos = [path for path in copied if path.suffix.lower() in VIDEO_OUTPUT_SUFFIXES]
+    if videos:
+        video = videos[0]
+        if is_bernini_mode(workflow_mode):
+            video = apply_bernini_preserve_audio(run, video)
+        run["video"] = str(video)
+        contact = run_dir / "contact.jpg"
+        make_contact_sheet(video, contact, f"{run['variant_name']} / {run['camera_move']}")
+        run["contact_sheet"] = str(contact)
+        return
+    hydrate_run_image_outputs(run)
+
+
+def prepare_bernini_split_runs(base_run: dict[str, Any], batch_dir: Path, segment_duration: float) -> list[dict[str, Any]]:
+    source = Path(base_run.get("source_video") or "")
+    if not source.exists():
+        raise FileNotFoundError("source video is missing")
+    total_duration = video_duration_seconds(source)
+    specs = bernini_segment_specs(total_duration, segment_duration)
+    segments = split_video_segments(source, batch_dir / "_segments", segment_duration)
+    if len(segments) != len(specs):
+        raise RuntimeError(f"expected {len(specs)} segment(s), got {len(segments)}")
+
+    runs: list[dict[str, Any]] = []
+    for spec, segment in zip(specs, segments):
+        index = int(spec["index"])
+        run = copy.deepcopy(base_run)
+        run_id = f"{base_run['run_id']}_seg{index:03d}"
+        run["run_id"] = run_id
+        run["run_dir"] = str(batch_dir / run_id)
+        run["source_video"] = str(segment)
+        run["duration"] = float(spec["duration"])
+        run["segment_index"] = index
+        run["segment_start"] = float(spec["start"])
+        run["segment_duration"] = float(spec["duration"])
+        run["variant_name"] = f"{base_run.get('variant_name', 'prompt')} segment {index:03d}"
+        run["status"] = "queued"
+        runs.append(run)
+    return runs
+
+
+def merge_bernini_split_batch(batch: dict[str, Any]) -> dict[str, Any] | None:
+    split = batch.get("bernini_split") or {}
+    if not split.get("enabled") or not split.get("merge"):
+        return None
+    if any(run.get("run_id") == "merged" for run in batch.get("runs", [])):
+        return None
+    segment_runs = [
+        run for run in batch.get("runs", [])
+        if run.get("workflow_mode") == "bernini_rv2v" and run.get("segment_index")
+    ]
+    if not segment_runs:
+        return None
+    if any(run.get("status") != "done" or not run.get("video") for run in segment_runs):
+        return None
+    ordered = sorted(segment_runs, key=lambda run: int(run.get("segment_index") or 0))
+    videos = [Path(run["video"]) for run in ordered]
+    batch_dir = Path(batch["batch_dir"])
+    merged_dir = batch_dir / "merged"
+    merged_dir.mkdir(parents=True, exist_ok=True)
+    merged_video = merge_segment_videos(videos, merged_dir / "merged.mp4")
+    first = ordered[0]
+    final_run = {
+        "batch_id": batch["batch_id"],
+        "run_id": "merged",
+        "run_dir": str(merged_dir),
+        "workflow_id": first.get("workflow_id", "bernini_rv2v"),
+        "workflow_mode": first.get("workflow_mode", "bernini_rv2v"),
+        "workflow_label": f"{first.get('workflow_label', 'Bernini RV2V')} Merged",
+        "camera_move": first.get("camera_move", "bernini_rv2v"),
+        "duration": sum(float(run.get("duration") or 0) for run in ordered),
+        "width": first.get("width"),
+        "height": first.get("height"),
+        "seed": first.get("seed"),
+        "variant_name": "merged",
+        "prompt": first.get("prompt", ""),
+        "negative_prompt": first.get("negative_prompt", ""),
+        "status": "done",
+        "queued_at": first.get("queued_at", time.time()),
+        "started_at": min(float(run.get("started_at") or time.time()) for run in ordered),
+        "finished_at": time.time(),
+        "video": str(merged_video),
+        "copied": [str(merged_video)],
+        "scores": {},
+        "notes": "Merged Bernini RV2V split output",
+    }
+    try:
+        contact = merged_dir / "contact.jpg"
+        make_contact_sheet(merged_video, contact, f"{final_run['variant_name']} / {final_run['camera_move']}")
+        final_run["contact_sheet"] = str(contact)
+    except Exception:
+        pass
+    batch.setdefault("runs", []).append(final_run)
+    batch["merged_video"] = str(merged_video)
+    return final_run
 
 
 def check_run_canceled(run: dict[str, Any]) -> None:
@@ -2224,6 +3136,12 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
         duration = max(0.5, min(60.0, float(payload.get("duration") or frame_count / 24 or 4.0)))
     prompt = str(payload.get("prompt") or "").strip() or f"uploaded guide video: {guide_video.name}"
 
+    motion_type = str(payload.get("motion_type") or "scail").strip().lower()
+    is_3d_motion = motion_type in {"3d", "motion_3d", "3d_motion"}
+    workflow_id = "motion_3d_to_scail" if is_3d_motion else "uploaded_motion_to_scail"
+    workflow_mode = "motion_3d" if is_3d_motion else "motion_scail"
+    workflow_label = "3D Motion" if is_3d_motion else "SCAIL2"
+
     batch_id = f"motion_{int(time.time())}_{random.randint(1000, 9999)}"
     batch_dir = RUN_ROOT / batch_id
     run_id = "01_motion"
@@ -2233,9 +3151,9 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
         "batch_id": batch_id,
         "run_id": run_id,
         "run_dir": str(run_dir),
-        "workflow_id": "uploaded_motion_to_scail",
-        "workflow_mode": "motion",
-        "workflow_label": "Motion",
+        "workflow_id": workflow_id,
+        "workflow_mode": workflow_mode,
+        "workflow_label": workflow_label,
         "camera_move": "motion",
         "reference_image": str(reference),
         "guide_video": str(guide_video),
@@ -2252,6 +3170,8 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
         "cfg_scale": 5.0,
         "steps": steps,
         "pose_strength": pose_strength,
+        "use_pose_video_mask": payload_bool(payload.get("use_pose_video_mask"), True),
+        "pose_video_mask_prompt": str(payload.get("pose_video_mask_prompt") or "person").strip() or "person",
         "status": "guide_done",
         "queued_at": time.time(),
         "scores": {},
@@ -2262,6 +3182,86 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
         "batch_dir": str(batch_dir),
         "status": "queued",
         "queued_at": time.time(),
+        "runs": [run],
+    }
+    BATCHES[batch_id] = batch
+    write_batch(batch)
+    return batch
+
+
+def record_3dmotion_guide_run(
+    source_video: Path,
+    duration: Any = 0,
+    prompt: str = "",
+    *,
+    runner: Any = subprocess.run,
+) -> dict[str, Any]:
+    if not source_video.exists():
+        raise FileNotFoundError("3D Motion recording is missing")
+    safe_duration = max(0.1, min(60.0, float(duration or video_duration_seconds(source_video) or 1.0)))
+    label = str(prompt or "").strip() or "3D motion recorded guide"
+    batch_id = f"motion_3d_{int(time.time())}_{random.randint(1000, 9999)}"
+    batch_dir = RUN_ROOT / batch_id
+    run_id = "01_recording"
+    run_dir = batch_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output = run_dir / "recorded_3d.mp4"
+    ffmpeg = os.environ.get("FFMPEG_PATH") or "ffmpeg"
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(source_video),
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(output),
+    ]
+    try:
+        runner(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+        raise RuntimeError(stderr or f"ffmpeg exited with code {exc.returncode}") from exc
+    if not output.exists():
+        raise RuntimeError("ffmpeg did not produce a 3D Motion recording")
+    now = time.time()
+    run = {
+        "batch_id": batch_id,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "workflow_id": "motion_3d_to_scail",
+        "workflow_mode": "motion_3d",
+        "workflow_label": "3D Motion",
+        "camera_move": "motion",
+        "guide_video": str(output),
+        "video": str(output),
+        "copied": [str(output)],
+        "duration": round(safe_duration, 3),
+        "variant_name": "3D Motion recording",
+        "prompt": label,
+        "rewrite": False,
+        "status": "guide_done",
+        "queued_at": now,
+        "finished_at": now,
+        "scores": {},
+        "notes": "Recorded in 3D Motion",
+    }
+    batch = {
+        "batch_id": batch_id,
+        "batch_dir": str(batch_dir),
+        "status": "done",
+        "queued_at": now,
+        "finished_at": now,
         "runs": [run],
     }
     BATCHES[batch_id] = batch
@@ -2361,8 +3361,7 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
         if not reference.exists():
             raise FileNotFoundError("motion reference image is missing")
         reference_name = f"{safe_filename(run['run_id'])}_{safe_filename(reference.name)}"
-        shutil.copy2(reference, MOTION_COMFY_INPUT / reference_name)
-        run["reference_name"] = reference_name
+        run.update(prepare_scail_reference_assets(reference, MOTION_COMFY_INPUT, reference_name))
 
     run["status"] = "running_video"
     run["prefix"] = f"camera_lab/{run['batch_id']}/{run['run_id']}/motion_final"
@@ -2480,7 +3479,11 @@ def run_batch_worker(batch_id: str) -> None:
                 continue
             COMFY_INPUT.mkdir(parents=True, exist_ok=True)
             input_names = {}
-            if workflow["mode"] not in {"t2v", "director_ref"}:
+            if is_inpaint_mode(workflow["mode"]):
+                input_names = stage_inpaint_inputs(run, width, height, run_dir)
+            elif is_bernini_mode(workflow["mode"]):
+                input_names = stage_bernini_inputs(run, width, height, run_dir)
+            elif workflow["mode"] not in {"t2v", "director_ref"}:
                 source_frame = run_dir / f"source_{width}x{height}.png"
                 resize_cover(source, source_frame, width=width, height=height)
                 source_name = f"{run['run_id']}_source.png"
@@ -2526,7 +3529,12 @@ def run_batch_worker(batch_id: str) -> None:
             else:
                 workflow_json = json.loads(Path(workflow["path"]).read_text(encoding="utf-8"))
                 api = workflow_to_api(workflow_json)
-                patch_api(api, workflow, run, input_names)
+                if is_inpaint_mode(workflow["mode"]):
+                    patch_inpaint_api(api, run, input_names)
+                elif is_bernini_mode(workflow["mode"]):
+                    patch_bernini_api(api, workflow["mode"], run, input_names)
+                else:
+                    patch_api(api, workflow, run, input_names)
             (run_dir / "api_prompt.json").write_text(json.dumps(api, ensure_ascii=False, indent=2), encoding="utf-8")
             (run_dir / "prompt.txt").write_text(
                 f"{run['variant_name']}\n{width}x{height}\nseed: {run['seed']}\n\n{run['prompt']}\n\nNEGATIVE:\n{run['negative_prompt']}\n",
@@ -2542,13 +3550,7 @@ def run_batch_worker(batch_id: str) -> None:
             wait_for_completion(run["prompt_id"], run)
             check_run_canceled(run)
             copied = copy_outputs(run_dir, run["prompt_id"])
-            videos = [p for p in copied if p.suffix.lower() in {".mp4", ".webm", ".mov"}]
-            run["copied"] = [str(p) for p in copied]
-            if videos:
-                run["video"] = str(videos[0])
-                contact = run_dir / "contact.jpg"
-                make_contact_sheet(videos[0], contact, f"{run['variant_name']} / {run['camera_move']}")
-                run["contact_sheet"] = str(contact)
+            record_run_media_outputs(run, copied, workflow["mode"], run_dir)
             run["status"] = "done"
             run["finished_at"] = time.time()
         except RunCanceled:
@@ -2561,7 +3563,16 @@ def run_batch_worker(batch_id: str) -> None:
             run["finished_at"] = time.time()
         finally:
             write_batch(batch)
-    batch["status"] = "done" if all(r.get("status") in {"done", "canceled"} for r in batch["runs"]) else "error"
+    merge_error = ""
+    if batch.get("bernini_split", {}).get("enabled") and all(
+        r.get("status") == "done" for r in batch["runs"] if r.get("segment_index")
+    ):
+        try:
+            merge_bernini_split_batch(batch)
+        except Exception as exc:
+            merge_error = str(exc)
+            batch["error"] = f"merge failed: {merge_error}"
+    batch["status"] = "error" if merge_error else ("done" if all(r.get("status") in {"done", "canceled"} for r in batch["runs"]) else "error")
     batch["finished_at"] = time.time()
     write_batch(batch)
 
@@ -3099,6 +4110,20 @@ def safe_media_path(raw: str) -> Path:
     return path
 
 
+def payload_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"0", "false", "off", "no", "n"}:
+            return False
+        if normalized in {"1", "true", "on", "yes", "y"}:
+            return True
+    return bool(value)
+
+
 def sanitize_3dmotion_video_name(name: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", name or "drive.webm")
     return re.sub(r"\.[^.]+$", "", cleaned) or "drive"
@@ -3200,6 +4225,34 @@ class Handler(BaseHTTPRequestHandler):
             raise RuntimeError("ffmpeg did not produce a drive video")
         self.send_json({"path": f"3dmotion-scail/{base_name}.mp4"})
 
+    def handle_3dmotion_recording(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        base_name = sanitize_3dmotion_video_name(query.get("name", ["recorded_3d.webm"])[0])
+        duration = float(query.get("duration", ["0"])[0] or 0)
+        prompt = query.get("prompt", ["3D motion recorded guide"])[0]
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            raise ValueError("recorded video is empty")
+        if length > MAX_3DMOTION_DRIVE_BYTES:
+            raise ValueError("recorded video is too large")
+        upload_dir = UPLOAD_ROOT / "videos" / "3dmotion"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(base_name).suffix.lower()
+        if suffix not in VIDEO_UPLOAD_SUFFIXES:
+            base_name = f"{Path(base_name).stem}.webm"
+        upload = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{base_name}"
+        with upload.open("wb") as handle:
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                handle.write(chunk)
+                remaining -= len(chunk)
+        batch = record_3dmotion_guide_run(upload, duration=duration, prompt=prompt)
+        self.send_json({"batch": batch, "run": batch["runs"][0]})
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
@@ -3261,8 +4314,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_audio()
             if self.path == "/api/upload-video":
                 return self.handle_upload_video()
+            if self.path == "/api/trim-video":
+                return self.handle_trim_video()
             if self.path.startswith("/api/scail-drive-video"):
                 return self.handle_3dmotion_drive_video()
+            if self.path.startswith("/api/3dmotion-recording"):
+                return self.handle_3dmotion_recording()
             if self.path == "/api/upload-image":
                 return self.handle_upload_image()
             if self.path.startswith("/comfy/"):
@@ -3333,20 +4390,42 @@ class Handler(BaseHTTPRequestHandler):
         status = workflow_status(workflow)
         if not status["available"]:
             raise RuntimeError(f"{workflow['label']} unavailable: {status['reason']}")
-        source_path = payload.get("source_path") or ""
-        if workflow["mode"] not in {"t2v", "director_ref"} and not source_path:
-            raise ValueError("source image is required")
-        source = {"path": str(safe_media_path(source_path)) if source_path else ""}
-        end_path = payload.get("end_path") or source["path"]
-        if workflow["mode"] in {"flf", "fml", "fml_native", "flf_ia2v"} and not payload.get("end_path"):
-            raise ValueError("FLF/FML requires an uploaded end image")
-        end = {"path": str(safe_media_path(end_path)) if end_path else ""}
-        middle = {"path": ""}
-        if workflow["mode"] in {"fml", "fml_native"}:
-            middle_path = payload.get("middle_path") or ""
-            if not middle_path:
-                raise ValueError("FML requires an uploaded middle image")
-            middle = {"path": str(safe_media_path(middle_path))}
+        bernini_media = {
+            "source": {"path": ""},
+            "reference_image": {"path": ""},
+            "source_video": {"path": ""},
+            "reference_video": {"path": ""},
+        }
+        inpaint_media = {
+            "source_video": {"path": ""},
+            "reference_image": {"path": ""},
+            "mask_image": {"path": ""},
+        }
+        if is_inpaint_mode(workflow["mode"]):
+            inpaint_media = validate_inpaint_media_paths(payload)
+            source = {"path": ""}
+            end = {"path": ""}
+            middle = {"path": ""}
+        elif is_bernini_mode(workflow["mode"]):
+            bernini_media = validate_bernini_media_paths(workflow["mode"], payload)
+            source = bernini_media["source"]
+            end = {"path": ""}
+            middle = {"path": ""}
+        else:
+            source_path = payload.get("source_path") or ""
+            if workflow["mode"] not in {"t2v", "director_ref"} and not source_path:
+                raise ValueError("source image is required")
+            source = {"path": str(safe_media_path(source_path)) if source_path else ""}
+            end_path = payload.get("end_path") or source["path"]
+            if workflow["mode"] in {"flf", "fml", "fml_native", "flf_ia2v"} and not payload.get("end_path"):
+                raise ValueError("FLF/FML requires an uploaded end image")
+            end = {"path": str(safe_media_path(end_path)) if end_path else ""}
+            middle = {"path": ""}
+            if workflow["mode"] in {"fml", "fml_native"}:
+                middle_path = payload.get("middle_path") or ""
+                if not middle_path:
+                    raise ValueError("FML requires an uploaded middle image")
+                middle = {"path": str(safe_media_path(middle_path))}
         width, height = validate_size(payload.get("width"), payload.get("height"))
         prompt = (payload.get("prompt") or "").strip()
         if workflow["mode"] == "director_ref":
@@ -3366,8 +4445,10 @@ class Handler(BaseHTTPRequestHandler):
             director_segments = validate_director_segments(payload.get("timeline_segments") or payload.get("segments") or [])
             director_audio_segments = validate_director_audio_segments(payload.get("audio_segments") or [])
         seed = validate_seed(payload.get("seed"))
+        split_options = bernini_split_options(workflow["mode"], payload)
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
         batch_dir = RUN_ROOT / batch_id
+        batch_dir.mkdir(parents=True, exist_ok=True)
         runs = []
         for index, variant in enumerate(variants, start=1):
             run_id = f"{index:02d}_{slugify(variant['name'])}"
@@ -3386,8 +4467,13 @@ class Handler(BaseHTTPRequestHandler):
                     "source_image": source["path"],
                     "middle_image": middle["path"],
                     "end_image": end["path"],
+                    "reference_image": bernini_media["reference_image"]["path"] or inpaint_media["reference_image"]["path"],
+                    "source_video": bernini_media["source_video"]["path"] or inpaint_media["source_video"]["path"],
+                    "reference_video": bernini_media["reference_video"]["path"],
+                    "mask_image": inpaint_media["mask_image"]["path"],
                     "audio_path": payload.get("audio_path", ""),
-                    "duration": float(payload.get("duration", 4)),
+                    "bernini_preserve_audio": bool(payload.get("bernini_preserve_audio")) and bool(bernini_media["source_video"]["path"]),
+                    "duration": 0.0 if workflow["mode"] in BERNINI_IMAGE_MODES else float(payload.get("duration", 4)),
                     "width": width,
                     "height": height,
                     "seed": seed,
@@ -3395,17 +4481,32 @@ class Handler(BaseHTTPRequestHandler):
                     "prompt": variant["prompt"],
                     "global_prompt": payload.get("global_prompt", ""),
                     "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
+                    "bernini_ref_max_size": max(16, min(8192, int(float(payload.get("bernini_ref_max_size") or 848)))),
                     "segments": director_segments,
                     "audio_segments": director_audio_segments,
                     "reference_images": reference_images,
-                    "negative_prompt": payload.get("negative_prompt") or DEFAULT_NEGATIVE,
+                    "negative_prompt": payload.get("negative_prompt") or (INPAINT_DEFAULT_NEGATIVE if is_inpaint_mode(workflow["mode"]) else DEFAULT_NEGATIVE),
                     "status": "queued",
                     "queued_at": time.time(),
                     "scores": {},
                     "notes": "",
                 }
             )
-        batch = {"batch_id": batch_id, "batch_dir": str(batch_dir), "status": "queued", "queued_at": time.time(), "runs": runs}
+        if split_options["enabled"]:
+            split_runs: list[dict[str, Any]] = []
+            for run in runs:
+                split_runs.extend(prepare_bernini_split_runs(run, batch_dir, float(split_options["duration"])))
+            runs = split_runs
+        for run in runs:
+            Path(run["run_dir"]).mkdir(parents=True, exist_ok=True)
+        batch = {
+            "batch_id": batch_id,
+            "batch_dir": str(batch_dir),
+            "status": "queued",
+            "queued_at": time.time(),
+            "runs": runs,
+            "bernini_split": split_options,
+        }
         BATCHES[batch_id] = batch
         write_batch(batch)
         thread = threading.Thread(target=run_batch_worker, args=(batch_id,), daemon=True)
@@ -3437,8 +4538,8 @@ class Handler(BaseHTTPRequestHandler):
             "run_id": run_id,
             "run_dir": str(run_dir),
             "workflow_id": "text_to_motion",
-            "workflow_mode": "motion",
-            "workflow_label": "Motion",
+            "workflow_mode": "motion_text",
+            "workflow_label": "Motion Guide",
             "camera_move": "motion",
             "reference_image": str(reference) if reference else "",
             "duration": duration,
@@ -3451,6 +4552,8 @@ class Handler(BaseHTTPRequestHandler):
             "cfg_scale": cfg_scale,
             "steps": steps,
             "pose_strength": pose_strength,
+            "use_pose_video_mask": payload_bool(payload.get("use_pose_video_mask"), True),
+            "pose_video_mask_prompt": str(payload.get("pose_video_mask_prompt") or "person").strip() or "person",
             "status": "queued",
             "queued_at": time.time(),
             "scores": {},
@@ -3502,11 +4605,15 @@ class Handler(BaseHTTPRequestHandler):
             run["steps"] = max(1, min(100, int(payload.get("steps"))))
         if payload.get("pose_strength") not in {None, ""}:
             run["pose_strength"] = max(0.0, min(1.0, float(payload.get("pose_strength"))))
-        if payload.get("seed") not in {None, ""}:
-            run["seed"] = validate_seed(payload.get("seed"))
+        run["use_pose_video_mask"] = payload_bool(payload.get("use_pose_video_mask"), True)
+        run["pose_video_mask_prompt"] = str(payload.get("pose_video_mask_prompt") or run.get("pose_video_mask_prompt") or "person").strip() or "person"
+        run["seed"] = validate_seed(payload.get("seed"))
         trim_start, trim_end = motion_trim_values(payload)
         run["guide_trim_start"] = trim_start
         run["guide_trim_end"] = trim_end
+        run["workflow_id"] = "uploaded_motion_to_scail"
+        run["workflow_mode"] = "motion_scail"
+        run["workflow_label"] = "SCAIL2"
         if trim_end is not None:
             run["duration"] = round(trim_end - trim_start, 3)
             run["scail_length"] = align_4k1(round((trim_end - trim_start) * 24))
@@ -3589,6 +4696,17 @@ class Handler(BaseHTTPRequestHandler):
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
         self.send_json({"path": str(path), "name": name})
+
+    def handle_trim_video(self) -> None:
+        payload = self.read_json()
+        source = safe_media_path(str(payload.get("video_path") or ""))
+        if source.suffix.lower() not in SUPPORTED_VIDEO_SUFFIXES:
+            raise ValueError("unsupported video file type")
+        start = float(payload.get("start") or 0)
+        end = float(payload.get("end") or 0)
+        output = trim_video_clip(source, UPLOAD_ROOT / "videos" / "clips", start, end)
+        duration = video_duration_seconds(output)
+        self.send_json({"path": str(output), "name": output.name, "duration": duration})
 
     def handle_upload_image(self) -> None:
         payload = self.read_json()
@@ -4027,6 +5145,7 @@ def history_runs(limit: int = 30) -> list[dict[str, Any]]:
                 if workflow:
                     item.setdefault("workflow_mode", workflow["mode"])
                     item.setdefault("workflow_label", workflow["label"])
+            hydrate_run_image_outputs(item)
             item["sort_time"] = item.get("finished_at") or item.get("started_at") or item.get("queued_at") or batch_file.stat().st_mtime
             runs.append(item)
     runs.sort(key=lambda run: (0 if run.get("pinned") else 1, -(run.get("sort_time") or 0)))

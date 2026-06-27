@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=motion-step2-preview-row-1">
+  <link rel="stylesheet" href="/static/styles.css?v=video-clipper-2">
 </head>
 <body>
   <header class="topbar">
@@ -15,6 +15,7 @@
     <nav class="workspace-tabs" aria-label="Workspace">
       <button id="cameraWorkspaceTab" class="workspace-tab active" type="button">Camera Lab</button>
       <button id="directorWorkspaceTab" class="workspace-tab" type="button">Director</button>
+      <button id="editWorkspaceTab" class="workspace-tab" type="button">Edit</button>
       <button id="castingWorkspaceTab" class="workspace-tab" type="button">Casting</button>
       <button id="motionWorkspaceTab" class="workspace-tab" type="button">Motion</button>
       <button id="photographyWorkspaceTab" class="workspace-tab" type="button" hidden>Photography</button>
@@ -23,6 +24,24 @@
   </header>
 
   <main class="layout">
+    <section id="berniniModeBar" class="motion-stage-head bernini-mode-bar" hidden>
+      <div class="motion-title-block">
+        <div class="eyebrow">Edit</div>
+        <div id="berniniTaskTabs" class="motion-subtabs bernini-subtabs" role="tablist" aria-label="Edit modes">
+          <button class="motion-subtab bernini-mode-tab active" type="button" role="tab" aria-selected="true" data-bernini-workflow="bernini_t2v">T2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_i2v">I2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_v2v">V2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_mv2v">MV2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_vi2v">VI2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_vrc2v">VRC2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_r2v">R2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_rv2v">RV2V</button>
+          <button class="motion-subtab bernini-mode-tab" type="button" role="tab" aria-selected="false" data-bernini-workflow="bernini_ads2v">ADS2V</button>
+          <button class="motion-subtab edit-mode-tab inpaint-mode-tab" type="button" role="tab" aria-selected="false" data-edit-workflow="wan_vace_inpaint">INPAINT</button>
+        </div>
+      </div>
+    </section>
+
     <section class="panel setup-panel">
       <div class="section-title">
         <span>Experiment</span>
@@ -33,6 +52,85 @@
         Workflow
         <select id="workflowSelect"></select>
       </label>
+
+      <section id="berniniTaskPanel" class="bernini-panel" hidden>
+        <label id="berniniSourceVideoWrap">
+          Source video
+          <input id="berniniSourceVideoInput" type="file" accept="video/*">
+          <span id="berniniSourceVideoStatus" class="hint">No video uploaded</span>
+          <button id="berniniSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          <div id="berniniSourceVideoPreviewWrap" class="video-upload-preview" hidden>
+            <video id="berniniSourceVideoPreview" controls playsinline muted preload="metadata"></video>
+          </div>
+        </label>
+        <label id="berniniPreserveAudioWrap" class="inline-check" hidden>
+          <input id="berniniPreserveAudio" type="checkbox">
+          <span>Preserve audio</span>
+        </label>
+        <label id="berniniReferenceImageWrap">
+          Reference image
+          <input id="berniniReferenceImageInput" type="file" accept="image/*">
+          <span id="berniniReferenceImageStatus" class="hint">No image uploaded</span>
+        </label>
+        <div id="berniniReferenceImagePreviewWrap" class="source-preview">
+          <img id="berniniReferenceImagePreview" alt="Bernini reference image preview">
+        </div>
+        <section id="berniniReferenceControls" class="bernini-reference-controls" hidden>
+          <label>
+            Reference strength
+            <input id="berniniReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
+          </label>
+          <label>
+            Reference max size
+            <input id="berniniRefMaxSize" type="number" min="16" max="8192" step="16" value="848">
+          </label>
+        </section>
+        <label id="berniniReferenceVideoWrap">
+          Reference video
+          <input id="berniniReferenceVideoInput" type="file" accept="video/*">
+          <span id="berniniReferenceVideoStatus" class="hint">No video uploaded</span>
+          <button id="berniniReferenceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          <div id="berniniReferenceVideoPreviewWrap" class="video-upload-preview" hidden>
+            <video id="berniniReferenceVideoPreview" controls playsinline muted preload="metadata"></video>
+          </div>
+        </label>
+        <section id="berniniLongVideoPanel" class="bernini-long-video-panel" hidden>
+          <label class="inline-check">
+            <input id="berniniSplitEnabled" type="checkbox">
+            <span>Long video split</span>
+          </label>
+          <div class="grid-2">
+            <label>
+              Segment duration
+              <input id="berniniSplitDuration" type="number" min="1" max="5" step="0.5" value="4">
+            </label>
+            <label class="inline-check inline-check-bottom">
+              <input id="berniniSplitMerge" type="checkbox" checked>
+              <span>Merge result</span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section id="inpaintTaskPanel" class="inpaint-panel" hidden>
+        <label id="inpaintSourceVideoWrap">
+          Source video
+          <input id="inpaintSourceVideoInput" type="file" accept="video/*">
+          <span id="inpaintSourceVideoStatus" class="hint">No video uploaded</span>
+          <button id="inpaintSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          <div id="inpaintSourceVideoPreviewWrap" class="video-upload-preview" hidden>
+            <video id="inpaintSourceVideoPreview" controls playsinline muted preload="metadata"></video>
+          </div>
+        </label>
+        <label>
+          Reference image (optional)
+          <input id="inpaintReferenceImageInput" type="file" accept="image/*">
+          <span id="inpaintReferenceImageStatus" class="hint">Optional reference not uploaded</span>
+        </label>
+        <div id="inpaintReferenceImagePreviewWrap" class="source-preview">
+          <img id="inpaintReferenceImagePreview" alt="Inpaint reference image preview">
+        </div>
+      </section>
 
       <label id="cameraMoveWrap">
         Camera move
@@ -76,7 +174,7 @@
       </div>
 
       <div class="grid-2">
-        <label>
+        <label id="durationWrap">
           Duration
           <input id="durationInput" type="number" min="1" max="12" step="0.5" value="4">
         </label>
@@ -114,6 +212,27 @@
     </section>
 
     <section class="panel prompt-panel">
+      <section id="inpaintCanvasPanel" class="inpaint-canvas-panel" hidden>
+        <div class="inpaint-mask-header">
+          <div>
+            <span>Source video</span>
+            <strong>Draw mask</strong>
+          </div>
+          <span id="inpaintMaskStatus" class="hint">No mask painted</span>
+        </div>
+        <div id="inpaintMaskStage" class="inpaint-mask-stage">
+          <video id="inpaintMaskVideo" muted playsinline controls></video>
+          <canvas id="inpaintMaskCanvas" aria-label="Paint the area to replace"></canvas>
+        </div>
+        <div class="inpaint-tools">
+          <label>
+            Brush
+            <input id="inpaintBrushSize" type="range" min="8" max="160" step="4" value="48">
+            <span id="inpaintBrushReadout" class="hint">48px</span>
+          </label>
+          <button id="inpaintClearMaskBtn" type="button">Clear mask</button>
+        </div>
+      </section>
       <div class="section-title">
         <span id="promptPanelTitle">Prompt</span>
         <button id="resetPromptsBtn" type="button">Reset defaults</button>
@@ -393,35 +512,9 @@
             <div id="motionGuidePreviewCard" class="motion-preview-card motion-guide-preview-card">
               <div class="motion-preview-head">
                 <span>Guide preview</span>
+                <button id="motionGuidePreviewEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
               </div>
               <video id="motionGuide" controls playsinline></video>
-              <div id="motionTrimPanel" class="motion-trim-panel">
-                <div class="motion-trim-readout">
-                  <span>Start <b id="motionTrimStartReadout">0.00s</b></span>
-                  <span>End <b id="motionTrimEndReadout">4.00s</b></span>
-                  <span>Keep <b id="motionTrimDuration">4.00s</b></span>
-                </div>
-                <div class="motion-trim-inputs">
-                  <label>
-                    Start
-                    <input id="motionTrimStart" type="number" min="0" step="0.05" value="0">
-                  </label>
-                  <label>
-                    End
-                    <input id="motionTrimEnd" type="number" min="0.05" step="0.05" value="4">
-                  </label>
-                </div>
-                <div class="motion-trim-rails">
-                  <input id="motionTrimStartRange" type="range" min="0" max="4" step="0.05" value="0" aria-label="Trim start">
-                  <input id="motionTrimEndRange" type="range" min="0" max="4" step="0.05" value="4" aria-label="Trim end">
-                </div>
-                <div class="motion-trim-actions">
-                  <button id="motionTrimSetStart" type="button">Set start</button>
-                  <button id="motionTrimSetEnd" type="button">Set end</button>
-                  <button id="motionTrimPlay" type="button">Play trim</button>
-                  <button id="motionTrimReset" type="button">Reset</button>
-                </div>
-              </div>
             </div>
             </div>
           </section>
@@ -435,10 +528,6 @@
         </section>
       </section>
       <section id="motionScailPanel" class="motion-subpanel" role="tabpanel" aria-labelledby="motionScailTab" hidden>
-        <div id="motionScailPreviewRow" class="motion-scail-preview-row">
-          <div id="motionScailGuideMount" class="motion-preview-slot motion-scail-guide-mount"></div>
-          <div id="motionScailResultMount" class="motion-preview-slot motion-scail-result-mount"></div>
-        </div>
         <div class="motion-scail-upload-strip">
           <div class="motion-upload-card">
             <label class="motion-file-field">
@@ -447,7 +536,11 @@
               <span class="motion-file-control">
                 <span class="motion-file-button">Choose video</span>
                 <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
+                <button id="motionGuideEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
               </span>
+              <div id="motionGuideUploadPreviewWrap" class="video-upload-preview motion-upload-preview" hidden>
+                <video id="motionGuideUploadPreview" controls playsinline muted preload="metadata"></video>
+              </div>
             </label>
           </div>
         </div>
@@ -471,7 +564,14 @@
                     <span id="motionRefStatus" class="hint">No image uploaded</span>
                   </span>
                 </label>
+                <div id="motionScailRefPreviewWrap" class="source-preview motion-scail-ref-preview" aria-label="SCAIL2 reference image preview">
+                  <img id="motionScailRefPreview" alt="SCAIL2 reference preview">
+                </div>
               </div>
+              <label>
+                Prompt
+                <textarea id="motionScailPrompt" rows="4" placeholder="same person as reference image, preserve facial identity, same hair, same outfit"></textarea>
+              </label>
               <button id="motionRunBtn" class="primary" type="button" disabled>Render Final Video</button>
               <details id="motionScailSettings" class="motion-settings" open>
                 <summary>SCAIL2 settings</summary>
@@ -506,6 +606,13 @@
                   Pose strength <span id="motionPoseReadout">1.00</span>
                   <input id="motionPoseStrength" type="range" min="0" max="1" step="0.01" value="1">
                 </label>
+                <label class="motion-toggle-row">
+                  <input id="motionUsePoseMask" type="checkbox" checked>
+                  <span>
+                    <strong>Keep background</strong>
+                    <small>Replace only the person when rendering with SCAIL2.</small>
+                  </span>
+                </label>
               </details>
             </div>
             <div class="motion-preview-stack">
@@ -531,9 +638,21 @@
           </section>
           </div>
         </div>
+        <section id="motionScailOutputSection" class="motion-history-shell">
+          <div class="results-header">
+            <span>SCAIL2 Results</span>
+          </div>
+          <div id="motionScailResultsGrid" class="results-grid motion-results-grid"></div>
+        </section>
       </section>
       <section id="motion3dPanel" class="motion-subpanel motion-placeholder-panel" role="tabpanel" aria-labelledby="motion3dTab" hidden>
         <div id="root" class="motion-3d-embed-root"></div>
+        <section id="motion3dOutputSection" class="motion-history-shell">
+          <div class="results-header">
+            <span>3D Motion Results</span>
+          </div>
+          <div id="motion3dResultsGrid" class="results-grid motion-results-grid"></div>
+        </section>
       </section>
       <div id="motionHiddenPreviewParking" hidden></div>
     </section>
@@ -751,9 +870,85 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=motion-scail-video-row-1"></script>
-  <link rel="stylesheet" href="/static/3dmotion/embedded.css?v=native-3dmotion-10">
-  <script type="module" src="/static/3dmotion/assets/index-B2nRMAE3.js"></script>
+  <div id="frameExtractModal" class="director-modal frame-extract-modal" aria-hidden="true">
+    <div class="director-modal-backdrop" data-close-frame-extract></div>
+    <section class="director-modal-panel frame-extract-panel" role="dialog" aria-modal="true" aria-labelledby="frameExtractTitle">
+      <div class="director-modal-head">
+        <div>
+          <div class="eyebrow">Extract Frame</div>
+          <h2 id="frameExtractTitle">Frame</h2>
+        </div>
+        <button id="closeFrameExtractBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="frame-extract-preview">
+        <video id="frameExtractPlayer" controls playsinline preload="metadata"></video>
+      </div>
+      <label class="frame-extract-time-row">
+        Time <span id="frameExtractTimeReadout">0.00s</span>
+        <input id="frameExtractTime" type="range" min="0" max="0" step="0.01" value="0">
+      </label>
+      <div class="director-modal-actions">
+        <span id="frameExtractStatus" class="hint"></span>
+        <button id="saveFrameExtractBtn" class="primary modal-primary" type="button">Save PNG</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="videoClipperModal" class="director-modal video-clipper-modal" aria-hidden="true">
+    <div class="director-modal-backdrop" data-close-video-clipper></div>
+    <section class="director-modal-panel video-clipper-panel" role="dialog" aria-modal="true" aria-labelledby="videoClipperTitle">
+      <div class="director-modal-head">
+        <div>
+          <div class="eyebrow">Video clip</div>
+          <h2 id="videoClipperTitle">Select range</h2>
+        </div>
+        <button id="closeVideoClipperBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="video-clipper-grid">
+        <div class="video-clipper-preview">
+          <video id="videoClipperPlayer" controls playsinline preload="metadata"></video>
+        </div>
+        <aside class="video-clipper-side">
+          <div class="clipper-readout">
+            <span>Start <b id="videoClipperStartReadout">0.00s</b></span>
+            <span>End <b id="videoClipperEndReadout">0.00s</b></span>
+            <span>Keep <b id="videoClipperDurationReadout">0.00s</b></span>
+          </div>
+          <div class="clipper-inputs">
+            <label>
+              Start
+              <input id="videoClipperStart" type="number" min="0" step="0.05" value="0">
+            </label>
+            <label>
+              End
+              <input id="videoClipperEnd" type="number" min="0.05" step="0.05" value="0">
+            </label>
+          </div>
+          <div class="clipper-side-actions">
+            <button id="videoClipperPlayBtn" type="button">Play selection</button>
+          </div>
+        </aside>
+      </div>
+      <div class="video-clipper-timeline">
+        <div id="videoClipperFilmstrip" class="video-clipper-filmstrip"></div>
+        <div class="video-clipper-rails">
+          <input id="videoClipperStartRange" type="range" min="0" max="1" step="0.05" value="0" aria-label="Clip start">
+          <input id="videoClipperEndRange" type="range" min="0" max="1" step="0.05" value="1" aria-label="Clip end">
+        </div>
+      </div>
+      <div class="video-clipper-status-row">
+        <span id="videoClipperStatus" class="hint">Choose a range.</span>
+        <div class="director-modal-actions">
+          <button id="videoClipperCancelBtn" type="button">Cancel</button>
+          <button id="videoClipperUseBtn" class="primary modal-primary" type="button">Use clip</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js?v=late-preview-poll-1"></script>
+  <link rel="stylesheet" href="/static/3dmotion/embedded.css">
+  <script type="module" src="/static/3dmotion/assets/index.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
 </body>
 </html>

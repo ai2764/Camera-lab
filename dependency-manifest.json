@@ -109,7 +109,20 @@
       "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
-      "workflows/app/ltx_director_reference_mvp.json"
+      "workflows/app/ltx_director_reference_mvp.json",
+      "workflows/app/wan22_bernini_ads2v.ui.json",
+      "workflows/app/wan22_bernini_i2i.ui.json",
+      "workflows/app/wan22_bernini_i2v.ui.json",
+      "workflows/app/wan22_bernini_mv2v.ui.json",
+      "workflows/app/wan22_bernini_r2i.ui.json",
+      "workflows/app/wan22_bernini_r2v.ui.json",
+      "workflows/app/wan22_bernini_rv2v.ui.json",
+      "workflows/app/wan22_bernini_t2i.ui.json",
+      "workflows/app/wan22_bernini_t2v.ui.json",
+      "workflows/app/wan22_bernini_vi2v.ui.json",
+      "workflows/app/wan22_bernini_vrc2v.ui.json",
+      "workflows/app/wan22_bernini_v2v.ui.json",
+      "workflows/app/wan_vace_inpainting.ui.json"
     ],
     "experimental_workflows": [
       "workflows/experimental/Yedp_3D_Director_Only.local.json",
@@ -162,6 +175,84 @@
       "label": "LTX Director Reference MVP",
       "mode": "director_ref",
       "source": "workflows/app/ltx_director_reference_mvp.json"
+    },
+    {
+      "id": "bernini_t2v",
+      "label": "WAN2.2 Bernini T2V",
+      "mode": "bernini_t2v",
+      "source": "workflows/app/wan22_bernini_t2v.ui.json"
+    },
+    {
+      "id": "bernini_t2i",
+      "label": "WAN2.2 Bernini T2I",
+      "mode": "bernini_t2i",
+      "source": "workflows/app/wan22_bernini_t2i.ui.json"
+    },
+    {
+      "id": "bernini_i2v",
+      "label": "WAN2.2 Bernini I2V",
+      "mode": "bernini_i2v",
+      "source": "workflows/app/wan22_bernini_i2v.ui.json"
+    },
+    {
+      "id": "bernini_i2i",
+      "label": "WAN2.2 Bernini I2I",
+      "mode": "bernini_i2i",
+      "source": "workflows/app/wan22_bernini_i2i.ui.json"
+    },
+    {
+      "id": "bernini_v2v",
+      "label": "WAN2.2 Bernini V2V",
+      "mode": "bernini_v2v",
+      "source": "workflows/app/wan22_bernini_v2v.ui.json"
+    },
+    {
+      "id": "bernini_mv2v",
+      "label": "WAN2.2 Bernini MV2V",
+      "mode": "bernini_mv2v",
+      "source": "workflows/app/wan22_bernini_mv2v.ui.json"
+    },
+    {
+      "id": "bernini_vi2v",
+      "label": "WAN2.2 Bernini VI2V",
+      "mode": "bernini_vi2v",
+      "source": "workflows/app/wan22_bernini_vi2v.ui.json"
+    },
+    {
+      "id": "bernini_vrc2v",
+      "label": "WAN2.2 Bernini VRC2V",
+      "mode": "bernini_vrc2v",
+      "source": "workflows/app/wan22_bernini_vrc2v.ui.json"
+    },
+    {
+      "id": "bernini_r2v",
+      "label": "WAN2.2 Bernini R2V",
+      "mode": "bernini_r2v",
+      "source": "workflows/app/wan22_bernini_r2v.ui.json"
+    },
+    {
+      "id": "bernini_r2i",
+      "label": "WAN2.2 Bernini R2I",
+      "mode": "bernini_r2i",
+      "source": "workflows/app/wan22_bernini_r2i.ui.json"
+    },
+    {
+      "id": "bernini_rv2v",
+      "label": "WAN2.2 Bernini RV2V",
+      "mode": "bernini_rv2v",
+      "source": "workflows/app/wan22_bernini_rv2v.ui.json"
+    },
+    {
+      "id": "bernini_ads2v",
+      "label": "WAN2.2 Bernini ADS2V",
+      "mode": "bernini_ads2v",
+      "source": "workflows/app/wan22_bernini_ads2v.ui.json"
+    },
+    {
+      "id": "wan_vace_inpaint",
+      "label": "WAN VACE Inpaint",
+      "mode": "wan_vace_inpaint",
+      "source": "workflows/app/wan_vace_inpainting.ui.json"
     }
   ],
   "do_not_commit": [

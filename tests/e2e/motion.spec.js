@@ -327,6 +327,7 @@ test("Motion tab generates guide before rendering final result", async ({ page }
     const payload = route.request().postDataJSON();
     expect(payload.batch_id).toBe("motion_e2e");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    expect(payload.use_pose_video_mask).toBe(true);
     expect(payload.guide_trim_start).toBe(0);
     expect(payload.guide_trim_end).toBe(1);
     await route.fulfill({
@@ -491,9 +492,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
     const payload = route.request().postDataJSON();
     expect(payload.guide_video_path).toBe("C:\\mock\\guide-upload.mp4");
     expect(payload.reference_path).toBe("C:\\mock\\ref.png");
+    expect(payload.use_pose_video_mask).toBe(false);
     expect(payload.seed).toBe("777");
-    expect(payload.guide_trim_start).toBe(1);
-    expect(payload.guide_trim_end).toBe(2.5);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -503,7 +503,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
         runs: [{
           batch_id: "motion_upload_e2e",
           run_id: "01_motion",
-          workflow_mode: "motion",
+          workflow_mode: "motion_scail",
+          workflow_label: "SCAIL2",
           prompt: "uploaded guide video",
           duration: 4,
           status: "running_video",
@@ -525,7 +526,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
         runs: [{
           batch_id: "motion_upload_e2e",
           run_id: "01_motion",
-          workflow_mode: "motion",
+          workflow_mode: "motion_scail",
+          workflow_label: "SCAIL2",
           prompt: "uploaded guide video",
           duration: 4,
           status: "done",
@@ -554,15 +556,97 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide.mp4");
   await expect(page.locator("#motionGuideState")).toHaveText("uploaded");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-upload\.mp4/);
-  await expect(page.locator("#motionTrimPanel")).toBeVisible();
-  await page.locator("#motionTrimStart").fill("1");
-  await page.locator("#motionTrimEnd").fill("2.5");
-  await expect(page.locator("#motionTrimDuration")).toHaveText("1.50s");
+  await expect(page.locator("#motionUsePoseMask")).toBeChecked();
+  await page.locator("#motionUsePoseMask").uncheck();
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
 
   await page.locator("#motionRunBtn").click();
   await expect(page.locator("#motionResultState")).toHaveText("ready");
   await expect(page.locator("#motionResult")).toHaveAttribute("src", /final-upload\.mp4/);
-  await expect(page.locator("#motionResultsGrid")).toContainText("uploaded guide video");
-  await expect(page.locator("#motionResultsGrid video")).toHaveCount(1);
+});
+
+test("Motion final keeps polling after done until the preview video appears", async ({ page }) => {
+  let pollCount = 0;
+  await mockConfig(page);
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ runs: [] }) });
+  });
+  await page.route("**/api/casting/library", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ clips: [] }) });
+  });
+  await page.route("**/api/upload-image", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
+    });
+  });
+  await page.route("**/api/upload-video", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ path: "C:\\mock\\guide-upload.mp4", name: "guide.mp4" }),
+    });
+  });
+  await page.route("**/api/text-to-motion-video-final", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "motion_late_video",
+        status: "running",
+        queued_at: Date.now() / 1000,
+        runs: [{
+          batch_id: "motion_late_video",
+          run_id: "01_motion",
+          workflow_mode: "motion_scail",
+          workflow_label: "SCAIL2",
+          prompt: "late preview video",
+          duration: 4,
+          status: "running_video",
+          queued_at: Date.now() / 1000,
+          started_at: Date.now() / 1000,
+          guide_video: "C:\\mock\\guide-upload.mp4",
+        }],
+      }),
+    });
+  });
+  await page.route("**/api/batches/motion_late_video", async (route) => {
+    pollCount += 1;
+    const run = {
+      batch_id: "motion_late_video",
+      run_id: "01_motion",
+      workflow_mode: "motion_scail",
+      workflow_label: "SCAIL2",
+      prompt: "late preview video",
+      duration: 4,
+      status: "done",
+      queued_at: Date.now() / 1000,
+      started_at: Date.now() / 1000,
+      finished_at: Date.now() / 1000,
+      guide_video: "C:\\mock\\guide-upload.mp4",
+      ...(pollCount >= 2 ? { video: "C:\\mock\\final-late.mp4" } : {}),
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "motion_late_video",
+        status: "done",
+        queued_at: Date.now() / 1000,
+        finished_at: Date.now() / 1000,
+        runs: [run],
+      }),
+    });
+  });
+  await page.route("**/media?path=*", async (route) => {
+    await route.fulfill({ contentType: "video/mp4", body: Buffer.from([]) });
+  });
+
+  await page.goto("/#motion");
+  await page.locator("#motionScailTab").click();
+  await page.setInputFiles("#motionRefInput", { name: "ref.png", mimeType: "image/png", buffer: png1x1 });
+  await page.setInputFiles("#motionGuideInput", { name: "guide.mp4", mimeType: "video/mp4", buffer: mp4Tiny });
+  await expect(page.locator("#motionRunBtn")).toBeEnabled();
+
+  await page.locator("#motionRunBtn").click();
+  await expect(page.locator("#motionResultState")).toHaveText("ready");
+  await expect(page.locator("#motionResult")).toHaveAttribute("src", /final-late\.mp4/);
+  expect(pollCount).toBeGreaterThanOrEqual(2);
 });

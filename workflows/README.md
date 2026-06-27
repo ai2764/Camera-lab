@@ -19,6 +19,19 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 - `LTX-2.3_FML2V_RuneXX_guider.local.json`: `LTX 2.3 FML RuneXX Guider Local (3 images)`
 - `ltx23_nag_ia2v_extendcrop_general.json`: `LTX 2.3 IA2V`
 - `ltx_director_reference_mvp.json`: `LTX Director Reference MVP`
+- `wan22_bernini_t2v.ui.json`: `WAN2.2 Bernini T2V`
+- `wan22_bernini_t2i.ui.json`: `WAN2.2 Bernini T2I`
+- `wan22_bernini_i2v.ui.json`: `WAN2.2 Bernini I2V`
+- `wan22_bernini_i2i.ui.json`: `WAN2.2 Bernini I2I`
+- `wan22_bernini_v2v.ui.json`: `WAN2.2 Bernini V2V`
+- `wan22_bernini_mv2v.ui.json`: `WAN2.2 Bernini MV2V`
+- `wan22_bernini_vi2v.ui.json`: `WAN2.2 Bernini VI2V`
+- `wan22_bernini_vrc2v.ui.json`: `WAN2.2 Bernini VRC2V`
+- `wan22_bernini_r2v.ui.json`: `WAN2.2 Bernini R2V`
+- `wan22_bernini_r2i.ui.json`: `WAN2.2 Bernini R2I`
+- `wan22_bernini_rv2v.ui.json`: `WAN2.2 Bernini RV2V`
+- `wan22_bernini_ads2v.ui.json`: `WAN2.2 Bernini ADS2V`
+- `wan_vace_inpainting.ui.json`: `WAN VACE Inpaint`
 
 The `FLF TTP Control` and `FML 2-stage TTP FLF` dropdown options are built in `server/camera_lab_server.py`, so they do not have standalone workflow JSON files.
 

@@ -80,6 +80,48 @@ def test_build_scail_api_patches_guide_and_video_settings():
     assert api["17"]["inputs"]["filename_prefix"] == "motion/test_scail"
 
 
+def test_build_scail_api_wires_reference_image_mask_when_available():
+    api = s.build_scail_api(
+        motion_run(prefix="motion/test_scail", reference_mask_name="motion_ref_mask.png"),
+        guide_name="hymotion_walk_wave_guide.mp4",
+        length=89,
+        template_path=s.ROOT / "workflows" / "app" / "scail2_video.api.json",
+    )
+
+    mask_nodes = [
+        (node_id, node)
+        for node_id, node in api.items()
+        if node["class_type"] == "LoadImage" and node["inputs"].get("image") == "motion_ref_mask.png"
+    ]
+    assert len(mask_nodes) == 1
+    mask_node_id, _mask_node = mask_nodes[0]
+    assert api["13"]["inputs"]["reference_image_mask"] == [mask_node_id, 0]
+
+
+def test_build_scail_api_wires_sam3_pose_video_mask_when_enabled():
+    api = s.build_scail_api(
+        motion_run(prefix="motion/test_scail", use_pose_video_mask=True),
+        guide_name="hymotion_walk_wave_guide.mp4",
+        length=89,
+        template_path=s.ROOT / "workflows" / "app" / "scail2_video.api.json",
+    )
+
+    assert api["13"]["inputs"]["replacement_mode"] is True
+    mask_link = api["13"]["inputs"]["pose_video_mask"]
+    mask_node = api[str(mask_link[0])]
+    assert mask_node["class_type"] == "SCAIL2ColoredMask"
+    assert mask_link[1] == 0
+    track_node = api[str(mask_node["inputs"]["driving_track_data"][0])]
+    assert track_node["class_type"] == "SAM3_VideoTrack"
+    assert track_node["inputs"]["images"] == ["12", 0]
+    text_node = api[str(track_node["inputs"]["conditioning"][0])]
+    assert text_node["class_type"] == "CLIPTextEncode"
+    assert text_node["inputs"]["text"] == "person"
+    sam_model = api[str(track_node["inputs"]["model"][0])]
+    assert sam_model["class_type"] == "CheckpointLoaderSimple"
+    assert sam_model["inputs"]["ckpt_name"] == "sam3.1_multiplex_fp16.safetensors"
+
+
 def test_build_hymotion_api_defaults_rewrite_off(monkeypatch):
     def fail_rewrite(*_args, **_kwargs):
         raise AssertionError("rewrite should not be called by default")
