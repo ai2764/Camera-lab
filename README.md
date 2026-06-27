@@ -213,15 +213,30 @@ flowchart LR
 
 ## Quick Start
 
-For coding agents or fresh clones, the fastest repo-side bootstrap is:
+For a fresh local setup, start with the module-aware installer:
+
+```powershell
+python scripts/install_camera_lab.py --all
+python scripts/check_setup.py
+```
+
+To inspect or install only selected modules:
+
+```powershell
+python scripts/install_camera_lab.py --list-modules
+python scripts/install_camera_lab.py --modules camera,director
+python scripts/check_setup.py --modules director
+```
+
+Edit `.env` after the installer creates it if `COMFYUI_ROOT` is still the placeholder value. The installer evaluates local hardware, installs repo dependencies, and installs bundled workflows when `COMFYUI_ROOT` is valid. It does not install ComfyUI, models, or custom nodes.
+
+For coding-agent compatibility, the older commands still work:
 
 ```powershell
 python scripts/agent_setup.py
 python scripts/install_workflows.py
 python scripts/check_setup.py
 ```
-
-Edit `.env` after the first command if `COMFYUI_ROOT` is still the placeholder value. `agent_setup.py` installs repo dependencies and installs bundled workflows when `COMFYUI_ROOT` is valid. It does not install ComfyUI, models, or custom nodes.
 
 ### 1. Requirements
 
@@ -291,6 +306,12 @@ Run:
 python scripts/install_workflows.py
 ```
 
+To install only selected module workflows:
+
+```powershell
+python scripts/install_workflows.py --modules camera,director
+```
+
 To also install experimental Director / IC-LoRA workflows:
 
 ```powershell
@@ -305,6 +326,12 @@ Run:
 
 ```powershell
 python scripts/check_setup.py
+```
+
+To check only selected modules:
+
+```powershell
+python scripts/check_setup.py --modules director
 ```
 
 If a check says `MISSING`, fix that item before starting Camera Lab. The most common issues are:
