@@ -13,6 +13,36 @@ test("home screen loads public Camera Lab controls", async ({ page }) => {
   await expect(page.locator("#photographyWorkspaceTab")).toBeHidden();
 });
 
+test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
+  await page.route("**/api/config", async (route) => {
+    const config = {
+      workflows: [{ id: "i2v_mock", label: "Mock I2V", mode: "i2v", available: true }],
+      camera_moves: [{ id: "push_in", name: "Push in", prompts: { base: "A calm camera push in." } }],
+      camera_examples: {},
+      default_negative: "",
+      comfy: { ok: true, reason: "", url: "http://127.0.0.1:8188" },
+      casting: { voices: [] },
+      modules: {
+        camera: { enabled: true, ready: true, missing: [] },
+        director: { enabled: true, ready: false, missing: ["LTXDirector"] },
+        edit: { enabled: false, ready: false, missing: [] },
+        casting: { enabled: true, ready: true, missing: [] },
+        motion: { enabled: true, ready: true, missing: [] },
+      },
+    };
+    await route.fulfill({ json: config });
+  });
+  await page.goto("/#director");
+
+  await expect(page.locator("#directorWorkspaceTab")).toBeVisible();
+  await expect(page.locator("#directorWorkspaceTab")).toBeDisabled();
+  await expect(page.locator("#directorWorkspaceTab")).toHaveClass(/module-unavailable/);
+  await expect(page.locator("#directorWorkspaceTab")).toHaveAttribute("title", /LTXDirector/);
+  await expect(page.locator("#editWorkspaceTab")).toBeVisible();
+  await expect(page.locator("#editWorkspaceTab")).toBeDisabled();
+  await expect(page.locator("#cameraWorkspaceTab")).toHaveClass(/active/);
+});
+
 test("edit workspace combines Bernini video modes and Inpaint", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='bernini_ads2v']")).toHaveCount(1);

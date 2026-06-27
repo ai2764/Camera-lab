@@ -190,6 +190,49 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const workspaceModules = {
+  camera: "camera",
+  director: "director",
+  edit: "edit",
+  casting: "casting",
+  motion: "motion",
+};
+
+function moduleReady(moduleId) {
+  const module = state.config?.modules?.[moduleId];
+  if (!module) return true;
+  return module.enabled !== false && module.ready !== false;
+}
+
+function workspaceReady(workspace) {
+  const normalized = workspace === "bernini" || workspace === "inpaint" ? "edit" : workspace;
+  const moduleId = workspaceModules[normalized];
+  return !moduleId || moduleReady(moduleId);
+}
+
+function firstReadyWorkspace() {
+  return ["camera", "director", "edit", "casting", "motion"].find(workspaceReady) || "camera";
+}
+
+function moduleUnavailableReason(moduleId) {
+  const module = state.config?.modules?.[moduleId];
+  if (!module) return "";
+  if (Array.isArray(module.missing) && module.missing.length) return module.missing.join(", ");
+  if (Array.isArray(module.warnings) && module.warnings.length) return module.warnings.join(", ");
+  return module.ready === false || module.enabled === false ? "Module unavailable" : "";
+}
+
+function applyModuleAvailability() {
+  for (const [workspace, moduleId] of Object.entries(workspaceModules)) {
+    const tab = $(`${workspace}WorkspaceTab`);
+    if (!tab) continue;
+    const ready = moduleReady(moduleId);
+    tab.disabled = !ready;
+    tab.classList.toggle("module-unavailable", !ready);
+    tab.title = ready ? "" : moduleUnavailableReason(moduleId);
+  }
+}
+
 const imageSlots = {
   source: { pathKey: "sourcePath", previewId: "sourcePreview", statusId: "sourceStatus", empty: "No image uploaded" },
   middle: { pathKey: "middlePath", previewId: "middlePreview", statusId: "middleStatus", empty: "No image uploaded" },
@@ -416,6 +459,10 @@ function rememberCurrentWorkflow() {
 function setWorkspace(workspace, { syncWorkflow = true } = {}) {
   const requestedWorkspace = workspace;
   if (workspace === "bernini" || workspace === "inpaint") workspace = "edit";
+  if (state.config && !workspaceReady(workspace)) {
+    workspace = firstReadyWorkspace();
+    syncWorkflow = false;
+  }
   rememberCurrentWorkflow();
   state.workspace = workspace;
   const nextHash = workspace === "camera" ? "" : `#${workspace}`;
@@ -5122,6 +5169,10 @@ async function loadConfig() {
   state.config = await api("/api/config");
   fillSelect($("workflowSelect"), visibleWorkflowItems(state.config.workflows));
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
+  applyModuleAvailability();
+  if (!workspaceReady(state.workspace)) {
+    setWorkspace(firstReadyWorkspace(), { syncWorkflow: false });
+  }
   if (state.workspace === "edit") {
     const option = workflowOptionById(state.berniniWorkflowId, "edit") || berniniWorkflowOption() || inpaintWorkflowOption();
     if (option) $("workflowSelect").value = option.value;
