@@ -220,6 +220,14 @@ python scripts/install_camera_lab.py --all
 python scripts/check_setup.py
 ```
 
+On Windows, you can start from the repository root even if Python is not installed:
+
+```powershell
+.\install_camera_lab.ps1
+```
+
+If Python is not installed, this bootstrap script uses `winget` to install Python 3.12, then runs the same module-aware installer. A double-click friendly `install_camera_lab.bat` wrapper is also available.
+
 To inspect or install only selected modules:
 
 ```powershell
