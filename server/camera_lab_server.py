@@ -38,6 +38,15 @@ SUPPORTED_VIDEO_SUFFIXES = VIDEO_UPLOAD_SUFFIXES
 MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
 
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from camera_lab_setup.hardware import detect_hardware
+from camera_lab_setup.modules import MODULES
+from camera_lab_setup.resolver import resolve_modules
+from camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
+
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:
     target = env if env is not None else os.environ
@@ -4280,6 +4289,7 @@ class Handler(BaseHTTPRequestHandler):
                         "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
                         "comfy": comfy,
                         "casting": casting_status(),
+                        "modules": public_modules(),
                     }
                 )
             if parsed.path == "/api/casting/library":
@@ -5120,6 +5130,16 @@ def public_workflows(unavailable_reason: str | None = None) -> list[dict[str, An
         item.update(status)
         items.append(item)
     return items
+
+
+def public_modules() -> dict[str, dict[str, Any]]:
+    try:
+        visibility = visibility_from_object_info(object_info())
+    except Exception:
+        visibility = ComfyVisibility(nodes=frozenset(), models={}, source="offline")
+    hardware = detect_hardware(repo_root=ROOT, comfy_root=COMFY_CONFIG["root"])
+    statuses = resolve_modules(MODULES, hardware, visibility)
+    return {module_id: status.to_dict() for module_id, status in statuses.items()}
 
 
 def history_runs(limit: int = 30) -> list[dict[str, Any]]:
