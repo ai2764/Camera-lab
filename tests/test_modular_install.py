@@ -1,6 +1,9 @@
 from scripts.camera_lab_setup.hardware import detect_hardware
+from scripts.camera_lab_setup.hardware import HardwareProfile
 from scripts.camera_lab_setup.modules import MODULES, ModelRef, get_module, module_ids, selected_modules
+from scripts.camera_lab_setup.resolver import resolve_module
 from scripts.camera_lab_setup.visibility import model_visible, node_visible, visibility_from_object_info
+from scripts.camera_lab_setup.visibility import ComfyVisibility
 
 
 def test_module_registry_contains_user_facing_workspaces():
@@ -74,3 +77,44 @@ def test_visibility_reads_combo_options_from_object_info():
     assert model_visible(visibility, ModelRef("diffusion_models", "model-a.safetensors"))
     assert model_visible(visibility, ModelRef("vae", "vae-a.safetensors"))
     assert not model_visible(visibility, ModelRef("loras", "missing.safetensors"))
+
+
+def test_resolver_marks_director_ready_when_v2_profile_is_visible():
+    director = get_module("director")
+    visibility = ComfyVisibility(
+        nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
+        models={
+            "diffusion_models": frozenset({"ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+            "vae": frozenset({"LTX23_audio_vae_bf16.safetensors", "LTX23_video_vae_bf16.safetensors", "taeltx2_3.safetensors"}),
+            "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
+        },
+        source="test",
+    )
+
+    status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
+
+    assert status.ready is True
+    assert status.profile == "director-v2-distilled-fp8"
+    assert status.recommendation == "recommended"
+    assert status.missing == ()
+
+
+def test_resolver_reports_risky_when_hardware_is_below_profile():
+    camera = get_module("camera")
+    visibility = ComfyVisibility(
+        nodes=frozenset({"LTXVConditioning"}),
+        models={
+            "checkpoints": frozenset({"ltx-2.3-22b-dev-fp8.safetensors"}),
+            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+            "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
+        },
+        source="test",
+    )
+
+    status = resolve_module(camera, HardwareProfile(vram_gb=8), visibility)
+
+    assert status.ready is True
+    assert status.recommendation == "risky"
+    assert any("8 GiB VRAM" in warning for warning in status.warnings)
