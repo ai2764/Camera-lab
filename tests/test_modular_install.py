@@ -188,3 +188,23 @@ def test_camera_has_ltx_gguf_ladder_with_ascending_vrams():
     assert any(m.folder == "text_encoders" and m.name.endswith(".gguf") and m.source_url for m in q2.required_models)
     assert "UnetLoaderGGUF" in q2.required_nodes
     assert "DualCLIPLoaderGGUF" in q2.required_nodes
+
+
+def test_edit_has_bernini_gguf_ladder_with_high_and_low_experts():
+    edit = get_module("edit")
+    ladder = [p for p in edit.model_profiles if p.id.startswith("edit-bernini-gguf")]
+    ids = [p.id for p in ladder]
+    assert ids == ["edit-bernini-gguf-q4m", "edit-bernini-gguf-q5m", "edit-bernini-gguf-q8"]
+    q4 = ladder[0]
+    names = {m.name for m in q4.required_models}
+    assert "bernini_r_high_noise_14B-Q4_K_M.gguf" in names
+    assert "bernini_r_low_noise_14B-Q4_K_M.gguf" in names
+    assert any(m.folder == "text_encoders" and m.name.endswith(".gguf") for m in q4.required_models)
+    assert "UnetLoaderGGUF" in q4.required_nodes
+
+
+def test_motion_scail2_small_is_marked_unavailable_not_faked():
+    motion = get_module("motion")
+    small = next(p for p in motion.model_profiles if p.id == "motion-scail2-small")
+    assert small.required_models == ()  # no public GGUF exists
+    assert "no" in small.notes.lower() and "gguf" in small.notes.lower()

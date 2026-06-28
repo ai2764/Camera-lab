@@ -101,6 +101,39 @@ def _ltx_gguf_profile(
     )
 
 
+WAN_GGUF_NODES = ("UnetLoaderGGUF", "CLIPLoaderGGUF")
+WAN_UMT5_GGUF = ModelRef("text_encoders", "umt5-xxl-encoder-Q5_K_M.gguf",
+                         _hf("city96/umt5-xxl-encoder-gguf", "umt5-xxl-encoder-Q5_K_M.gguf"))
+WAN_VAE = ModelRef("vae", "ComfyUI-WAN/wan_2.1_vae.safetensors")
+
+
+def _bernini_pair(quant: str) -> tuple[ModelRef, ModelRef]:
+    high = f"bernini_r_high_noise_14B-{quant}.gguf"
+    low = f"bernini_r_low_noise_14B-{quant}.gguf"
+    return (
+        ModelRef("diffusion_models", high, _hf("neuregex/Bernini-R-GGUF", high)),
+        ModelRef("diffusion_models", low, _hf("neuregex/Bernini-R-GGUF", low)),
+    )
+
+
+def _bernini_gguf_profile(suffix: str, quant: str, *, min_vram: float, rec_vram: float, disk: float) -> "ModelProfile":
+    return ModelProfile(
+        id=f"edit-bernini-gguf-{suffix}",
+        label=f"WAN2.2 Bernini GGUF {quant}",
+        required_models=(*_bernini_pair(quant), WAN_UMT5_GGUF, WAN_VAE),
+        required_nodes=WAN_GGUF_NODES,
+        min_vram_gb=min_vram,
+        recommended_vram_gb=rec_vram,
+        disk_gb=disk,
+        compatibility="workflow_variant",
+        quantization=f"GGUF {quant}",
+        size="small",
+        workflow_group="WAN Bernini GGUF",
+        compatible_workflows=("wan22_bernini_gguf_i2v.json",),
+        notes="GGUF dual-expert (high+low) variant; loads via ComfyUI-GGUF + ComfyUI-BerniniR.",
+    )
+
+
 def _ltx_gguf_ladder(prefix: str) -> "tuple[ModelProfile, ...]":
     return (
         _ltx_gguf_profile(prefix, "q2", "LTX-2.3-distilled-Q2_K.gguf", min_vram=8, rec_vram=10, disk=22, quant="GGUF Q2_K"),
@@ -282,19 +315,9 @@ MODULES: tuple[CameraLabModule, ...] = (
                 compatible_workflows=("wan_vace_inpainting.ui.json",),
                 notes="Drop-in profile for the bundled VACE inpaint workflow.",
             ),
-            ModelProfile(
-                id="edit-vace14-gguf",
-                label="WAN VACE 14B GGUF",
-                required_models=(ModelRef("diffusion_models", "Wan2.1_14B_VACE-Q4_K_M.gguf"),),
-                min_vram_gb=8,
-                recommended_vram_gb=12,
-                disk_gb=12,
-                compatibility="workflow_variant",
-                quantization="GGUF Q4",
-                size="small",
-                workflow_group="WAN VACE Inpaint",
-                notes="Requires a VACE GGUF loader workflow variant; not drop-in for the bundled FP16 VACE workflow.",
-            ),
+            _bernini_gguf_profile("q4m", "Q4_K_M", min_vram=8, rec_vram=10, disk=22),
+            _bernini_gguf_profile("q5m", "Q5_K_M", min_vram=12, rec_vram=12, disk=24),
+            _bernini_gguf_profile("q8", "Q8_0", min_vram=16, rec_vram=16, disk=33),
         ),
     ),
     CameraLabModule(
@@ -371,7 +394,7 @@ MODULES: tuple[CameraLabModule, ...] = (
                 quantization="unconfirmed",
                 size="small",
                 workflow_group="SCAIL2",
-                notes="No confirmed smaller drop-in SCAIL2 model is registered yet; use reduced frames/resolution until a compatible workflow variant is bundled.",
+                notes="No public GGUF/quantized SCAIL2 model exists yet; reduce frames/resolution until a compatible variant is bundled.",
             ),
         ),
     ),
