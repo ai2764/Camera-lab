@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
+def _hf(repo: str, path: str) -> str:
+    return f"https://huggingface.co/{repo}/resolve/main/{path}"
+
+
 @dataclass(frozen=True)
 class ModelRef:
     folder: str
