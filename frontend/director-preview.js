@@ -14,11 +14,74 @@
   const els = {};
   let timeline = { clips: [], audioClips: [], duration: 0, width: 16, height: 9 };
   let currentTime = 0;
+  let playing = false;
+  let rafId = 0;
+  let lastTs = 0;
+
+  function positionPlayhead() {
+    if (!els.playheadEl) return;
+    const pct = timeline.duration > 0 ? Math.max(0, Math.min(1, currentTime / timeline.duration)) * 100 : 0;
+    els.playheadEl.style.left = `${pct}%`;
+  }
+
+  function tick(ts) {
+    if (!playing) return;
+    if (!lastTs) lastTs = ts;
+    currentTime += (ts - lastTs) / 1000;
+    lastTs = ts;
+    if (currentTime >= timeline.duration) {
+      currentTime = timeline.duration;
+      renderFrame(currentTime);
+      positionPlayhead();
+      pause();
+      return;
+    }
+    renderFrame(currentTime);
+    positionPlayhead();
+    rafId = window.requestAnimationFrame(tick);
+  }
+
+  function play() {
+    if (playing || timeline.duration <= 0) return;
+    if (currentTime >= timeline.duration) currentTime = 0;
+    playing = true;
+    lastTs = 0;
+    if (els.playButtonEl) els.playButtonEl.textContent = "❚❚";
+    rafId = window.requestAnimationFrame(tick);
+  }
+
+  function pause() {
+    playing = false;
+    if (rafId) window.cancelAnimationFrame(rafId);
+    rafId = 0;
+    if (els.playButtonEl) els.playButtonEl.textContent = "▶";
+  }
+
+  function toggle() { playing ? pause() : play(); }
+  function isPlaying() { return playing; }
+
+  function seekFromPointer(clientX) {
+    if (!els.timelineEl || timeline.duration <= 0) return;
+    const rect = els.timelineEl.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    seek(ratio * timeline.duration);
+  }
 
   function mount(nextEls) {
     Object.assign(els, nextEls || {});
     if (els.playerEl && timeline.width && timeline.height) {
       els.playerEl.style.aspectRatio = `${timeline.width} / ${timeline.height}`;
+    }
+    if (els.playButtonEl && !els.playButtonEl._wired) {
+      els.playButtonEl._wired = true;
+      els.playButtonEl.addEventListener("click", toggle);
+    }
+    if (els.timelineEl && !els.timelineEl._wiredSeek) {
+      els.timelineEl._wiredSeek = true;
+      els.timelineEl.addEventListener("pointerdown", (event) => {
+        if (event.target.closest(".director-block, .director-audio-clear, button, input, select, textarea")) return;
+        seekFromPointer(event.clientX);
+      });
     }
   }
 
@@ -61,14 +124,12 @@
   function seek(t) {
     currentTime = Math.max(0, Math.min(Number(t) || 0, timeline.duration));
     renderFrame(currentTime);
+    positionPlayhead();
   }
 
   window.DirectorPreview = {
-    activeClipAt,
-    mount,
-    setTimeline,
-    seek,
-    renderFrame,
-    _state: () => ({ currentTime, timeline }),
+    activeClipAt, mount, setTimeline, seek, renderFrame,
+    play, pause, toggle, isPlaying, seekFromPointer,
+    _state: () => ({ currentTime, timeline, playing }),
   };
 })();

@@ -2408,3 +2408,34 @@ test("director preview shows video, image, and text frames by seek position", as
   await expect(page.locator("#directorPreviewOverlay")).toBeVisible();
   await expect(page.locator("#directorPreviewOverlay")).toHaveText("a quiet street");
 });
+
+test("director preview play toggles state and advances the playhead", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+      playheadEl: document.getElementById("directorPlayhead"),
+      timelineEl: document.querySelector(".director-timeline-shell"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 6, width: 1280, height: 720, audioClips: [],
+      clips: [{ start: 0, duration: 6, kind: "text", src: "", prompt: "x" }],
+    });
+    DirectorPreview.seek(0);
+  });
+
+  const leftAt = () => page.evaluate(() => document.getElementById("directorPlayhead").style.left);
+  await page.evaluate(() => DirectorPreview.seek(3));
+  expect(await leftAt()).toBe("50%");
+
+  await page.evaluate(() => DirectorPreview.play());
+  expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(true);
+  await page.evaluate(() => DirectorPreview.pause());
+  expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(false);
+});

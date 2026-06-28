@@ -3951,3 +3951,15 @@ body.motion-workspace-active .motion-workspace {
   gap: 10px;
   margin-top: 6px;
 }
+
+.director-timeline-shell { position: relative; }
+
+.director-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff5a5a;
+  pointer-events: none;
+  z-index: 5;
+}
