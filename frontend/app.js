@@ -1466,6 +1466,15 @@ function removeDirectorAudioSegment(id) {
   renderDirectorEditor();
 }
 
+function removeDirectorVideoAudioSegment(id) {
+  state.directorVideoAudioSegments = state.directorVideoAudioSegments.filter((item) => item.id !== id);
+  if (state.directorSelectionType === "video_audio" && !state.directorVideoAudioSegments.some((item) => item.id === state.directorSelectedId)) {
+    state.directorSelectionType = "image";
+    state.directorSelectedId = state.directorSegments[0]?.id || "";
+  }
+  renderDirectorEditor();
+}
+
 function removeDirectorIcVideoSegment(id) {
   state.directorIcVideoSegments = state.directorIcVideoSegments.filter((item) => item.id !== id);
   renderDirectorEditor();
@@ -1809,14 +1818,22 @@ function createDirectorVideoAudioBlock(segment, index, total) {
     <span>V${index + 1}</span>
     <div class="director-audio-copy">
       <strong>${escapeHtml(segment.audioName || "Video audio")}</strong>
-      <em>Follows main video guide</em>
+      <em>Extracted audio</em>
     </div>
+    <button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete video audio ${index + 1}">${ACTION_ICONS.delete}</button>
   `;
   const select = () => {
     state.directorSelectedId = segment.id;
     state.directorSelectionType = "video_audio";
     renderDirectorEditor();
   };
+  const clearButton = block.querySelector(".director-audio-clear");
+  if (clearButton) {
+    clearButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeDirectorVideoAudioSegment(segment.id);
+    });
+  }
   block.addEventListener("click", select);
   block.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -2086,6 +2103,7 @@ function renderDirectorVideoAudioInspector(inspector) {
   inspector.innerHTML = `
     <div class="director-inspector-head">
       <span>Selected video audio</span>
+      <button id="removeDirectorVideoAudioBtn" type="button">Remove</button>
     </div>
     <div class="director-segment-audio-card">
       <div class="director-segment-audio-head">
@@ -2122,6 +2140,7 @@ function renderDirectorVideoAudioInspector(inspector) {
     $("directorVideoAudioVolumeReadout").textContent = `${pct}%`;
     updateDirectorVideoAudioSegment(segment.id, { volume: pct / 100 }, false);
   });
+  $("removeDirectorVideoAudioBtn").addEventListener("click", () => removeDirectorVideoAudioSegment(segment.id));
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {

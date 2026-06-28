@@ -1282,6 +1282,36 @@ test("director IC-LoRA dropdown populates from config and feeds the payload", as
   expect(payload.ic_lora_name).toBe("ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors");
 });
 
+test("director video audio clip can be deleted from the timeline", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorVideoAudioSegments = [
+      {
+        id: "vid_aud_del",
+        start: 0,
+        duration: 1,
+        trimStart: 0,
+        audioPath: "tasks/camera_lab_uploads/videos/clip.mp4",
+        audioName: "clip.mp4",
+        audioDuration: 1,
+        volume: 1,
+      },
+    ];
+    renderDirectorEditor();
+  });
+
+  const block = page.locator("#directorVideoAudioTrack .director-video-audio-block");
+  await expect(block).toHaveCount(1);
+  await block.locator(".director-audio-clear").click();
+  await expect(page.locator("#directorVideoAudioTrack .director-video-audio-block")).toHaveCount(0);
+
+  const remaining = await page.evaluate(() => state.directorVideoAudioSegments.length);
+  expect(remaining).toBe(0);
+});
+
 test("director audio volume control feeds gain into the payload", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
