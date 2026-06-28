@@ -1865,6 +1865,58 @@ function createDirectorIcVideoBlock(segment, index, total) {
   return block;
 }
 
+function directorPreviewClips() {
+  return normalizedDirectorSegments().map((segment) => {
+    let kind = "text";
+    let src = "";
+    if (segment.videoPath) { kind = "video"; src = segment.videoPreviewUrl || mediaUrl(segment.videoPath); }
+    else if (segment.imagePath) { kind = "image"; src = segment.imagePreviewUrl || mediaUrl(segment.imagePath); }
+    return {
+      start: segment.start,
+      duration: segment.duration,
+      kind,
+      src,
+      prompt: segment.prompt || "",
+      trimStart: 0,
+    };
+  });
+}
+
+function directorPreviewAudioClips() {
+  const lanes = [...normalizedDirectorVideoAudioSegments(), ...normalizedDirectorAudioSegments()];
+  return lanes
+    .filter((segment) => segment.audioPath)
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+      src: mediaUrl(segment.audioPath),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
+    }));
+}
+
+function syncDirectorPreview() {
+  if (!window.DirectorPreview) return;
+  DirectorPreview.mount({
+    playerEl: $("directorPreview"),
+    videoEl: $("directorPreviewVideo"),
+    imageEl: $("directorPreviewImage"),
+    overlayEl: $("directorPreviewOverlay"),
+    playButtonEl: $("directorPreviewPlay"),
+    timeReadoutEl: $("directorPreviewTime"),
+    playheadEl: $("directorPlayhead"),
+    timelineEl: document.querySelector(".director-timeline-shell"),
+  });
+  const size = currentSize();
+  DirectorPreview.setTimeline({
+    clips: directorPreviewClips(),
+    audioClips: directorPreviewAudioClips(),
+    duration: directorTotalSeconds(),
+    width: size.width,
+    height: size.height,
+  });
+}
+
 function renderDirectorEditor() {
   const track = $("directorTrack");
   const audioTrack = $("directorAudioTrack");
@@ -1942,6 +1994,7 @@ function renderDirectorEditor() {
     list.appendChild(chip);
   });
   renderDirectorInspector();
+  syncDirectorPreview();
 }
 
 function renderDirectorInspector() {

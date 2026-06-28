@@ -2477,3 +2477,23 @@ test("director preview drives audio clips at their volume by playhead position",
   expect(a2.find((a) => a.start === 3).active).toBe(true);
   expect(a2.find((a) => a.start === 3).volume).toBeCloseTo(1.0, 5);
 });
+
+test("director editor feeds the preview from timeline state", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [
+      { id: "p1", start: 0, duration: 2, prompt: "opening shot", strength: 0.7 },
+    ];
+    state.directorAudioSegments = [];
+    state.directorVideoAudioSegments = [];
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => DirectorPreview.seek(1));
+  await expect(page.locator("#directorPreviewOverlay")).toBeVisible();
+  await expect(page.locator("#directorPreviewOverlay")).toHaveText("opening shot");
+  const st = await page.evaluate(() => DirectorPreview._state());
+  expect(st.timeline.duration).toBeGreaterThan(0);
+});
