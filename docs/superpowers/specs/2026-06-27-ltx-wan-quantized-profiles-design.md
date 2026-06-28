@@ -46,6 +46,10 @@ path keeps the existing distilled / lightx2v LoRAs unchanged. The substitution
 is intentionally narrow: swap the large diffusion model FP8→GGUF, swap the
 text encoder to a GGUF variant with a GGUF loader node, and keep everything else.
 
+**Quantization is a VRAM-keyed ladder, not a single tier.** Each family
+registers multiple quant profiles spanning quant levels, and the resolver
+recommends the highest-quality tier that fits the user's actually-detected VRAM.
+
 ## Verified Findings (research, 2026-06-27)
 
 These confirm the design rests on real artifacts. Exact filenames/sizes are
@@ -78,25 +82,38 @@ re-verified per-file during implementation.
 
 ## Deliverables
 
-1. **Registry corrections + verified quant profiles** in
+1. **Registry corrections + verified quant ladders** in
    `scripts/camera_lab_setup/modules.py`:
-   - LTX quant profile (`camera` + `director`): correct GGUF filename + real
-     `source_url`, verified `disk_gb`, and `min_vram_gb`/`recommended_vram_gb`
-     driven by the **verified text-encoder GGUF**, not the diffusion model.
-   - WAN/Bernini quant profile (`edit`): Bernini-R-GGUF filenames + sources,
-     verified disk/VRAM.
+   - LTX quant **ladder** (`camera` + `director`): multiple profiles across
+     quant levels (e.g. Q8_0 / Q4_K_M / Q4_K_S, and a Q3/Q2 8GB tier only if a
+     loadable quantized Gemma makes it fit). Each tier has correct GGUF filename
+     + real `source_url`, verified `disk_gb`, and `min_vram_gb`/
+     `recommended_vram_gb` set from the **combined (diffusion GGUF + text-encoder
+     GGUF) footprint** — the text encoder, not the diffusion model, sets the
+     floor.
+   - WAN/Bernini quant **ladder** (`edit`): Bernini-R-GGUF tiers (e.g. Q5_K_M /
+     Q4_K_M) with filenames + sources, verified disk/VRAM.
    - Each quant profile lists its GGUF `required_nodes`
      (`ComfyUI-GGUF`, plus `ComfyUI-BerniniR` for Bernini).
    - `motion`/SCAIL2: explicitly marked "no quantized variant available";
      resolver continues to report `risky` for 8GB with a clear reason.
-2. **GGUF workflow variants** under `workflows/`: one LTX, one WAN/Bernini,
+2. **VRAM-aware resolver tier selection** in
+   `scripts/camera_lab_setup/resolver.py`: among the *ready* quant profiles of a
+   module, select the highest-quality tier whose `min_vram_gb ≤ detected VRAM`;
+   if none fit, select the smallest tier and mark `risky` with a reason. This
+   replaces the current "last ready profile wins" selection and is what makes
+   "recommend by actual VRAM" work. FP8 and quant profiles coexist; the fitting
+   logic spans both.
+3. **GGUF workflow variants** under `workflows/`: one LTX, one WAN/Bernini,
    cloned from the existing FP8 workflow with the loader nodes swapped
    (`UNETLoader`→`UnetLoaderGGUF`, CLIP loader→GGUF variant) and model
-   references pointed at the registered GGUF filenames.
-3. **Verification tests** (`tests/`): assert every quant profile's model
-   `source_url` is reachable (HTTP HEAD), and that each GGUF workflow variant
-   only references nodes and model filenames present in the registry / a mocked
-   `object_info` exposing the GGUF loader nodes.
+   references pointed at the registered GGUF filenames. One variant per family
+   serves the whole ladder (the loader reads whichever GGUF file is present).
+4. **Verification tests** (`tests/`): assert every quant profile's model
+   `source_url` is reachable (HTTP HEAD); that each GGUF workflow variant only
+   references nodes and model filenames present in the registry / a mocked
+   `object_info` exposing the GGUF loader nodes; and that the resolver picks the
+   correct tier across a band of VRAM sizes (8/12/16/24GB).
 
 ## Verification Bar ("accurate" defined)
 
@@ -112,16 +129,19 @@ ceiling, and any setup-wizard UI (that is sub-project A).
 ## Architecture & Reuse
 
 No new packages. Changes are confined to:
-- `scripts/camera_lab_setup/modules.py` — data only (profiles, filenames,
-  URLs, VRAM/disk, `required_nodes`).
-- `workflows/` — two new GGUF workflow JSON variants.
-- `tests/` — URL-reachability and workflow/registry-consistency checks.
+- `scripts/camera_lab_setup/modules.py` — quant ladder data (profiles,
+  filenames, URLs, VRAM/disk, `required_nodes`).
+- `scripts/camera_lab_setup/resolver.py` — VRAM-aware tier selection among
+  ready profiles (the one behavioral change).
+- `workflows/` — two new GGUF workflow JSON variants (one per family).
+- `tests/` — URL-reachability, workflow/registry-consistency, and tier-selection
+  checks.
 
-The existing `resolver.py`, `visibility.py`, `hardware.py`, and storage/download
-logic already consume these profiles; correctly registered quant profiles will
-flip 8–12GB GPUs to `recommended` for `camera`/`director`/`edit` with no resolver
-changes. The `edit-vace14-gguf` / `camera-ltx23-gguf-q4` stubs are replaced by
-the verified profiles.
+`visibility.py`, `hardware.py`, and the storage/download logic already consume
+these profiles unchanged. Correctly registered quant ladders plus the resolver's
+fit-to-VRAM selection flip 8–12GB GPUs to `recommended` for
+`camera`/`director`/`edit`. The `edit-vace14-gguf` / `camera-ltx23-gguf-q4`
+stubs are replaced by the verified ladders.
 
 ## Data Flow
 
@@ -140,9 +160,11 @@ modules.py quant profile (verified GGUF model + GGUF text encoder + nodes)
 - Workflow/registry consistency: parse each GGUF workflow variant; every model
   filename it loads exists in the matching quant profile; every loader node it
   uses is a known GGUF node.
-- Resolver behavior: with a mocked `object_info` exposing the GGUF nodes and
-  models, an 8GB `HardwareProfile` resolves `camera`/`director`/`edit` to
-  `recommended` on the quant profile; `motion` stays `risky` with its reason.
+- Resolver tier selection: with a mocked `object_info` exposing the GGUF nodes
+  and models, sweep `HardwareProfile` VRAM across 8/12/16/24GB and assert the
+  resolver picks the highest-quality fitting quant tier for
+  `camera`/`director`/`edit` (and `recommended` vs `risky` accordingly);
+  `motion` stays `risky` with its reason.
 
 ## Risks & Honest Gaps
 
