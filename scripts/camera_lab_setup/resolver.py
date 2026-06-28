@@ -88,9 +88,6 @@ def resolve_module(
         return ModuleStatus(module.id, module.label, True, not missing, None, recommendation, missing, ())
 
     candidates = [(profile, _profile_missing(module, profile, visibility)) for profile in module.model_profiles]
-    drop_in_candidates = [(profile, missing) for profile, missing in candidates if profile.compatibility == "drop_in"]
-    if not drop_in_candidates:
-        drop_in_candidates = candidates
 
     ready_candidates = [(profile, missing) for profile, missing in candidates if not missing]
     if ready_candidates:
