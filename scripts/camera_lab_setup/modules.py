@@ -91,7 +91,7 @@ def _ltx_gguf_profile(
         quantization=quant,
         size="small",
         workflow_group="LTX Camera GGUF",
-        compatible_workflows=("ltx23_gguf_i2v_nag_extend.json",),
+        compatible_workflows=("ltx23_gguf_ia2v_nag_extend.json",),
         notes=(
             "GGUF low-VRAM variant; loads via ComfyUI-GGUF + ComfyUI-KJNodes. "
             "Text encoder (Gemma QAT) sets the VRAM floor. "
@@ -149,8 +149,8 @@ MODULES: tuple[CameraLabModule, ...] = (
         description="Standard LTX image/video generation workflows.",
         frontend_workspace="camera",
         workflows=(
-            "ltx23_nag_i2v_extendcrop_general.json",
             "ltx23_nag_ia2v_extendcrop_general.json",
+            "ltx23_gguf_ia2v_nag_extend.json",
             "ltx23_flf_ia2v_nag_extend.json",
             "ltx23_flf_subtitle_cleaner_nag_extend.json",
             "ltx23_i2v_subtitle_cleaner_nag_extend.json",
