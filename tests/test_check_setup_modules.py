@@ -5,7 +5,7 @@ from scripts.camera_lab_setup.visibility import visibility_from_object_info
 from scripts import check_setup
 
 
-def test_director_check_uses_object_info_model_visibility():
+def test_director_check_does_not_treat_v2_object_info_as_mvp_ready():
     visibility = visibility_from_object_info(
         {
             "LTXDirector": {"input": {"required": {}}},
@@ -41,8 +41,10 @@ def test_director_check_uses_object_info_model_visibility():
 
     status = resolve_module(get_module("director"), HardwareProfile(vram_gb=24), visibility)
 
-    assert status.ready is True
-    assert status.profile == "director-v2-distilled-fp8"
+    assert status.ready is False
+    assert status.profile == "director-v1-ltx23-fp8"
+    assert "ltx-2.3-22b-dev-fp8.safetensors" in status.missing
+    assert any("director-v2-distilled-fp8" in warning for warning in status.warnings)
 
 
 def test_check_setup_filters_workflow_names_by_module():

@@ -57,6 +57,22 @@ def _hardware_recommendation(profile: ModelProfile, hardware: HardwareProfile, r
     return "recommended", ()
 
 
+def _variant_warnings(
+    module: CameraLabModule, profiles: Iterable[tuple[ModelProfile, tuple[str, ...]]]
+) -> tuple[str, ...]:
+    warnings: list[str] = []
+    for profile, missing in profiles:
+        if profile.compatibility == "drop_in" or missing:
+            continue
+        detail = f"{profile.id} is installed but requires {profile.compatibility}"
+        if profile.notes:
+            detail = f"{detail}: {profile.notes}"
+        else:
+            detail = f"{detail}: current bundled {module.label} workflows cannot use it directly."
+        warnings.append(detail)
+    return tuple(warnings)
+
+
 def resolve_module(
     module: CameraLabModule,
     hardware: HardwareProfile,
@@ -72,14 +88,20 @@ def resolve_module(
         return ModuleStatus(module.id, module.label, True, not missing, None, recommendation, missing, ())
 
     candidates = [(profile, _profile_missing(module, profile, visibility)) for profile in module.model_profiles]
-    ready_candidates = [(profile, missing) for profile, missing in candidates if not missing]
+    drop_in_candidates = [(profile, missing) for profile, missing in candidates if profile.compatibility == "drop_in"]
+    if not drop_in_candidates:
+        drop_in_candidates = candidates
+
+    ready_candidates = [(profile, missing) for profile, missing in drop_in_candidates if not missing]
     if ready_candidates:
         profile, missing = ready_candidates[-1]
     else:
-        profile, missing = min(candidates, key=lambda item: len(item[1]))
+        profile, missing = min(drop_in_candidates, key=lambda item: len(item[1]))
 
     ready = not missing
-    recommendation, warnings = _hardware_recommendation(profile, hardware, ready)
+    recommendation, hardware_warnings = _hardware_recommendation(profile, hardware, ready)
+    variant_warnings = _variant_warnings(module, candidates)
+    warnings = (*hardware_warnings, *variant_warnings)
     required_nodes = (*module.required_nodes, *profile.required_nodes)
     if missing and any(item in missing for item in required_nodes):
         recommendation = "unavailable"

@@ -19,6 +19,7 @@ def test_director_profiles_include_v1_and_v2_models():
     profile_ids = {profile.id for profile in director.model_profiles}
     assert {"director-v1-ltx23-fp8", "director-v2-distilled-fp8"} <= profile_ids
     v2 = next(profile for profile in director.model_profiles if profile.id == "director-v2-distilled-fp8")
+    assert v2.compatibility == "workflow_variant"
     assert any(
         model.folder == "diffusion_models"
         and model.name == "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"
@@ -80,7 +81,29 @@ def test_visibility_reads_combo_options_from_object_info():
     assert not model_visible(visibility, ModelRef("loras", "missing.safetensors"))
 
 
-def test_resolver_marks_director_ready_when_v2_profile_is_visible():
+def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
+    director = get_module("director")
+    visibility = ComfyVisibility(
+        nodes=frozenset({"LTXDirector", "LTXDirectorGuide"}),
+        models={
+            "checkpoints": frozenset({"ltx-2.3-22b-dev-fp8.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+            "vae": frozenset({"LTX23_audio_vae_bf16.safetensors", "LTX23_video_vae_bf16.safetensors", "taeltx2_3.safetensors"}),
+            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
+            "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
+        },
+        source="test",
+    )
+
+    status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
+
+    assert status.ready is True
+    assert status.profile == "director-v1-ltx23-fp8"
+    assert status.recommendation == "recommended"
+    assert status.missing == ()
+
+
+def test_resolver_does_not_auto_select_workflow_variant_profiles():
     director = get_module("director")
     visibility = ComfyVisibility(
         nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
@@ -95,10 +118,10 @@ def test_resolver_marks_director_ready_when_v2_profile_is_visible():
 
     status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
 
-    assert status.ready is True
-    assert status.profile == "director-v2-distilled-fp8"
-    assert status.recommendation == "recommended"
-    assert status.missing == ()
+    assert status.ready is False
+    assert status.profile == "director-v1-ltx23-fp8"
+    assert "ltx-2.3-22b-dev-fp8.safetensors" in status.missing
+    assert any("director-v2-distilled-fp8" in warning for warning in status.warnings)
 
 
 def test_resolver_reports_risky_when_hardware_is_below_profile():
@@ -127,3 +150,12 @@ def test_workflow_sources_can_filter_by_module():
     assert len(sources) == 1
     assert sources[0][0] == "app"
     assert sources[0][2] == ("ltx_director_reference_mvp.json",)
+
+
+def test_workflow_variant_profiles_are_visible_for_installer_guidance():
+    camera = get_module("camera")
+    profile = next(item for item in camera.model_profiles if item.id == "camera-ltx23-gguf-q4")
+
+    assert profile.compatibility == "workflow_variant"
+    assert profile.quantization == "GGUF Q4"
+    assert "GGUF loader" in profile.notes

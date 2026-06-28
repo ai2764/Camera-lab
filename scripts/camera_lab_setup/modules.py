@@ -20,6 +20,12 @@ class ModelProfile:
     recommended_vram_gb: float | None = None
     disk_gb: float = 0.0
     features: tuple[str, ...] = ()
+    compatibility: str = "drop_in"
+    quantization: str = ""
+    size: str = ""
+    workflow_group: str = ""
+    compatible_workflows: tuple[str, ...] = ()
+    notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,31 @@ MODULES: tuple[CameraLabModule, ...] = (
                 min_vram_gb=16,
                 recommended_vram_gb=24,
                 disk_gb=39,
+                quantization="FP8",
+                size="large",
+                workflow_group="LTX Camera",
+                compatible_workflows=(
+                    "LTX 2.3 checkpoint workflows",
+                    "LTX 2.3 FLF/FML workflows",
+                ),
+                notes="Drop-in profile for checkpoint-based LTX 2.3 app workflows.",
+            ),
+            ModelProfile(
+                id="camera-ltx23-gguf-q4",
+                label="LTX 2.3 GGUF Q4",
+                required_models=(
+                    ModelRef("diffusion_models", "LTXvideo/LTX-2/quantstack/LTX-2.3-distilled-Q4_K_S.gguf"),
+                    ModelRef("text_encoders", "gemma-3-12b-it-Q2_K.gguf"),
+                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
+                ),
+                min_vram_gb=8,
+                recommended_vram_gb=12,
+                disk_gb=20,
+                compatibility="workflow_variant",
+                quantization="GGUF Q4",
+                size="small",
+                workflow_group="LTX Camera",
+                notes="Requires a GGUF loader workflow variant; not drop-in for bundled checkpoint/UNET workflows.",
             ),
         ),
     ),
@@ -94,6 +125,11 @@ MODULES: tuple[CameraLabModule, ...] = (
                 min_vram_gb=16,
                 recommended_vram_gb=24,
                 disk_gb=42,
+                quantization="FP8",
+                size="large",
+                workflow_group="LTX Director",
+                compatible_workflows=("ltx_director_reference_mvp.json",),
+                notes="Drop-in profile for the bundled Director Reference MVP workflow.",
             ),
             ModelProfile(
                 id="director-v2-distilled-fp8",
@@ -111,6 +147,14 @@ MODULES: tuple[CameraLabModule, ...] = (
                 recommended_vram_gb=24,
                 disk_gb=36,
                 features=("timeline-video", "audio-inpaint"),
+                compatibility="workflow_variant",
+                quantization="FP8 scaled transformer",
+                size="large",
+                workflow_group="LTX Director v2",
+                notes=(
+                    "Requires a Director v2 workflow with UNET/text/VAE loader wiring and "
+                    "LTXDirectorCropGuides; not drop-in for ltx_director_reference_mvp.json."
+                ),
             ),
         ),
     ),
@@ -133,10 +177,55 @@ MODULES: tuple[CameraLabModule, ...] = (
         ),
         model_profiles=(
             ModelProfile(
-                id="edit-existing-wan",
-                label="Existing WAN models",
+                id="edit-bernini-fp8",
+                label="WAN2.2 Bernini FP8",
+                required_models=(
+                    ModelRef("diffusion_models", "kijai-WAN2.2/Wan22_Bernini_HIGH_fp8_e4m3fn_scaled.safetensors"),
+                    ModelRef("diffusion_models", "kijai-WAN2.2/Wan22_Bernini_LOW_fp8_e4m3fn_scaled.safetensors"),
+                    ModelRef("loras", "wan2.2 lora/wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors"),
+                    ModelRef("loras", "wan2.2 lora/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors"),
+                    ModelRef("text_encoders", "ComfyUI-WAN/umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+                    ModelRef("vae", "ComfyUI-WAN/wan_2.1_vae.safetensors"),
+                ),
                 min_vram_gb=16,
                 recommended_vram_gb=24,
+                disk_gb=42,
+                quantization="FP8",
+                size="large",
+                workflow_group="WAN Bernini",
+                notes="Bundled Bernini workflows require both HIGH and LOW FP8 models; LOW is not a standalone small profile.",
+            ),
+            ModelProfile(
+                id="edit-vace14-fp16",
+                label="WAN VACE 14B FP16 Inpaint",
+                required_models=(
+                    ModelRef("diffusion_models", "wan2.1_vace_14B_fp16.safetensors"),
+                    ModelRef("loras", "Wan21_CausVid_14B_T2V_lora_rank32.safetensors"),
+                    ModelRef("text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+                    ModelRef("vae", "wan_2.1_vae.safetensors"),
+                    ModelRef("checkpoints", "sam3.1_multiplex_fp16.safetensors"),
+                ),
+                min_vram_gb=16,
+                recommended_vram_gb=24,
+                disk_gb=35,
+                quantization="FP16 model, FP8 text encoder",
+                size="large",
+                workflow_group="WAN VACE Inpaint",
+                compatible_workflows=("wan_vace_inpainting.ui.json",),
+                notes="Drop-in profile for the bundled VACE inpaint workflow.",
+            ),
+            ModelProfile(
+                id="edit-vace14-gguf",
+                label="WAN VACE 14B GGUF",
+                required_models=(ModelRef("diffusion_models", "Wan2.1_14B_VACE-Q4_K_M.gguf"),),
+                min_vram_gb=8,
+                recommended_vram_gb=12,
+                disk_gb=12,
+                compatibility="workflow_variant",
+                quantization="GGUF Q4",
+                size="small",
+                workflow_group="WAN VACE Inpaint",
+                notes="Requires a VACE GGUF loader workflow variant; not drop-in for the bundled FP16 VACE workflow.",
             ),
         ),
     ),
@@ -146,7 +235,38 @@ MODULES: tuple[CameraLabModule, ...] = (
         description="Script, voice library, and optional TTS preparation.",
         frontend_workspace="casting",
         workflows=(),
-        model_profiles=(ModelProfile(id="casting-local", label="Local voice library"),),
+        model_profiles=(
+            ModelProfile(
+                id="casting-local",
+                label="Local voice library",
+                size="small",
+                workflow_group="Casting",
+                notes="No ComfyUI model is required for the voice library and script preparation tools.",
+            ),
+            ModelProfile(
+                id="casting-cosyvoice3-05b",
+                label="CosyVoice3 0.5B",
+                min_vram_gb=6,
+                recommended_vram_gb=8,
+                disk_gb=3,
+                quantization="native",
+                size="small",
+                workflow_group="Casting TTS",
+                notes="Compatible with the local Python TTS path when COSYVOICE_MODEL_DIR points at the model directory.",
+            ),
+            ModelProfile(
+                id="casting-cosyvoice3-mlx-4bit",
+                label="CosyVoice3 0.5B MLX 4-bit",
+                min_vram_gb=4,
+                recommended_vram_gb=6,
+                disk_gb=2,
+                compatibility="backend_variant",
+                quantization="MLX 4-bit",
+                size="small",
+                workflow_group="Casting TTS",
+                notes="Requires an MLX backend; not compatible with the current Windows/Python TTS runner.",
+            ),
+        ),
     ),
     CameraLabModule(
         id="motion",
@@ -157,10 +277,33 @@ MODULES: tuple[CameraLabModule, ...] = (
         required_nodes=("HYMotionGenerate",),
         model_profiles=(
             ModelProfile(
-                id="motion-existing-scail",
-                label="Existing HY-Motion/SCAIL2 models",
+                id="motion-scail2-wan14-fp8",
+                label="SCAIL2 WAN 14B FP8",
+                required_models=(
+                    ModelRef("diffusion_models", "wan2.1_14B_SCAIL_2_fp8_scaled.safetensors"),
+                    ModelRef("loras", "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"),
+                    ModelRef("text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+                    ModelRef("vae", "wan_2.1_vae.safetensors"),
+                ),
                 min_vram_gb=16,
                 recommended_vram_gb=24,
+                disk_gb=24,
+                quantization="FP8 model, BF16 LoRA",
+                size="large",
+                workflow_group="SCAIL2",
+                compatible_workflows=("scail2_video.api.json",),
+                notes="Drop-in profile for the bundled SCAIL2 workflow; CLIP Vision H is also required by the workflow.",
+            ),
+            ModelProfile(
+                id="motion-scail2-small",
+                label="SCAIL2 low VRAM variant",
+                min_vram_gb=8,
+                recommended_vram_gb=12,
+                compatibility="workflow_variant",
+                quantization="unconfirmed",
+                size="small",
+                workflow_group="SCAIL2",
+                notes="No confirmed smaller drop-in SCAIL2 model is registered yet; use reduced frames/resolution until a compatible workflow variant is bundled.",
             ),
         ),
     ),

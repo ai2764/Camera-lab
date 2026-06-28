@@ -15,7 +15,7 @@ from camera_lab_common import (
     python_executable,
 )
 from camera_lab_setup.hardware import detect_hardware
-from camera_lab_setup.modules import MODULES, module_ids
+from camera_lab_setup.modules import MODULES, CameraLabModule, ModelProfile, module_ids, selected_modules
 
 
 def run(command: list[str]) -> None:
@@ -30,9 +30,43 @@ def parse_modules(raw: str | None, all_modules: bool) -> list[str] | None:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _profile_vram(profile: ModelProfile) -> str:
+    if profile.min_vram_gb is None and profile.recommended_vram_gb is None:
+        return "VRAM: any"
+    if profile.min_vram_gb is None:
+        return f"VRAM: recommended {profile.recommended_vram_gb:g} GiB"
+    if profile.recommended_vram_gb is None:
+        return f"VRAM: min {profile.min_vram_gb:g} GiB"
+    return f"VRAM: min {profile.min_vram_gb:g} GiB, recommended {profile.recommended_vram_gb:g} GiB"
+
+
+def print_profile_plan(modules: list[CameraLabModule]) -> None:
+    print("Model profiles:")
+    for module in modules:
+        print(f"  {module.id}: {module.label}")
+        if not module.model_profiles:
+            print("    - no model profile required")
+            continue
+        for profile in module.model_profiles:
+            details = [
+                f"compatibility={profile.compatibility}",
+                _profile_vram(profile),
+            ]
+            if profile.quantization:
+                details.append(f"quantization={profile.quantization}")
+            if profile.size:
+                details.append(f"size={profile.size}")
+            if profile.disk_gb:
+                details.append(f"disk~{profile.disk_gb:g} GB")
+            print(f"    - {profile.id}: {profile.label} ({'; '.join(details)})")
+            if profile.notes:
+                print(f"      {profile.notes}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install Camera Lab with optional modules.")
     parser.add_argument("--list-modules", action="store_true", help="List installable modules and exit.")
+    parser.add_argument("--list-profiles", action="store_true", help="List workflow-compatible model profiles and exit.")
     parser.add_argument("--modules", help="Comma-separated module ids to install.")
     parser.add_argument("--all", action="store_true", help="Install all modules.")
     parser.add_argument("--skip-node", action="store_true", help="Skip npm install.")
@@ -46,6 +80,12 @@ def main() -> int:
         return 0
 
     selected = parse_modules(args.modules, args.all)
+    modules_for_install = selected_modules(selected)
+
+    if args.list_profiles:
+        print_profile_plan(modules_for_install)
+        return 0
+
     hardware = detect_hardware(repo_root=REPO_ROOT, comfy_root=comfy_root_from_env())
     print(
         f"Hardware: GPU={hardware.gpu_name or 'unknown'}, "
@@ -53,6 +93,7 @@ def main() -> int:
     )
     for warning in hardware.warnings:
         print(f"Warning: {warning}", file=sys.stderr)
+    print_profile_plan(modules_for_install)
 
     if not ENV_PATH.exists():
         if not ENV_EXAMPLE_PATH.exists():
