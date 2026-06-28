@@ -2,10 +2,13 @@
 param(
     [switch]$All,
     [switch]$ListModules,
+    [switch]$ListProfiles,
     [string]$Modules,
     [switch]$SkipNode,
     [switch]$InstallPlaywrightBrowser,
-    [switch]$SkipWorkflowInstall
+    [switch]$SkipWorkflowInstall,
+    [switch]$SkipModelDownload,
+    [switch]$Yes
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,16 +64,23 @@ if (!$python) {
 $installerArgs = @("scripts/install_camera_lab.py")
 if ($ListModules) {
     $installerArgs += "--list-modules"
-} elseif ($Modules) {
-    $installerArgs += @("--modules", $Modules)
-} elseif ($All) {
-    $installerArgs += "--all"
 } else {
-    $installerArgs += "--all"
+    if ($ListProfiles) {
+        $installerArgs += "--list-profiles"
+    }
+    if ($Modules) {
+        $installerArgs += @("--modules", $Modules)
+    } elseif ($All) {
+        $installerArgs += "--all"
+    } elseif (!$ListProfiles) {
+        $installerArgs += "--all"
+    }
 }
 if ($SkipNode) { $installerArgs += "--skip-node" }
 if ($InstallPlaywrightBrowser) { $installerArgs += "--install-playwright-browser" }
 if ($SkipWorkflowInstall) { $installerArgs += "--skip-workflow-install" }
+if ($SkipModelDownload) { $installerArgs += "--skip-model-download" }
+if ($Yes) { $installerArgs += "--yes" }
 
 $pythonCommand = $python[0]
 $pythonPrefixArgs = @()

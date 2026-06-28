@@ -13,6 +13,9 @@ def test_windows_bootstrap_installs_python_before_running_installer():
     assert "winget install" in text
     assert "scripts/install_camera_lab.py" in text
     assert "--all" in text
+    assert "--list-profiles" in text
+    assert "--skip-model-download" in text
+    assert "--yes" in text
     assert "$python = @(Resolve-CameraLabPython)" in text
 
 

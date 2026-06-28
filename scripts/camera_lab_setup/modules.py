@@ -8,6 +8,7 @@ from typing import Iterable
 class ModelRef:
     folder: str
     name: str
+    source_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -199,11 +200,31 @@ MODULES: tuple[CameraLabModule, ...] = (
                 id="edit-vace14-fp16",
                 label="WAN VACE 14B FP16 Inpaint",
                 required_models=(
-                    ModelRef("diffusion_models", "wan2.1_vace_14B_fp16.safetensors"),
-                    ModelRef("loras", "Wan21_CausVid_14B_T2V_lora_rank32.safetensors"),
-                    ModelRef("text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
-                    ModelRef("vae", "wan_2.1_vae.safetensors"),
-                    ModelRef("checkpoints", "sam3.1_multiplex_fp16.safetensors"),
+                    ModelRef(
+                        "diffusion_models",
+                        "wan2.1_vace_14B_fp16.safetensors",
+                        "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_vace_14B_fp16.safetensors",
+                    ),
+                    ModelRef(
+                        "loras",
+                        "Wan21_CausVid_14B_T2V_lora_rank32.safetensors",
+                        "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_CausVid_14B_T2V_lora_rank32.safetensors",
+                    ),
+                    ModelRef(
+                        "text_encoders",
+                        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+                        "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors?download=true",
+                    ),
+                    ModelRef(
+                        "vae",
+                        "wan_2.1_vae.safetensors",
+                        "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
+                    ),
+                    ModelRef(
+                        "checkpoints",
+                        "sam3.1_multiplex_fp16.safetensors",
+                        "https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors",
+                    ),
                 ),
                 min_vram_gb=16,
                 recommended_vram_gb=24,
