@@ -173,6 +173,50 @@ def test_director_ic_loras_handles_missing_object_info(monkeypatch):
     assert server.director_ic_loras() == ["None"]
 
 
+def test_director_audio_segments_carry_volume():
+    segs = server.director_audio_segments_from_payload(
+        {
+            "audio_segments": [
+                {"audio_path": "a.wav", "start": 0, "duration": 1.0, "volume": 0.4},
+                {"audio_path": "b.wav", "start": 1.0, "duration": 1.0},
+                {"audio_path": "c.wav", "start": 2.0, "duration": 1.0, "volume": 0},
+            ]
+        }
+    )
+    assert segs[0]["volume"] == 0.4
+    assert segs[1]["volume"] == 1.0  # default when omitted
+    assert segs[2]["volume"] == 0.0  # explicit mute is preserved
+
+
+def test_stage_director_audio_copies_at_unity_gain(tmp_path):
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFFdata")
+    dst = tmp_path / "out.wav"
+    calls = []
+
+    server.stage_director_audio(src, dst, 1.0, runner=lambda *a, **k: calls.append(a))
+
+    assert dst.read_bytes() == b"RIFFdata"
+    assert calls == []  # no ffmpeg at unity gain
+
+
+def test_stage_director_audio_applies_ffmpeg_gain(tmp_path):
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFFdata")
+    dst = tmp_path / "out.wav"
+    captured = {}
+
+    def fake_runner(cmd, **kwargs):
+        captured["cmd"] = cmd
+        dst.write_bytes(b"gained")
+
+    server.stage_director_audio(src, dst, 0.5, runner=fake_runner)
+
+    assert "-vn" in captured["cmd"]
+    assert any("volume=0.500" in str(part) for part in captured["cmd"])
+    assert dst.read_bytes() == b"gained"
+
+
 def test_v2_builder_keeps_distilled_unet_and_no_lora(monkeypatch, sample_run):
     _stub_builder_graph(monkeypatch)
     monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})

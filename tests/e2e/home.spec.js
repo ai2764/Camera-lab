@@ -1282,6 +1282,42 @@ test("director IC-LoRA dropdown populates from config and feeds the payload", as
   expect(payload.ic_lora_name).toBe("ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors");
 });
 
+test("director audio volume control feeds gain into the payload", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorAudioSegments = [
+      {
+        id: "aud_vol",
+        start: 0,
+        duration: 1,
+        trimStart: 0,
+        audioPath: "fixtures/line.wav",
+        audioName: "line.wav",
+        audioDuration: 1,
+        volume: 1,
+      },
+    ];
+    state.directorSelectedId = "aud_vol";
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    const el = document.getElementById("directorAudioVolume");
+    el.value = "40";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await expect(page.locator("#directorAudioVolumeReadout")).toHaveText("40%");
+
+  const payload = await page.evaluate(() => collectPayload());
+  const seg = payload.audio_segments.find((item) => item.id === "aud_vol");
+  expect(seg.volume).toBeCloseTo(0.4, 5);
+});
+
 test("director segment remove controls delete from timeline and inspector", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);

@@ -1161,14 +1161,33 @@ def director_audio_segments_from_payload(payload: dict[str, Any], fps: int = 24)
         if length_frames is None:
             length_frames = round(max(0.25, float(raw.get("duration") or 1.0)) * fps)
         trim_start = raw.get("trimStart", raw.get("trim_start", 0))
+        raw_volume = raw.get("volume", 1.0)
+        volume = 1.0 if raw_volume is None else max(0.0, min(4.0, float(raw_volume)))
         segments.append({
             "id": str(raw.get("id") or f"camera-lab-audio-{index}"),
             "audio_path": audio_path,
             "start": max(0, int(start_frame)),
             "length": max(1, int(length_frames)),
             "trimStart": max(0, int(trim_start or 0)),
+            "volume": volume,
         })
     return segments
+
+
+def stage_director_audio(src: Path, dst: Path, volume: float = 1.0, runner: Any = subprocess.run) -> None:
+    """Stage one director audio clip into ComfyUI input, scaled by `volume`
+    (1.0 = unchanged). Gained clips are re-rendered audio-only via ffmpeg so a
+    video source contributes just its scaled audio track; the LTXDirector node
+    then sums the already-scaled clips."""
+    if abs(float(volume) - 1.0) < 1e-3:
+        shutil.copy2(src, dst)
+        return
+    runner(
+        ["ffmpeg", "-y", "-i", str(src), "-vn", "-filter:a", f"volume={float(volume):.3f}", str(dst)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def director_motion_segments_from_payload(payload: dict[str, Any], fps: int = 24) -> list[dict[str, Any]]:
@@ -1342,8 +1361,14 @@ def director_timeline_audio_segments(run: dict[str, Any], timeline: dict[str, An
         src = Path(str(raw_path))
         if not src.exists():
             raise FileNotFoundError(f"Director audio segment file is missing: {src}")
-        name = f"{run['run_id']}_segaudio_{index:02d}_{safe_filename(src.name)}"
-        shutil.copy2(src, COMFY_INPUT / name)
+        raw_volume = segment.get("volume", 1.0)
+        volume = 1.0 if raw_volume is None else float(raw_volume)
+        gained = abs(volume - 1.0) >= 1e-3
+        # Gained clips are re-rendered as audio-only WAV; at unity gain keep the
+        # source container so an unscaled video source still decodes natively.
+        ext = ".wav" if gained else (src.suffix or ".wav")
+        name = f"{run['run_id']}_segaudio_{index:02d}_{safe_filename(src.stem)}{ext}"
+        stage_director_audio(src, COMFY_INPUT / name, volume)
         audio_segments.append({
             "audioFile": name,
             "fileName": src.name,

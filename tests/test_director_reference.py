@@ -1258,6 +1258,7 @@ class DirectorReferenceTests(unittest.TestCase):
                     "start": 36,
                     "length": 60,
                     "trimStart": 12,
+                    "volume": 1.0,
                 }
             ],
         )

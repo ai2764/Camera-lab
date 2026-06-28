@@ -1086,6 +1086,7 @@ function collectDirectorAudioSegments() {
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
     }));
   const dialogueSegments = normalizedDirectorAudioSegments()
     .filter((segment) => segment.audioPath)
@@ -1095,6 +1096,7 @@ function collectDirectorAudioSegments() {
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
     }));
   return [...videoAudioSegments, ...dialogueSegments].sort((a, b) => a.start - b.start);
 }
@@ -2054,12 +2056,22 @@ function renderDirectorAudioInspector(inspector) {
         Trim start
         <input id="directorAudioTrimStart" type="number" min="0" max="60" step="0.5">
       </label>
+      <label class="director-audio-volume">
+        Volume <span id="directorAudioVolumeReadout">${Math.round((segment.volume ?? 1) * 100)}%</span>
+        <input id="directorAudioVolume" type="range" min="0" max="150" step="5">
+      </label>
     </div>
   `;
   $("directorAudioStart").value = segment.start;
   $("directorAudioTrimStart").value = segment.trimStart || 0;
+  $("directorAudioVolume").value = Math.round((segment.volume ?? 1) * 100);
   $("directorAudioStart").addEventListener("input", (event) => updateDirectorAudioSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
   $("directorAudioTrimStart").addEventListener("input", (event) => updateDirectorAudioSegment(segment.id, { trimStart: Number(event.target.value) || 0 }, false));
+  $("directorAudioVolume").addEventListener("input", (event) => {
+    const pct = Number(event.target.value) || 0;
+    $("directorAudioVolumeReadout").textContent = `${pct}%`;
+    updateDirectorAudioSegment(segment.id, { volume: pct / 100 }, false);
+  });
   $("removeDirectorAudioBtn").addEventListener("click", () => removeDirectorAudioSegment(segment.id));
 }
 
@@ -2094,12 +2106,22 @@ function renderDirectorVideoAudioInspector(inspector) {
         Trim start
         <input id="directorVideoAudioTrimStart" type="number" min="0" max="60" step="0.25">
       </label>
+      <label class="director-audio-volume">
+        Volume <span id="directorVideoAudioVolumeReadout">${Math.round((segment.volume ?? 1) * 100)}%</span>
+        <input id="directorVideoAudioVolume" type="range" min="0" max="150" step="5">
+      </label>
     </div>
   `;
   $("directorVideoAudioStart").value = segment.start;
   $("directorVideoAudioTrimStart").value = segment.trimStart || 0;
+  $("directorVideoAudioVolume").value = Math.round((segment.volume ?? 1) * 100);
   $("directorVideoAudioStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
   $("directorVideoAudioTrimStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { trimStart: Number(event.target.value) || 0 }, false));
+  $("directorVideoAudioVolume").addEventListener("input", (event) => {
+    const pct = Number(event.target.value) || 0;
+    $("directorVideoAudioVolumeReadout").textContent = `${pct}%`;
+    updateDirectorVideoAudioSegment(segment.id, { volume: pct / 100 }, false);
+  });
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {

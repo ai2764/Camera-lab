@@ -2310,6 +2310,14 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   gap: 8px;
 }
 
+.director-audio-volume {
+  grid-column: 1 / -1;
+}
+
+.director-audio-volume input[type="range"] {
+  width: 100%;
+}
+
 @media (max-width: 760px) {
   .director-segment-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
