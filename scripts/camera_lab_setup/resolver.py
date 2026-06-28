@@ -32,6 +32,19 @@ class ModuleStatus:
         }
 
 
+def _profile_eligible(module: CameraLabModule, profile: ModelProfile) -> bool:
+    """Whether installing this profile can make the module usable as bundled.
+
+    A drop-in profile always counts. A workflow_variant/backend_variant only counts
+    when one of its compatible workflows is actually bundled with the module; otherwise
+    the variant is advisory only (e.g. Director v2, which needs a v2 workflow we do not
+    ship yet) and must not flip the module to ready.
+    """
+    if profile.compatibility == "drop_in":
+        return True
+    return any(workflow in module.workflows for workflow in profile.compatible_workflows)
+
+
 def _profile_missing(module: CameraLabModule, profile: ModelProfile, visibility: ComfyVisibility) -> tuple[str, ...]:
     missing: list[str] = []
     for node_name in (*module.required_nodes, *profile.required_nodes):
@@ -88,8 +101,9 @@ def resolve_module(
         return ModuleStatus(module.id, module.label, True, not missing, None, recommendation, missing, ())
 
     candidates = [(profile, _profile_missing(module, profile, visibility)) for profile in module.model_profiles]
+    eligible = [item for item in candidates if _profile_eligible(module, item[0])]
 
-    ready_candidates = [(profile, missing) for profile, missing in candidates if not missing]
+    ready_candidates = [(profile, missing) for profile, missing in eligible if not missing]
     if ready_candidates:
         vram = hardware.vram_gb
         def _floor(item):
@@ -103,7 +117,7 @@ def resolve_module(
         else:
             profile, missing = min(ready_candidates, key=_floor)
     else:
-        profile, missing = min(candidates, key=lambda item: len(item[1]))
+        profile, missing = min(eligible, key=lambda item: len(item[1]))
 
     ready = not missing
     recommendation, hardware_warnings = _hardware_recommendation(profile, hardware, ready)

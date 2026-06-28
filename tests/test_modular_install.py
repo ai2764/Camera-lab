@@ -117,8 +117,31 @@ def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
 
 
 def test_resolver_selects_workflow_variant_when_it_is_the_only_ready_profile():
-    # When only director-v2 models are installed (not v1), the resolver now picks v2 as the
-    # best ready candidate; _variant_warnings still surfaces the workflow_variant note.
+    # A workflow_variant counts as ready only when one of its compatible workflows is bundled.
+    # camera's GGUF ladder targets ltx23_gguf_ia2v_nag_extend.json, which ships with the module,
+    # so a visible GGUF tier is a legitimate ready profile even with no drop-in models present.
+    camera = get_module("camera")
+    visibility = ComfyVisibility(
+        nodes=frozenset({"LTXVConditioning", "UnetLoaderGGUF", "DualCLIPLoaderGGUF"}),
+        models={
+            "diffusion_models": frozenset({"LTX-2.3-distilled-Q4_K_S.gguf"}),
+            "text_encoders": frozenset({"gemma-3-12b-it-qat-UD-Q4_K_XL.gguf", "ltx-2.3-22b-dev_embeddings_connectors.safetensors"}),
+            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+        },
+        source="test",
+    )
+
+    status = resolve_module(camera, HardwareProfile(vram_gb=12), visibility)
+
+    assert status.ready is True
+    assert status.profile == "camera-ltx23-gguf-q4s"
+    assert status.recommendation == "recommended"
+
+
+def test_resolver_does_not_treat_unbundled_workflow_variant_as_ready():
+    # Director v2 has no bundled compatible workflow, so a fully-visible v2 must not flip the
+    # module to ready; it falls back to the drop-in v1 profile and surfaces v2 as a warning.
     director = get_module("director")
     visibility = ComfyVisibility(
         nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
@@ -133,9 +156,8 @@ def test_resolver_selects_workflow_variant_when_it_is_the_only_ready_profile():
 
     status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
 
-    assert status.ready is True
-    assert status.profile == "director-v2-distilled-fp8"
-    assert status.recommendation == "recommended"
+    assert status.ready is False
+    assert status.profile == "director-v1-ltx23-fp8"
     assert any("director-v2-distilled-fp8" in warning for warning in status.warnings)
 
 

@@ -236,7 +236,6 @@ MODULES: tuple[CameraLabModule, ...] = (
                     "LTXDirectorCropGuides; not drop-in for ltx_director_reference_mvp.json."
                 ),
             ),
-            *_ltx_gguf_ladder("director"),
         ),
     ),
     CameraLabModule(

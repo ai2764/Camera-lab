@@ -285,11 +285,13 @@ def test_installer_storage_reaction_for_machine_profiles(case):
             "expected_warning_text": "8 GiB VRAM",
         },
         {
-            "name": "rtx4090_director_v2_only_ready_recommended",
+            # v2 is a workflow_variant with no bundled compatible workflow, so it must not flip
+            # the module to ready; the module falls back to the drop-in v1 it still lacks.
+            "name": "rtx4090_director_v2_only_not_ready_falls_back_to_v1",
             "hardware": HardwareProfile(gpu_name="NVIDIA GeForce RTX 4090", vram_gb=24),
             "visibility": visible_models_for_profiles({"director-v2-distilled-fp8"}),
-            "expected_ready": True,
-            "expected_recommendation": "recommended",
+            "expected_ready": False,
+            "expected_recommendation": "available-with-downloads",
             "expected_warning_text": "director-v2-distilled-fp8",
         },
     ],
