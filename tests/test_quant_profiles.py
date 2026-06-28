@@ -1,13 +1,17 @@
 import json
+import os
 import re
 import sys
+import urllib.request
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from camera_lab_setup.modules import _hf, get_module
+from camera_lab_setup.modules import _hf, get_module, MODULES
 
 GGUF_LOADER_CLASSES = {"UnetLoaderGGUF", "DualCLIPLoaderGGUF", "CLIPLoaderGGUF"}
 
@@ -58,3 +62,23 @@ def test_bernini_gguf_workflow_only_uses_registered_models_and_gguf_loaders():
     # both experts present
     assert any("high_noise" in n for n in referenced)
     assert any("low_noise" in n for n in referenced)
+
+
+def _quant_source_urls():
+    urls = set()
+    for module in MODULES:
+        for profile in module.model_profiles:
+            if "gguf" not in profile.id:
+                continue
+            for m in profile.required_models:
+                if m.source_url:
+                    urls.add(m.source_url)
+    return sorted(urls)
+
+
+@pytest.mark.skipif(os.environ.get("CAMERA_LAB_NETWORK_TESTS") != "1", reason="set CAMERA_LAB_NETWORK_TESTS=1 to run network checks")
+@pytest.mark.parametrize("url", _quant_source_urls())
+def test_quant_model_url_is_reachable(url):
+    req = urllib.request.Request(url, method="HEAD")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        assert resp.status in (200, 302)
