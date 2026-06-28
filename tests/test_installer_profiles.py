@@ -16,6 +16,53 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 
+NVIDIA_8GB_OR_LARGER_GPU_PROFILES = (
+    ("gtx1070_8gb", "NVIDIA GeForce GTX 1070", 8, "risky"),
+    ("gtx1070_ti_8gb", "NVIDIA GeForce GTX 1070 Ti", 8, "risky"),
+    ("gtx1080_8gb", "NVIDIA GeForce GTX 1080", 8, "risky"),
+    ("rtx2060_super_8gb", "NVIDIA GeForce RTX 2060 SUPER", 8, "risky"),
+    ("rtx2070_8gb", "NVIDIA GeForce RTX 2070", 8, "risky"),
+    ("rtx2070_super_8gb", "NVIDIA GeForce RTX 2070 SUPER", 8, "risky"),
+    ("rtx2080_8gb", "NVIDIA GeForce RTX 2080", 8, "risky"),
+    ("rtx2080_super_8gb", "NVIDIA GeForce RTX 2080 SUPER", 8, "risky"),
+    ("rtx3050_8gb", "NVIDIA GeForce RTX 3050", 8, "risky"),
+    ("rtx3060_ti_8gb", "NVIDIA GeForce RTX 3060 Ti", 8, "risky"),
+    ("rtx3070_8gb", "NVIDIA GeForce RTX 3070", 8, "risky"),
+    ("rtx3070_ti_8gb", "NVIDIA GeForce RTX 3070 Ti", 8, "risky"),
+    ("rtx4060_8gb", "NVIDIA GeForce RTX 4060", 8, "risky"),
+    ("rtx4060_ti_8gb", "NVIDIA GeForce RTX 4060 Ti", 8, "risky"),
+    ("rtx4060_laptop_8gb", "NVIDIA GeForce RTX 4060 Laptop GPU", 8, "risky"),
+    ("rtx4070_laptop_8gb", "NVIDIA GeForce RTX 4070 Laptop GPU", 8, "risky"),
+    ("rtx3080_10gb", "NVIDIA GeForce RTX 3080", 10, "risky"),
+    ("rtx2080_ti_11gb", "NVIDIA GeForce RTX 2080 Ti", 11, "risky"),
+    ("rtx3060_12gb", "NVIDIA GeForce RTX 3060", 12, "risky"),
+    ("rtx3080_ti_12gb", "NVIDIA GeForce RTX 3080 Ti", 12, "risky"),
+    ("rtx4070_12gb", "NVIDIA GeForce RTX 4070", 12, "risky"),
+    ("rtx4070_super_12gb", "NVIDIA GeForce RTX 4070 SUPER", 12, "risky"),
+    ("rtx4070_ti_12gb", "NVIDIA GeForce RTX 4070 Ti", 12, "risky"),
+    ("rtx5070_12gb", "NVIDIA GeForce RTX 5070", 12, "risky"),
+    ("rtx4060_ti_16gb", "NVIDIA GeForce RTX 4060 Ti 16GB", 16, "recommended"),
+    ("rtx4080_16gb", "NVIDIA GeForce RTX 4080", 16, "recommended"),
+    ("rtx4080_super_16gb", "NVIDIA GeForce RTX 4080 SUPER", 16, "recommended"),
+    ("rtx4070_ti_super_16gb", "NVIDIA GeForce RTX 4070 Ti SUPER", 16, "recommended"),
+    ("rtx5070_ti_16gb", "NVIDIA GeForce RTX 5070 Ti", 16, "recommended"),
+    ("rtx5080_16gb", "NVIDIA GeForce RTX 5080", 16, "recommended"),
+    ("rtx3090_24gb", "NVIDIA GeForce RTX 3090", 24, "recommended"),
+    ("rtx3090_ti_24gb", "NVIDIA GeForce RTX 3090 Ti", 24, "recommended"),
+    ("rtx4090_24gb", "NVIDIA GeForce RTX 4090", 24, "recommended"),
+    ("rtx5090_32gb", "NVIDIA GeForce RTX 5090", 32, "recommended"),
+    ("quadro_rtx4000_8gb", "NVIDIA Quadro RTX 4000", 8, "risky"),
+    ("rtx_a4000_16gb", "NVIDIA RTX A4000", 16, "recommended"),
+    ("rtx_a4500_20gb", "NVIDIA RTX A4500", 20, "recommended"),
+    ("rtx_a5000_24gb", "NVIDIA RTX A5000", 24, "recommended"),
+    ("rtx_a6000_48gb", "NVIDIA RTX A6000", 48, "recommended"),
+    ("rtx_4000_ada_20gb", "NVIDIA RTX 4000 Ada Generation", 20, "recommended"),
+    ("rtx_4500_ada_24gb", "NVIDIA RTX 4500 Ada Generation", 24, "recommended"),
+    ("rtx_5000_ada_32gb", "NVIDIA RTX 5000 Ada Generation", 32, "recommended"),
+    ("rtx_6000_ada_48gb", "NVIDIA RTX 6000 Ada Generation", 48, "recommended"),
+)
+
+
 def visible_models_for_profiles(profile_ids: set[str]) -> ComfyVisibility:
     models: dict[str, set[str]] = {}
     for module in selected_modules():
@@ -255,3 +302,24 @@ def test_installer_module_reaction_for_gpu_profiles(case):
     assert status.recommendation == case["expected_recommendation"]
     if case["expected_warning_text"]:
         assert any(case["expected_warning_text"] in warning for warning in status.warnings)
+
+
+@pytest.mark.parametrize(
+    ("case_id", "gpu_name", "vram_gb", "expected_recommendation"),
+    NVIDIA_8GB_OR_LARGER_GPU_PROFILES,
+    ids=[item[0] for item in NVIDIA_8GB_OR_LARGER_GPU_PROFILES],
+)
+def test_director_reaction_matrix_for_nvidia_8gb_or_larger_gpus(case_id, gpu_name, vram_gb, expected_recommendation):
+    status = resolve_module(
+        get_module("director"),
+        HardwareProfile(gpu_name=gpu_name, vram_gb=vram_gb),
+        visible_models_for_profiles({"director-v1-ltx23-fp8"}),
+    )
+
+    assert status.ready is True
+    assert status.profile == "director-v1-ltx23-fp8"
+    assert status.recommendation == expected_recommendation
+    if expected_recommendation == "risky":
+        assert any(f"{vram_gb} GiB VRAM" in warning for warning in status.warnings)
+    else:
+        assert status.warnings == ()
