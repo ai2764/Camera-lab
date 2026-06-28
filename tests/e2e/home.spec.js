@@ -2368,3 +2368,43 @@ test("casting current clips can be trimmed and saved", async ({ page }) => {
   expect(trimPayload.end).toBeGreaterThan(3.3);
   expect(trimPayload.end).toBeLessThan(3.7);
 });
+
+test("director preview shows video, image, and text frames by seek position", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 6,
+      width: 1280,
+      height: 720,
+      clips: [
+        { start: 0, duration: 2, kind: "video", src: "/static/app.js", trimStart: 0 },
+        { start: 2, duration: 2, kind: "image", src: "/favicon.ico" },
+        { start: 4, duration: 2, kind: "text", src: "", prompt: "a quiet street" },
+      ],
+      audioClips: [],
+    });
+  });
+
+  await page.evaluate(() => DirectorPreview.seek(0.5));
+  await expect(page.locator("#directorPreviewVideo")).toBeVisible();
+  await expect(page.locator("#directorPreviewImage")).toBeHidden();
+
+  await page.evaluate(() => DirectorPreview.seek(2.5));
+  await expect(page.locator("#directorPreviewImage")).toBeVisible();
+  await expect(page.locator("#directorPreviewVideo")).toBeHidden();
+
+  await page.evaluate(() => DirectorPreview.seek(5));
+  await expect(page.locator("#directorPreviewOverlay")).toBeVisible();
+  await expect(page.locator("#directorPreviewOverlay")).toHaveText("a quiet street");
+});

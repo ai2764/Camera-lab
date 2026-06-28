@@ -330,6 +330,17 @@
           </div>
           <div class="director-workspace-grid">
             <section class="director-main-editor">
+              <div class="director-preview" id="directorPreview">
+                <div class="director-preview-stage">
+                  <video id="directorPreviewVideo" class="director-preview-media" muted playsinline preload="metadata" style="display:none"></video>
+                  <img id="directorPreviewImage" class="director-preview-media" alt="Timeline preview" style="display:none">
+                  <div id="directorPreviewOverlay" class="director-preview-overlay" style="display:none"></div>
+                </div>
+                <div class="director-preview-transport">
+                  <button id="directorPreviewPlay" type="button" aria-label="Play preview">▶</button>
+                  <span id="directorPreviewTime" class="director-preview-time">0.0s / 0.0s</span>
+                </div>
+              </div>
               <div class="director-timeline-shell">
                 <div class="director-timeline-head">
                   <span>Image and text timeline</span>
@@ -978,6 +989,7 @@
     </section>
   </div>
 
+  <script src="/static/director-preview.js?v=preview-player-1"></script>
   <script src="/static/app.js?v=late-preview-poll-1"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>
