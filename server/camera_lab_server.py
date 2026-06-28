@@ -108,7 +108,7 @@ TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
+DIRECTOR_V2_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_2.json"
 HYMOTION_GUIDE_TEMPLATE = APP_WORKFLOW_ROOT / "hymotion_guide.api.json"
 SCAIL_VIDEO_TEMPLATE = APP_WORKFLOW_ROOT / "scail2_video.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
@@ -337,11 +337,11 @@ WORKFLOWS = [
         "disable_image_crop": True,
     },
     {
-        "id": "ltx_director_reference_mvp",
-        "label": "LTX Director Reference MVP",
+        "id": "ltx_director_2",
+        "label": "LTX Director 2",
         "mode": "director_ref",
-        "path": str(DIRECTOR_WORKFLOW_PATH),
-        "builder": "ltx_director_reference_mvp",
+        "path": str(DIRECTOR_V2_WORKFLOW_PATH),
+        "builder": "ltx_director_2",
     },
     {
         "id": "bernini_t2v",
@@ -1050,11 +1050,18 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         if start_frame is None and start_seconds is not None:
             start_frame = round(float(start_seconds) * fps)
         role = ""
-        seg_type = str(raw.get("type") or ("image" if str(raw.get("image_path") or "").strip() else "text")).strip() or "text"
-        if seg_type not in {"image", "text"}:
-            seg_type = "image"
         image_path = str(raw.get("image_path") or "").strip()
-        if not prompt and not image_path:
+        video_path = str(raw.get("video_path") or "").strip()
+        seg_type = str(raw.get("type") or ("video" if video_path else ("image" if image_path else "text"))).strip() or "text"
+        if video_path:
+            seg_type = "video"
+        elif image_path:
+            seg_type = "image"
+        elif seg_type not in {"text"}:
+            seg_type = "text"
+        if seg_type not in {"image", "video", "text"}:
+            seg_type = "text"
+        if not prompt and not image_path and not video_path:
             continue
         if not prompt:
             prompt = "visual guide"
@@ -1070,6 +1077,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "frames": frames,
                 "reference": role,
                 "image_path": image_path,
+                "video_path": video_path,
                 "audio_path": str(raw.get("audio_path") or "").strip(),
                 "guide_frame": max(0, guide_frame),
                 "strength": strength,
@@ -1084,6 +1092,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "frames": max(1, round(float(payload.get("duration") or 4.0) * fps)),
                 "reference": "",
                 "image_path": "",
+                "video_path": "",
                 "audio_path": "",
                 "guide_frame": 0,
                 "strength": 0.0,
@@ -1094,6 +1103,9 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
     if payload.get("timeline_segments"):
         duration_frames = max(duration_frames, max(segment["start_frame"] + segment["frames"] for segment in segments))
     audio_segments = director_audio_segments_from_payload(payload, fps=fps)
+    motion_segments = director_motion_segments_from_payload(payload, fps=fps)
+    if motion_segments:
+        duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in motion_segments))
     if audio_segments:
         duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in audio_segments))
     duration_seconds = round(duration_frames / fps, 3)
@@ -1108,6 +1120,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         "fps": fps,
         "segments": segments,
         "audio_segments": audio_segments,
+        "motion_segments": motion_segments,
         "guide_frames": [],
         "guide_strengths": [],
         "guide_roles": [],
@@ -1131,6 +1144,31 @@ def director_audio_segments_from_payload(payload: dict[str, Any], fps: int = 24)
         segments.append({
             "id": str(raw.get("id") or f"camera-lab-audio-{index}"),
             "audio_path": audio_path,
+            "start": max(0, int(start_frame)),
+            "length": max(1, int(length_frames)),
+            "trimStart": max(0, int(trim_start or 0)),
+        })
+    return segments
+
+
+def director_motion_segments_from_payload(payload: dict[str, Any], fps: int = 24) -> list[dict[str, Any]]:
+    raw_segments = payload.get("motion_segments") or payload.get("motionSegments") or []
+    segments: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_segments, start=1):
+        video_path = str(raw.get("video_path") or raw.get("videoFile") or raw.get("file") or "").strip()
+        if not video_path:
+            continue
+        start_frame = raw.get("start_frame")
+        if start_frame is None:
+            start_frame = round(float(raw.get("start") or 0) * fps)
+        length_frames = raw.get("length")
+        if length_frames is None:
+            length_frames = round(max(0.25, float(raw.get("duration") or 1.0)) * fps)
+        trim_start = raw.get("trimStart", raw.get("trim_start", 0))
+        segments.append({
+            "id": str(raw.get("id") or f"camera-lab-motion-{index}"),
+            "type": "motion_video",
+            "video_path": video_path,
             "start": max(0, int(start_frame)),
             "length": max(1, int(length_frames)),
             "trimStart": max(0, int(trim_start or 0)),
@@ -1201,9 +1239,23 @@ def copy_director_reference_images(run: dict[str, Any], timeline: dict[str, Any]
 
 
 def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> dict[int, str]:
+    media = copy_director_timeline_media(run, timeline, width, height)
+    return {index: item["name"] for index, item in media.items() if item.get("type") == "image"}
+
+
+def copy_director_timeline_media(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> dict[int, dict[str, str]]:
     COMFY_INPUT.mkdir(parents=True, exist_ok=True)
-    input_names: dict[int, str] = {}
+    input_names: dict[int, dict[str, str]] = {}
     for index, segment in enumerate(timeline["segments"], start=1):
+        raw_video_path = segment.get("video_path")
+        if raw_video_path:
+            src = Path(str(raw_video_path))
+            if not src.exists():
+                continue
+            name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_timeline_{index:02d}{src.suffix or '.mp4'}"
+            shutil.copy2(src, COMFY_INPUT / name)
+            input_names[index] = {"type": "video", "name": name}
+            continue
         raw_path = segment.get("image_path")
         if not raw_path:
             continue
@@ -1214,14 +1266,14 @@ def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any],
         resize_cover(src, frame, width=width, height=height)
         name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_timeline_{index:02d}.png"
         shutil.copy2(frame, COMFY_INPUT / name)
-        input_names[index] = name
+        input_names[index] = {"type": "image", "name": name}
     return input_names
 
 
 def director_reference_timeline_segments(
     timeline: dict[str, Any],
     _global_input_names: Any,
-    timeline_input_names: dict[int, str],
+    timeline_input_names: dict[int, Any],
 ) -> list[dict[str, Any]]:
     segments = []
     for index, segment in enumerate(timeline["segments"], start=1):
@@ -1236,8 +1288,13 @@ def director_reference_timeline_segments(
             "prompt": segment.get("prompt") or "",
         }
         if seg_type != "text" and index in timeline_input_names:
-            item["type"] = "image"
-            item["imageFile"] = timeline_input_names[index]
+            media = timeline_input_names[index]
+            if isinstance(media, dict):
+                item["type"] = "video" if media.get("type") == "video" else "image"
+                item["imageFile"] = media.get("name") or ""
+            else:
+                item["type"] = "image"
+                item["imageFile"] = media
             item["strength"] = float(segment.get("strength") or 0.7)
         segments.append(item)
     return segments
@@ -1277,24 +1334,56 @@ def director_timeline_audio_segments(run: dict[str, Any], timeline: dict[str, An
     return audio_segments
 
 
-def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
-    workflow_json = json.loads(DIRECTOR_WORKFLOW_PATH.read_text(encoding="utf-8"))
+def copy_director_motion_segments(run: dict[str, Any], motion_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    copied: list[dict[str, Any]] = []
+    for index, segment in enumerate(motion_segments, start=1):
+        raw_path = segment.get("video_path")
+        if not raw_path:
+            continue
+        src = Path(str(raw_path))
+        if not src.exists():
+            continue
+        name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_ic_video_{index:02d}{src.suffix or '.mp4'}"
+        shutil.copy2(src, COMFY_INPUT / name)
+        copied.append({
+            "id": segment.get("id") or f"camera-lab-motion-{index}",
+            "type": "motion_video",
+            "label": f"IC video {index}",
+            "start": int(segment["start"]),
+            "length": int(segment["length"]),
+            "videoFile": name,
+            "trimStart": int(segment.get("trimStart") or 0),
+        })
+    return copied
+
+
+def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
+    workflow_json = json.loads(DIRECTOR_V2_WORKFLOW_PATH.read_text(encoding="utf-8"))
     api = workflow_to_api(workflow_json)
     timeline = director_timeline_from_payload(run, fps=24)
     width = int(run["width"])
     height = int(run["height"])
-    reference_input_names = copy_director_reference_images(run, timeline, width, height)
-    timeline_input_names = copy_director_timeline_images(run, timeline, width, height)
+    timeline_input_names = copy_director_timeline_media(run, timeline, width, height)
 
-    director = api.get("46")
-    if not director or director["class_type"] != "LTXDirector":
-        raise RuntimeError("Director workflow does not contain expected LTXDirector node 46")
+    director = next((node for node in api.values() if node.get("class_type") == "LTXDirector"), None)
+    if not director:
+        raise RuntimeError("Director v2 workflow does not contain an LTXDirector node")
     director["inputs"]["global_prompt"] = timeline["global_prompt"]
     director["inputs"]["duration_frames"] = timeline["duration_frames"]
     director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
-    guide_segments = director_reference_timeline_segments(timeline, reference_input_names, timeline_input_names)
+    # Block 0 placeholder: keep reference_images accepted but do not stage or
+    # wire global references until the Ingredients/IC-LoRA plan.
+    guide_segments = director_reference_timeline_segments(timeline, [], timeline_input_names)
     audio_segments = director_timeline_audio_segments(run, timeline)
-    director["inputs"]["timeline_data"] = json.dumps({"segments": guide_segments, "audioSegments": audio_segments}, ensure_ascii=False)
+    motion_segments = copy_director_motion_segments(run, timeline.get("motion_segments") or [])
+    timeline_data = {"segments": guide_segments, "audioSegments": audio_segments}
+    if motion_segments:
+        timeline_data["motionSegments"] = motion_segments
+    director["inputs"]["timeline_data"] = json.dumps(timeline_data, ensure_ascii=False)
+    director["inputs"]["overrideAudio"] = False
+    director["inputs"]["inpaint_audio"] = bool(run.get("inpaint_audio", True))
+    director["inputs"]["use_custom_audio"] = False
     if audio_segments:
         director["inputs"]["use_custom_audio"] = True
     director["inputs"]["local_prompts"] = timeline["local_prompts"]
@@ -1305,6 +1394,7 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["frame_rate"] = timeline["fps"]
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
+    director["inputs"]["display_mode"] = "seconds"
     director["inputs"]["resize_method"] = "maintain aspect ratio"
     director["inputs"]["divisible_by"] = 32
     director["inputs"]["img_compression"] = 18
@@ -1329,9 +1419,6 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     # doesn't use that path — it injects references via LTXVAddGuideMulti. Strip
     # the loader chain so empty-filename LoadImages don't fail ComfyUI validation.
     strip_director_image_loader_chain(api)
-    # Always take the fallback path (LTXVAddGuideMulti) so camera-lab runs the
-    # same way it did before LTXDirector grew native global-reference inputs.
-    insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -1339,7 +1426,7 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
         if "noise_seed" in node["inputs"]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
-    patch_ltx23_local_loras(api)
+    # v2 uses the pre-merged distilled UNET, with no separate LoRA patch.
     # Timeline audio uses the LTXDirector native audioSegments above; fall back to
     # the single whole-video custom-audio patch only when no per-shot audio is set.
     if not audio_segments:
@@ -2061,6 +2148,28 @@ def next_api_node_id(api: Mapping[str, Any]) -> str:
     return str(max(numeric + [0]) + 1)
 
 
+def add_inpaint_control_video_nodes(api: dict, source_frames: list[Any], width: int, height: int, length: int) -> list[Any]:
+    frame_batch_id = next_api_node_id(api)
+    api[frame_batch_id] = {
+        "class_type": "ImageFromBatch",
+        "inputs": {"image": source_frames, "batch_index": 0, "length": length},
+        "_meta": {"title": "Camera Lab inpaint source frame range"},
+    }
+    scaled_id = next_api_node_id(api)
+    api[scaled_id] = {
+        "class_type": "ImageScale",
+        "inputs": {
+            "image": [frame_batch_id, 0],
+            "upscale_method": "lanczos",
+            "width": width,
+            "height": height,
+            "crop": "center",
+        },
+        "_meta": {"title": "Camera Lab inpaint source resize"},
+    }
+    return [scaled_id, 0]
+
+
 def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None:
     length = inpaint_frame_length(run.get("duration"))
     width = int(run["width"])
@@ -2110,12 +2219,22 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
         "inputs": {"image": input_names["mask_image"]},
         "_meta": {"title": "Camera Lab painted mask"},
     }
+    repeated_mask_id = next_api_node_id(api)
+    api[repeated_mask_id] = {
+        "class_type": "RepeatImageBatch",
+        "inputs": {"image": [mask_id, 0], "amount": length},
+        "_meta": {"title": "Camera Lab repeated inpaint mask"},
+    }
     image_to_mask_id = next_api_node_id(api)
     api[image_to_mask_id] = {
         "class_type": "ImageToMask",
-        "inputs": {"image": [mask_id, 0], "channel": "red"},
+        "inputs": {"image": [repeated_mask_id, 0], "channel": "red"},
         "_meta": {"title": "Camera Lab mask to VACE"},
     }
+
+    control_video: list[Any] | None = None
+    if source_frames:
+        control_video = add_inpaint_control_video_nodes(api, source_frames, width, height, length)
 
     for node in api.values():
         if node.get("class_type") != "WanVaceToVideo":
@@ -2130,8 +2249,8 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
         else:
             inputs.pop("reference_image", None)
         inputs["control_masks"] = [image_to_mask_id, 0]
-        if source_frames:
-            inputs["control_video"] = source_frames
+        if control_video:
+            inputs["control_video"] = control_video
         break
     else:
         raise RuntimeError("inpaint workflow is missing WanVaceToVideo")
@@ -2261,9 +2380,13 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"available": False, "reason": str(exc)}
-    if not workflow.get("builder") or workflow.get("builder") == "ltx_director_reference_mvp":
+    if not workflow.get("builder"):
         data = workflow_to_api(data)
         patch_ltx23_local_loras(data)
+        bypass_sage_attention_patches(data)
+        data = {"extra": {"prompt": data}}
+    elif workflow.get("builder") == "ltx_director_2":
+        data = workflow_to_api(data)
         bypass_sage_attention_patches(data)
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
@@ -3519,13 +3642,13 @@ def run_batch_worker(batch_id: str) -> None:
 
             if workflow.get("builder") == "ltx23_ttp_flf":
                 api = build_ltx23_ttp_flf_api(run, input_names)
-            elif workflow.get("builder") == "ltx_director_reference_mvp":
+            elif workflow.get("builder") == "ltx_director_2":
                 run["director_timeline"] = director_timeline_from_payload(run, fps=24)
                 (run_dir / "director_timeline.json").write_text(
                     json.dumps(run["director_timeline"], ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                api = build_ltx_director_reference_api(run)
+                api = build_ltx_director_v2_api(run)
             else:
                 workflow_json = json.loads(Path(workflow["path"]).read_text(encoding="utf-8"))
                 api = workflow_to_api(workflow_json)
@@ -4440,10 +4563,12 @@ class Handler(BaseHTTPRequestHandler):
         reference_images = {}
         director_segments = payload.get("timeline_segments") or payload.get("segments") or []
         director_audio_segments = payload.get("audio_segments") or []
+        director_motion_segments = payload.get("motion_segments") or []
         if workflow["mode"] == "director_ref":
             reference_images = validate_reference_images(payload.get("reference_images") or {})
             director_segments = validate_director_segments(payload.get("timeline_segments") or payload.get("segments") or [])
             director_audio_segments = validate_director_audio_segments(payload.get("audio_segments") or [])
+            director_motion_segments = validate_director_motion_segments(payload.get("motion_segments") or [])
         seed = validate_seed(payload.get("seed"))
         split_options = bernini_split_options(workflow["mode"], payload)
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
@@ -4484,6 +4609,7 @@ class Handler(BaseHTTPRequestHandler):
                     "bernini_ref_max_size": max(16, min(8192, int(float(payload.get("bernini_ref_max_size") or 848)))),
                     "segments": director_segments,
                     "audio_segments": director_audio_segments,
+                    "motion_segments": director_motion_segments,
                     "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or (INPAINT_DEFAULT_NEGATIVE if is_inpaint_mode(workflow["mode"]) else DEFAULT_NEGATIVE),
                     "status": "queued",
@@ -5206,13 +5332,24 @@ def validate_seed(value: Any) -> int:
 
 def build_director_prompt_summary(payload: dict[str, Any]) -> str:
     global_prompt = str(payload.get("global_prompt") or "").strip()
+    raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segment_prompts = [
         str(segment.get("prompt") or "").strip()
-        for segment in (payload.get("timeline_segments") or payload.get("segments") or [])
+        for segment in raw_segments
         if str(segment.get("prompt") or "").strip()
     ]
     if not global_prompt and not segment_prompts:
-        raise ValueError("director workflow requires a global prompt or at least one segment prompt")
+        has_visual_guide = any(
+            str(segment.get("image_path") or segment.get("video_path") or "").strip()
+            for segment in raw_segments
+        )
+        has_ic_video = any(
+            str(segment.get("video_path") or segment.get("videoFile") or segment.get("file") or "").strip()
+            for segment in (payload.get("motion_segments") or payload.get("motionSegments") or [])
+        )
+        if has_visual_guide or has_ic_video:
+            return "visual guide"
+        raise ValueError("director workflow requires a global prompt, segment prompt, or visual guide")
     return "\n\n".join([part for part in [global_prompt, " | ".join(segment_prompts)] if part])
 
 
@@ -5230,6 +5367,11 @@ def validate_director_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]
             item["image_path"] = str(safe_media_path(image_path))
         else:
             item["image_path"] = ""
+        video_path = str(item.get("video_path") or "").strip()
+        if video_path:
+            item["video_path"] = str(safe_media_path(video_path))
+        else:
+            item["video_path"] = ""
         audio_path = str(item.get("audio_path") or "").strip()
         if audio_path:
             item["audio_path"] = str(safe_media_path(audio_path))
@@ -5248,6 +5390,20 @@ def validate_director_audio_segments(raw: list[dict[str, Any]]) -> list[dict[str
             item["audio_path"] = str(safe_media_path(audio_path))
         else:
             continue
+        segments.append(item)
+    return segments
+
+
+def validate_director_motion_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for segment in raw:
+        item = dict(segment)
+        video_path = str(item.get("video_path") or item.get("videoFile") or item.get("file") or "").strip()
+        if video_path:
+            item["video_path"] = str(safe_media_path(video_path))
+        else:
+            continue
+        item["type"] = "motion_video"
         segments.append(item)
     return segments
 

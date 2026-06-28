@@ -339,13 +339,42 @@
                   </div>
                 </div>
                 <div class="director-ruler" id="directorRuler"></div>
-                <div class="director-track-label">Video</div>
-                <div class="director-track" id="directorTrack"></div>
-                <div class="director-track-label director-audio-track-label">
-                  <span>Audio</span>
-                  <button id="addDirectorAudioBtn" class="timeline-add director-audio-add" type="button" title="Add audio clip" aria-label="Add audio clip">+</button>
-                </div>
-                <div class="director-audio-track" id="directorAudioTrack"></div>
+                <section class="director-lane" data-lane="main">
+                  <div class="director-track-label">
+                    <span>Main</span>
+                    <small>Image keyframes now, video clips next</small>
+                  </div>
+                  <div class="director-track" id="directorTrack"></div>
+                </section>
+                <section class="director-lane director-lane-muted" data-lane="video-audio">
+                  <div class="director-track-label">
+                    <span>Video audio</span>
+                    <small>Follows main video guides</small>
+                    <button id="addDirectorVideoAudioBtn" class="timeline-add director-audio-add" type="button" title="Add video audio clip" aria-label="Add video audio clip">+</button>
+                  </div>
+                  <div class="director-placeholder-track" id="directorVideoAudioTrack">
+                    <span>Main video guide audio appears here automatically</span>
+                  </div>
+                </section>
+                <section class="director-lane" data-lane="dialogue">
+                  <div class="director-track-label director-audio-track-label">
+                    <span>Dialogue</span>
+                    <small>Voice, TTS, and external audio</small>
+                    <button id="addDirectorAudioBtn" class="timeline-add director-audio-add" type="button" title="Add audio clip" aria-label="Add audio clip">+</button>
+                  </div>
+                  <div class="director-audio-track" id="directorAudioTrack"></div>
+                </section>
+                <section class="director-lane director-lane-muted" data-lane="ic-video">
+                  <div class="director-track-label">
+                    <span>IC video</span>
+                    <small>Ingredients / IC-LoRA reference</small>
+                    <button id="addDirectorIcVideoBtn" class="timeline-add director-ic-video-add" type="button" title="Add IC video" aria-label="Add IC video">+</button>
+                    <input id="directorIcVideoInput" type="file" accept="video/*" hidden>
+                  </div>
+                  <div class="director-placeholder-track" id="directorIcVideoTrack">
+                    <span>IC reference clips land here in the IC-LoRA block</span>
+                  </div>
+                </section>
               </div>
               <div class="director-edit-row">
                 <div id="directorSegmentInspector" class="director-inspector"></div>

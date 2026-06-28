@@ -111,6 +111,7 @@ const BERNINI_DEFAULT_NEGATIVE = "bad video";
 const INPAINT_WORKFLOW_MODE = "wan_vace_inpaint";
 const INPAINT_DEFAULT_PROMPT = "Place the reference object naturally inside the painted area, matching lighting, scale, perspective, and motion.";
 const INPAINT_DEFAULT_NEGATIVE = "bad video";
+const DIRECTOR_DEFAULT_GLOBAL_PROMPT = "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.";
 
 const state = {
   config: null,
@@ -150,9 +151,13 @@ const state = {
   referenceNames: [""],
   referencePreviewUrls: [""],
   directorSegments: [],
+  directorVideoAudioSegments: [],
+  directorIcVideoSegments: [],
   directorAudioSegments: [],
+  directorAudioModalTarget: "dialogue",
   directorSelectedId: "",
   directorSelectionType: "image",
+  directorGlobalPromptInitialized: false,
   directorDrag: null,
   workspace: initialWorkspace(),
   cameraWorkflowId: "",
@@ -648,6 +653,15 @@ function currentMotionPrompt() {
   return $("motionPrompt").value.trim();
 }
 
+function ensureDirectorGlobalPromptDefault({ force = false } = {}) {
+  const field = $("directorGlobalPrompt");
+  if (!field) return;
+  if (force || (!state.directorGlobalPromptInitialized && !field.value.trim())) {
+    field.value = DIRECTOR_DEFAULT_GLOBAL_PROMPT;
+  }
+  state.directorGlobalPromptInitialized = true;
+}
+
 function resetPrompt() {
   const move = currentMove();
   const workflow = state.workspace === "director"
@@ -667,6 +681,14 @@ function resetPrompt() {
     $("promptTag").textContent = "INPAINT";
     $("promptText").value = INPAINT_DEFAULT_PROMPT;
     $("negativePrompt").value = INPAINT_DEFAULT_NEGATIVE;
+    return;
+  }
+  if (isDirectorWorkflow(workflow)) {
+    $("promptTag").textContent = "DIRECTOR";
+    $("promptText").value = "";
+    $("negativePrompt").value = state.config?.default_negative || $("negativePrompt").value || "";
+    ensureDirectorGlobalPromptDefault({ force: true });
+    renderDirectorEditor();
     return;
   }
   $("promptTag").textContent = workflow.mode.toUpperCase();
@@ -919,7 +941,10 @@ function updateWorkflowFields() {
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
   $("promptTag").textContent = isBernini ? BERNINI_TASKS[wf.mode].tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : showBerniniWorkspace ? "Bernini Prompt" : showInpaintWorkspace ? "Inpaint Prompt" : "Prompt";
-  if (showDirectorWorkspace) renderDirectorEditor();
+  if (showDirectorWorkspace) {
+    ensureDirectorGlobalPromptDefault();
+    renderDirectorEditor();
+  }
 }
 
 function collectPayload() {
@@ -933,6 +958,7 @@ function collectPayload() {
 
   if (isDirectorWorkflow(workflow)) {
     const segments = collectDirectorSegments();
+    const motionSegments = collectDirectorMotionSegments();
     const audioSegments = collectDirectorAudioSegments();
     const duration = directorOutputDurationSeconds();
     return {
@@ -951,6 +977,7 @@ function collectPayload() {
       global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
       segments,
       timeline_segments: segments,
+      motion_segments: motionSegments,
       audio_segments: audioSegments,
       reference_images: collectReferenceImages(),
       audio_path: "",
@@ -1033,14 +1060,15 @@ function collectReferenceImages() {
 
 function collectDirectorSegments() {
   return normalizedDirectorSegments()
-    .filter((segment) => segment.prompt.trim() || segment.imagePath)
+    .filter((segment) => segment.prompt.trim() || segment.imagePath || segment.videoPath)
     .map((segment) => ({
       id: segment.id,
-      type: segment.imagePath ? "image" : "text",
+      type: segment.videoPath ? "video" : (segment.imagePath ? "image" : "text"),
       prompt: segment.prompt.trim(),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       reference: "",
       image_path: segment.imagePath || "",
+      video_path: segment.videoPath || "",
       start: Math.max(0, Number(segment.start) || 0),
       guide_frame: Math.max(0, Math.round(((Number(segment.start) || 0) * 24) + (Number(segment.guideOffsetFrames) || 0))),
       strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
@@ -1048,11 +1076,35 @@ function collectDirectorSegments() {
 }
 
 function collectDirectorAudioSegments() {
-  return normalizedDirectorAudioSegments()
+  syncDirectorVideoAudioSegments();
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments()
+    .map((segment) => ({
+      id: segment.id,
+      source: "video",
+      audio_path: segment.audioPath,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+    }));
+  const dialogueSegments = normalizedDirectorAudioSegments()
     .filter((segment) => segment.audioPath)
     .map((segment) => ({
       id: segment.id,
       audio_path: segment.audioPath,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+    }));
+  return [...videoAudioSegments, ...dialogueSegments].sort((a, b) => a.start - b.start);
+}
+
+function collectDirectorMotionSegments() {
+  return normalizedDirectorIcVideoSegments()
+    .filter((segment) => segment.videoPath)
+    .map((segment) => ({
+      id: segment.id,
+      type: "motion_video",
+      video_path: segment.videoPath,
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
@@ -1073,6 +1125,9 @@ function addDirectorSegment(values = {}) {
     imagePath: values.imagePath || "",
     imageName: values.imageName || "",
     imagePreviewUrl: values.imagePreviewUrl || "",
+    videoPath: values.videoPath || "",
+    videoName: values.videoName || "",
+    videoPreviewUrl: values.videoPreviewUrl || "",
     audioPath: values.audioPath || "",
     audioName: values.audioName || "",
     audioDuration: Number(values.audioDuration) || 0,
@@ -1106,6 +1161,7 @@ function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   });
   state.directorSegments = [...state.directorSegments, ...imported];
   state.directorAudioSegments = [];
+  state.directorIcVideoSegments = [];
   state.directorSelectionType = "image";
   state.directorSelectedId = imported[0]?.id || state.directorSelectedId;
   renderDirectorEditor();
@@ -1125,8 +1181,10 @@ function importShotPackToDirector(detail = {}) {
 
   setWorkspace("director");
   $("directorGlobalPrompt").value = prompt;
+  state.directorGlobalPromptInitialized = true;
   $("promptText").value = prompt;
   state.directorAudioSegments = [];
+  state.directorIcVideoSegments = [];
   state.directorSelectionType = "image";
   state.directorSegments = frames.map((frame, index) => {
     const label = String(frame.label || `shot ${index + 1}`).trim();
@@ -1325,10 +1383,56 @@ function normalizedDirectorAudioSegments() {
     .sort((a, b) => a.start - b.start);
 }
 
+function normalizedDirectorIcVideoSegments() {
+  return state.directorIcVideoSegments
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+    }))
+    .sort((a, b) => a.start - b.start);
+}
+
+function normalizedDirectorVideoAudioSegments() {
+  return state.directorVideoAudioSegments
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+      audioDuration: Math.max(0.5, Number(segment.audioDuration || segment.duration) || 0.5),
+    }))
+    .filter((segment) => segment.audioPath)
+    .sort((a, b) => a.start - b.start);
+}
+
+function syncDirectorVideoAudioSegments() {
+  // Extract each main-track video's audio ONCE into an independent clip. After
+  // extraction it is a normal audio clip with no link to the video: deleting or
+  // moving the video does not touch it, the clip is never re-synced, and once a
+  // segment is extracted (audioExtracted flag) it is never re-extracted — so
+  // deleting the extracted clip does not bring it back.
+  for (const segment of state.directorSegments) {
+    if (!segment.videoPath || segment.audioExtracted) continue;
+    segment.audioExtracted = true;
+    state.directorVideoAudioSegments.push({
+      id: `video_audio_${segment.id}_${Math.random().toString(36).slice(2, 7)}`,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: 0,
+      audioPath: segment.videoPath,
+      audioName: segment.videoName || fileNameFromPath(segment.videoPath),
+      audioDuration: Math.max(0.5, Number(segment.duration) || 0.5),
+    });
+  }
+}
+
 function directorOutputDurationSeconds() {
   const imageEnd = normalizedDirectorSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   const audioEnd = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
-  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd) * 2) / 2);
+  const icVideoEnd = normalizedDirectorIcVideoSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd, icVideoEnd) * 2) / 2);
 }
 
 function directorTotalSeconds() {
@@ -1359,23 +1463,49 @@ function removeDirectorAudioSegment(id) {
   renderDirectorEditor();
 }
 
+function removeDirectorIcVideoSegment(id) {
+  state.directorIcVideoSegments = state.directorIcVideoSegments.filter((item) => item.id !== id);
+  renderDirectorEditor();
+}
+
+function addDirectorIcVideoSegment(values = {}) {
+  const previous = normalizedDirectorIcVideoSegments();
+  const last = previous[previous.length - 1];
+  const duration = Math.max(0.5, Number(values.duration) || 2);
+  const start = values.start ?? (last ? last.start + last.duration : 0);
+  state.directorIcVideoSegments.push({
+    id: values.id || `ic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    start: Math.max(0, Number(start) || 0),
+    duration,
+    trimStart: Math.max(0, Number(values.trimStart) || 0),
+    videoPath: values.videoPath || "",
+    videoName: values.videoName || "",
+    videoPreviewUrl: values.videoPreviewUrl || "",
+  });
+  renderDirectorEditor();
+}
+
 function createDirectorBlock(segment, index, total) {
   const block = document.createElement("div");
   block.className = "director-block ref-none";
   block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-  block.classList.toggle("has-image-guide", Boolean(segment.imagePath));
+  block.classList.toggle("has-image-guide", Boolean(segment.imagePath || segment.videoPath));
+  block.classList.toggle("has-video-guide", Boolean(segment.videoPath));
   block.dataset.id = segment.id;
   block.setAttribute("role", "group");
   block.setAttribute("aria-label", `Segment S${index + 1}`);
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
-  const preview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
+  const imagePreview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
+  const videoPreview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
+  const mediaLabel = segment.videoPath ? "timeline video" : (segment.imagePath ? "timeline image" : "text only");
   block.innerHTML = `
-    ${preview ? `<img class="director-block-image" src="${escapeHtml(preview)}" alt="timeline image guide">` : ""}
+    ${videoPreview ? `<video class="director-block-video" src="${escapeHtml(videoPreview)}" muted playsinline preload="metadata" aria-label="timeline video guide"></video>` : ""}
+    ${!videoPreview && imagePreview ? `<img class="director-block-image" src="${escapeHtml(imagePreview)}" alt="timeline image guide">` : ""}
     <button class="director-block-remove" type="button" aria-label="Remove segment S${index + 1}">x</button>
     <span class="director-block-index">S${index + 1}</span>
     <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
-    <span class="director-block-ref">${segment.imagePath ? "timeline image" : "text only"}</span>
+    <span class="director-block-ref">${mediaLabel}</span>
     <i class="resize-handle left" data-edge="left"></i>
     <i class="resize-handle right" data-edge="right"></i>
   `;
@@ -1480,8 +1610,35 @@ function addDirectorAudioClip(audio = {}, start = 0) {
   renderDirectorEditor();
 }
 
+function addDirectorVideoAudioClip(audio = {}, start = 0) {
+  const duration = Number(audio.duration) || 0;
+  const roundedDuration = roundUpHalf(duration);
+  const startTime = Math.max(0, Number(start) || 0);
+  const existing = state.directorVideoAudioSegments.find((item) => !item.sourceSegmentId && Math.abs((Number(item.start) || 0) - startTime) < 0.01);
+  const segment = existing || {
+    id: `video_audio_manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    start: startTime,
+    duration: roundedDuration || 1,
+    trimStart: 0,
+  };
+  segment.audioPath = audio.path || "";
+  segment.audioName = audio.name || "";
+  segment.audioDuration = duration > 0 ? duration : 0;
+  segment.duration = roundedDuration || Math.max(0.5, Number(segment.duration) || 0.5);
+  if (!existing) state.directorVideoAudioSegments.push(segment);
+  state.directorSelectedId = segment.id;
+  state.directorSelectionType = "video_audio";
+  renderDirectorEditor();
+}
+
 function defaultDirectorAudioStart() {
   const end = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  return roundHalf(end);
+}
+
+function defaultDirectorVideoAudioStart() {
+  syncDirectorVideoAudioSegments();
+  const end = normalizedDirectorVideoAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   return roundHalf(end);
 }
 
@@ -1497,12 +1654,15 @@ function populateDirectorAudioModalLibrary() {
   });
 }
 
-function openDirectorAudioModal() {
+function openDirectorAudioModal(target = "dialogue") {
+  state.directorAudioModalTarget = target;
   populateDirectorAudioModalLibrary();
-  $("directorAudioModalStart").value = defaultDirectorAudioStart();
+  const isVideoAudio = target === "video_audio";
+  $("directorAudioModalTitle").textContent = isVideoAudio ? "Add video audio clip" : "Add audio clip";
+  $("directorAudioModalStart").value = isVideoAudio ? defaultDirectorVideoAudioStart() : defaultDirectorAudioStart();
   $("directorAudioModalInput").value = "";
   $("directorAudioModalUploadStatus").textContent = "No upload selected";
-  $("directorAudioModalStatus").textContent = "Choose a library clip or upload audio.";
+  $("directorAudioModalStatus").textContent = isVideoAudio ? "Choose a library clip or upload video audio." : "Choose a library clip or upload audio.";
   $("directorAudioModal").classList.add("open");
   $("directorAudioModal").setAttribute("aria-hidden", "false");
 }
@@ -1517,6 +1677,8 @@ async function addDirectorAudioFromModal() {
   const start = Number($("directorAudioModalStart").value) || 0;
   const file = $("directorAudioModalInput").files[0];
   const selectedFile = $("directorAudioLibrarySelect").value;
+  const isVideoAudio = state.directorAudioModalTarget === "video_audio";
+  const addClip = isVideoAudio ? addDirectorVideoAudioClip : addDirectorAudioClip;
   try {
     if (file) {
       status.textContent = "Uploading audio...";
@@ -1526,21 +1688,21 @@ async function addDirectorAudioFromModal() {
         method: "POST",
         body: JSON.stringify({ name: file.name, data }),
       });
-      addDirectorAudioClip({ path: uploaded.path, name: uploaded.name, duration }, start);
+      addClip({ path: uploaded.path, name: uploaded.name, duration }, start);
       closeDirectorAudioModal();
-      $("runHint").textContent = "Audio clip added to timeline";
+      $("runHint").textContent = isVideoAudio ? "Video audio clip added to timeline" : "Audio clip added to timeline";
       return;
     }
     if (selectedFile) {
       const clip = findCastingClipByFile(selectedFile);
       const option = $("directorAudioLibrarySelect").options[$("directorAudioLibrarySelect").selectedIndex];
-      addDirectorAudioClip({
+      addClip({
         path: selectedFile,
         name: option ? option.textContent : fileNameFromPath(selectedFile),
         duration: clip?.duration || 0,
       }, start);
       closeDirectorAudioModal();
-      $("runHint").textContent = "Audio clip added to timeline";
+      $("runHint").textContent = isVideoAudio ? "Video audio clip added to timeline" : "Audio clip added to timeline";
       return;
     }
     status.textContent = "Choose a library clip or upload audio.";
@@ -1630,14 +1792,72 @@ function createDirectorAudioBlock(segment, index, total) {
   return block;
 }
 
+function createDirectorVideoAudioBlock(segment, index, total) {
+  const block = document.createElement("div");
+  block.className = "director-video-audio-block has-audio";
+  block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "video_audio");
+  block.dataset.id = segment.id;
+  block.setAttribute("role", "button");
+  block.setAttribute("tabindex", "0");
+  block.setAttribute("aria-label", `Video audio ${index + 1}`);
+  block.style.left = `${(segment.start / total) * 100}%`;
+  block.style.width = `${(segment.duration / total) * 100}%`;
+  block.innerHTML = `
+    <span>V${index + 1}</span>
+    <div class="director-audio-copy">
+      <strong>${escapeHtml(segment.audioName || "Video audio")}</strong>
+      <em>Follows main video guide</em>
+    </div>
+  `;
+  const select = () => {
+    state.directorSelectedId = segment.id;
+    state.directorSelectionType = "video_audio";
+    renderDirectorEditor();
+  };
+  block.addEventListener("click", select);
+  block.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      select();
+    }
+  });
+  return block;
+}
+
+function createDirectorIcVideoBlock(segment, index, total) {
+  const block = document.createElement("div");
+  block.className = "director-ic-video-block";
+  block.dataset.id = segment.id;
+  block.style.left = `${(segment.start / total) * 100}%`;
+  block.style.width = `${(segment.duration / total) * 100}%`;
+  const preview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
+  block.innerHTML = `
+    ${preview ? `<video class="director-block-video" src="${escapeHtml(preview)}" muted playsinline preload="metadata" aria-label="IC video guide"></video>` : ""}
+    <button class="director-block-remove" type="button" aria-label="Remove IC video ${index + 1}">x</button>
+    <span class="director-block-index">IC${index + 1}</span>
+    <span class="director-block-prompt">${escapeHtml(segment.videoName || fileNameFromPath(segment.videoPath) || "IC video")}</span>
+    <span class="director-block-ref">motionSegments</span>
+  `;
+  block.querySelector(".director-block-remove").addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeDirectorIcVideoSegment(segment.id);
+  });
+  return block;
+}
+
 function renderDirectorEditor() {
   const track = $("directorTrack");
   const audioTrack = $("directorAudioTrack");
+  const videoAudioTrack = $("directorVideoAudioTrack");
+  const icVideoTrack = $("directorIcVideoTrack");
   const ruler = $("directorRuler");
   const list = $("directorSegments");
-  if (!track || !audioTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler || !list) return;
+  syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments();
+  const icVideoSegments = normalizedDirectorIcVideoSegments();
   const total = directorTotalSeconds();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
@@ -1649,11 +1869,27 @@ function renderDirectorEditor() {
 
   track.innerHTML = "";
   audioTrack.innerHTML = "";
+  videoAudioTrack.innerHTML = "";
+  icVideoTrack.innerHTML = "";
   for (const [index, segment] of segments.entries()) {
     track.appendChild(createDirectorBlock(segment, index, total));
   }
+  if (videoAudioSegments.length) {
+    for (const [index, segment] of videoAudioSegments.entries()) {
+      videoAudioTrack.appendChild(createDirectorVideoAudioBlock(segment, index, total));
+    }
+  } else {
+    videoAudioTrack.innerHTML = "<span>Main video guide audio appears here automatically</span>";
+  }
   for (const [index, segment] of audioSegments.entries()) {
     audioTrack.appendChild(createDirectorAudioBlock(segment, index, total));
+  }
+  if (icVideoSegments.length) {
+    for (const [index, segment] of icVideoSegments.entries()) {
+      icVideoTrack.appendChild(createDirectorIcVideoBlock(segment, index, total));
+    }
+  } else {
+    icVideoTrack.innerHTML = "<span>IC reference clips land here in the IC-LoRA block</span>";
   }
   track.ondragover = null;
   track.ondrop = null;
@@ -1666,6 +1902,7 @@ function renderDirectorEditor() {
     chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
     chip.textContent = `S${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
     chip.addEventListener("click", () => {
+      state.directorSelectionType = "image";
       state.directorSelectedId = segment.id;
       renderDirectorEditor();
     });
@@ -1690,6 +1927,10 @@ function renderDirectorEditor() {
 function renderDirectorInspector() {
   const inspector = $("directorSegmentInspector");
   if (!inspector) return;
+  if (state.directorSelectionType === "video_audio") {
+    renderDirectorVideoAudioInspector(inspector);
+    return;
+  }
   if (state.directorSelectionType === "audio") {
     renderDirectorAudioInspector(inspector);
     return;
@@ -1710,12 +1951,12 @@ function renderDirectorInspector() {
       <textarea id="directorSegmentPrompt" rows="5"></textarea>
     </label>
     <label>
-      Timeline image guide
-      <span id="directorSegmentImageStatus" class="hint segment-image-status">No image guide on this segment</span>
+      Timeline media guide
+      <span id="directorSegmentImageStatus" class="hint segment-image-status">No media guide on this segment</span>
     </label>
     <label class="selected-segment-upload">
-      <span class="selected-segment-upload-label">Upload / replace image guide</span>
-      <input id="directorSegmentImageInput" type="file" accept="image/*">
+      <span class="selected-segment-upload-label">Upload / replace image or video guide</span>
+      <input id="directorSegmentImageInput" type="file" accept="image/*,video/*">
     </label>
     <div class="director-segment-grid">
       <label>
@@ -1741,7 +1982,7 @@ function renderDirectorInspector() {
   $("directorSegmentDuration").value = segment.duration;
   $("directorSegmentStrength").value = segment.strength ?? 0.65;
   $("directorSeedInput").value = $("seedInput").value;
-  $("directorSegmentImageStatus").textContent = segment.imageName || (segment.imagePath ? "Timeline image guide" : "No image guide on this segment");
+  $("directorSegmentImageStatus").textContent = segment.videoName || segment.imageName || (segment.videoPath ? "Timeline video guide" : (segment.imagePath ? "Timeline image guide" : "No media guide on this segment"));
   /*
   (state.castingLibrary || []).forEach((clip) => {
     const o = document.createElement("option");
@@ -1773,9 +2014,9 @@ function renderDirectorInspector() {
   $("directorSeedInput").addEventListener("input", (event) => {
     $("seedInput").value = event.target.value;
   });
-  $("directorSegmentImageInput").addEventListener("change", () => uploadDirectorSegmentImage(segment.id, $("directorSegmentImageInput").files[0]).catch((err) => {
+  $("directorSegmentImageInput").addEventListener("change", () => uploadDirectorSegmentGuide(segment.id, $("directorSegmentImageInput").files[0]).catch((err) => {
     $("directorSegmentImageStatus").textContent = err.message;
-    $("runHint").textContent = `Timeline image upload failed: ${err.message}`;
+    $("runHint").textContent = `Timeline media upload failed: ${err.message}`;
   }));
   $("removeDirectorSegmentBtn").addEventListener("click", () => removeDirectorSegment(segment.id));
 }
@@ -1821,6 +2062,45 @@ function renderDirectorAudioInspector(inspector) {
   $("removeDirectorAudioBtn").addEventListener("click", () => removeDirectorAudioSegment(segment.id));
 }
 
+function renderDirectorVideoAudioInspector(inspector) {
+  const segment = state.directorVideoAudioSegments.find((item) => item.id === state.directorSelectedId) || state.directorVideoAudioSegments[0];
+  if (!segment) {
+    state.directorSelectionType = "image";
+    renderDirectorInspector();
+    return;
+  }
+  state.directorSelectedId = segment.id;
+  inspector.innerHTML = `
+    <div class="director-inspector-head">
+      <span>Selected video audio</span>
+    </div>
+    <div class="director-segment-audio-card">
+      <div class="director-segment-audio-head">
+        <span>${escapeHtml(segment.audioName || fileNameFromPath(segment.audioPath) || "Video audio")}</span>
+      </div>
+      <span class="hint segment-audio-status">Follows main video guide</span>
+    </div>
+    <div class="director-segment-grid">
+      <label>
+        Start
+        <input id="directorVideoAudioStart" type="number" min="0" max="120" step="0.5">
+      </label>
+      <div class="director-audio-readonly">
+        Duration
+        <b>${escapeHtml(formatDurationPrecise(segment.duration) || "0.5s")}</b>
+      </div>
+      <label>
+        Trim start
+        <input id="directorVideoAudioTrimStart" type="number" min="0" max="60" step="0.25">
+      </label>
+    </div>
+  `;
+  $("directorVideoAudioStart").value = segment.start;
+  $("directorVideoAudioTrimStart").value = segment.trimStart || 0;
+  $("directorVideoAudioStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
+  $("directorVideoAudioTrimStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { trimStart: Number(event.target.value) || 0 }, false));
+}
+
 function updateDirectorSegment(id, patch, rerenderInspector = true) {
   const segment = state.directorSegments.find((item) => item.id === id);
   if (!segment) return;
@@ -1828,6 +2108,18 @@ function updateDirectorSegment(id, patch, rerenderInspector = true) {
   segment.start = Math.max(0, Number(segment.start) || 0);
   segment.duration = Math.max(0.5, Number(segment.duration) || 0.5);
   segment.strength = Math.max(0, Math.min(1, Number(segment.strength) || 0));
+  if (rerenderInspector) renderDirectorEditor();
+  else renderDirectorTimelineOnly();
+}
+
+function updateDirectorVideoAudioSegment(id, patch, rerenderInspector = true) {
+  const segment = state.directorVideoAudioSegments.find((item) => item.id === id);
+  if (!segment) return;
+  const { duration: _duration, audioPath: _audioPath, audioName: _audioName, ...safePatch } = patch;
+  Object.assign(segment, safePatch);
+  segment.start = Math.max(0, Number(segment.start) || 0);
+  segment.duration = Math.max(0.5, Number(segment.duration) || 0.5);
+  segment.trimStart = Math.max(0, Number(segment.trimStart) || 0);
   if (rerenderInspector) renderDirectorEditor();
   else renderDirectorTimelineOnly();
 }
@@ -1848,11 +2140,16 @@ function updateDirectorAudioSegment(id, patch, rerenderInspector = true) {
 function renderDirectorTimelineOnly() {
   const track = $("directorTrack");
   const audioTrack = $("directorAudioTrack");
+  const videoAudioTrack = $("directorVideoAudioTrack");
+  const icVideoTrack = $("directorIcVideoTrack");
   const ruler = $("directorRuler");
   const list = $("directorSegments");
-  if (!track || !audioTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler || !list) return;
+  syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments();
+  const icVideoSegments = normalizedDirectorIcVideoSegments();
   const total = directorTotalSeconds();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
@@ -1863,11 +2160,27 @@ function renderDirectorTimelineOnly() {
   }
   track.innerHTML = "";
   audioTrack.innerHTML = "";
+  videoAudioTrack.innerHTML = "";
+  icVideoTrack.innerHTML = "";
   for (const [index, segment] of segments.entries()) {
     track.appendChild(createDirectorBlock(segment, index, total));
   }
+  if (videoAudioSegments.length) {
+    for (const [index, segment] of videoAudioSegments.entries()) {
+      videoAudioTrack.appendChild(createDirectorVideoAudioBlock(segment, index, total));
+    }
+  } else {
+    videoAudioTrack.innerHTML = "<span>Main video guide audio appears here automatically</span>";
+  }
   for (const [index, segment] of audioSegments.entries()) {
     audioTrack.appendChild(createDirectorAudioBlock(segment, index, total));
+  }
+  if (icVideoSegments.length) {
+    for (const [index, segment] of icVideoSegments.entries()) {
+      icVideoTrack.appendChild(createDirectorIcVideoBlock(segment, index, total));
+    }
+  } else {
+    icVideoTrack.innerHTML = "<span>IC reference clips land here in the IC-LoRA block</span>";
   }
   track.ondragover = null;
   track.ondrop = null;
@@ -2094,8 +2407,69 @@ async function uploadDirectorSegmentImage(segmentId, file) {
     imagePath: uploaded.path,
     imageName: uploaded.name,
     imagePreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPath: "",
+    videoName: "",
+    videoPreviewUrl: "",
   });
   $("runHint").textContent = "Image guide added to selected timeline segment";
+}
+
+function isVideoFile(file) {
+  if (!file) return false;
+  if (String(file.type || "").startsWith("video/")) return true;
+  return /\.(mp4|webm|mkv|avi|mov|m4v|flv|wmv)$/i.test(String(file.name || ""));
+}
+
+async function uploadDirectorSegmentGuide(segmentId, file) {
+  if (!file) return;
+  if (isVideoFile(file)) {
+    await uploadDirectorSegmentVideo(segmentId, file);
+    return;
+  }
+  await uploadDirectorSegmentImage(segmentId, file);
+}
+
+async function uploadDirectorSegmentVideo(segmentId, file) {
+  if (!file) return;
+  $("directorSegmentImageStatus").textContent = "Uploading video guide...";
+  const previewUrl = URL.createObjectURL(file);
+  const form = new FormData();
+  form.append("file", file);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  updateDirectorSegment(segmentId, {
+    imagePath: "",
+    imageName: "",
+    imagePreviewUrl: "",
+    videoPath: uploaded.path,
+    videoName: uploaded.name,
+    videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    // Reset so this freshly uploaded video extracts its audio once (also covers
+    // replacing a video on a segment that was already extracted).
+    audioExtracted: false,
+  });
+  // Extract the video's audio once into an independent clip on the video-audio
+  // track, then render so it appears immediately.
+  syncDirectorVideoAudioSegments();
+  renderDirectorEditor();
+  $("runHint").textContent = "Video guide added; audio extracted to its own track";
+}
+
+async function uploadDirectorIcVideo(file) {
+  if (!file) return;
+  if (!isVideoFile(file)) throw new Error("Choose a video file for the IC video track");
+  $("runHint").textContent = "Uploading IC video guide...";
+  const previewUrl = URL.createObjectURL(file);
+  const duration = await readVideoDuration(file);
+  const form = new FormData();
+  form.append("file", file);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  addDirectorIcVideoSegment({
+    duration: duration || 2,
+    videoPath: uploaded.path,
+    videoName: uploaded.name,
+    videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+  });
+  $("runHint").textContent = "IC video guide added";
 }
 
 async function uploadDirectorSegmentAudio(segmentId, file) {
@@ -3336,6 +3710,7 @@ function useRunTimeline(run) {
   }
   setWorkspace("director");
   $("directorGlobalPrompt").value = timeline.global_prompt || run.global_prompt || "";
+  state.directorGlobalPromptInitialized = true;
   $("directorGlobalReferenceStrength").value = timeline.global_reference_strength ?? run.global_reference_strength ?? 0.35;
   if (run.seed) useRunSeed(run.seed);
   const refs = Array.isArray(run.reference_images) ? run.reference_images.filter(Boolean) : [];
@@ -3354,6 +3729,7 @@ function useRunTimeline(run) {
     const guideFrame = Number.isFinite(Number(segment.guide_frame)) ? Number(segment.guide_frame) : Math.round(start * 24);
     const guideOffsetFrames = guideFrame - Math.round(start * 24);
     const imagePath = segment.image_path || "";
+    const videoPath = segment.video_path || "";
     return {
       id: segment.id || `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
       start,
@@ -3364,6 +3740,12 @@ function useRunTimeline(run) {
       imagePath,
       imageName: fileNameFromPath(imagePath),
       imagePreviewUrl: imagePath ? mediaUrl(imagePath) : "",
+      videoPath,
+      videoName: fileNameFromPath(videoPath),
+      videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
+      // Restored video audio already comes back via audio_segments; mark as
+      // extracted so the sync pass does not create a duplicate clip.
+      audioExtracted: Boolean(videoPath),
       strength: segment.strength ?? (index === 0 ? 1 : 0.85),
     };
   });
@@ -3383,6 +3765,24 @@ function useRunTimeline(run) {
       audioName: segment.fileName || fileNameFromPath(audioPath),
       audioDuration: Number(segment.audio_duration || segment.audioDuration || 0) || duration,
       trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
+    };
+  });
+  state.directorIcVideoSegments = (timeline.motion_segments || timeline.motionSegments || []).map((segment, index) => {
+    const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 2);
+    const start = Number.isFinite(Number(segment.start_frame))
+      ? savedFrameSeconds(segment.start_frame)
+      : Number.isFinite(Number(segment.start))
+        ? savedFrameSeconds(segment.start)
+        : 0;
+    const videoPath = segment.video_path || segment.videoFile || segment.file || "";
+    return {
+      id: segment.id || `ic_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+      start,
+      duration,
+      trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
+      videoPath,
+      videoName: segment.fileName || fileNameFromPath(videoPath),
+      videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
     };
   });
   for (const segment of timeline.segments) {
@@ -4106,6 +4506,32 @@ function readAudioDuration(file) {
     }, { once: true });
     audio.addEventListener("error", () => finish(0), { once: true });
     audio.src = url;
+  });
+}
+
+function readVideoDuration(file) {
+  return new Promise((resolve) => {
+    if (!file) {
+      resolve(0);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    video.preload = "metadata";
+    video.muted = true;
+    video.addEventListener("loadedmetadata", () => {
+      finish(Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+    }, { once: true });
+    video.addEventListener("error", () => finish(0), { once: true });
+    setTimeout(() => finish(0), 1500);
+    video.src = url;
   });
 }
 
@@ -5214,6 +5640,12 @@ $("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($(
   updateVideoClipperButtons();
   updateMotionRunAvailability();
 }));
+$("addDirectorIcVideoBtn").addEventListener("click", () => $("directorIcVideoInput").click());
+$("directorIcVideoInput").addEventListener("change", () => uploadDirectorIcVideo($("directorIcVideoInput").files[0]).catch((err) => {
+  $("runHint").textContent = `IC video upload failed: ${err.message}`;
+}).finally(() => {
+  $("directorIcVideoInput").value = "";
+}));
 $("motionGuide").addEventListener("loadedmetadata", () => {
   state.motionGuideDuration = $("motionGuide").duration || motionGuideDurationFallback();
 });
@@ -5332,7 +5764,8 @@ $("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt()
   $("motionStatus").textContent = err.message;
 }));
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
-$("addDirectorAudioBtn").addEventListener("click", openDirectorAudioModal);
+$("addDirectorAudioBtn").addEventListener("click", () => openDirectorAudioModal("dialogue"));
+$("addDirectorVideoAudioBtn").addEventListener("click", () => openDirectorAudioModal("video_audio"));
 $("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);
 $("closeStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("cancelStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);

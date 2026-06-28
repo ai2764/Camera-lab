@@ -17,6 +17,8 @@
 - Keep mode string `director_ref` unchanged so existing mode-based handling (`camera_lab_server.py:3486,3510,3517,4416,4431`) keeps working.
 - Parity target: image-keyframe segments + audio segments, same as the current MVP — main-track **video** segments are explicitly Block 1, not here.
 
+- Global reference images are placeholder-only in Block 0: accept the existing `reference_images` payload shape, but do not stage or wire those images into the v2 graph. Clear any native `global_reference_*` inputs when present. Real global/Ingredients reference wiring is deferred to the Ingredients/IC-LoRA plan.
+
 ---
 
 ## File Structure
@@ -126,8 +128,8 @@ git commit -m "feat: bundle and register LTX Director 2 workflow"
 - Test: `tests/test_director_v2.py`
 
 **Interfaces:**
-- Consumes: `DIRECTOR_V2_WORKFLOW_PATH` (Task 1); existing helpers `workflow_to_api`, `director_timeline_from_payload`, `copy_director_reference_images`, `copy_director_timeline_images`, `director_reference_timeline_segments`, `director_timeline_audio_segments`, `strip_director_image_loader_chain`, `insert_director_global_reference_guides`, `patch_model_names`, `bypass_sage_attention_patches`, `patch_director_custom_audio`.
-- Produces: `build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]` returning a ComfyUI API dict whose `LTXDirector` node carries `timeline_data`, `use_custom_audio`, `overrideAudio=False`, `inpaint_audio`, durations, prompts, size, and whose `UNETLoader` keeps the distilled fp8 model with no `LoraLoaderModelOnly` node present.
+- Consumes: `DIRECTOR_V2_WORKFLOW_PATH` (Task 1); existing helpers `workflow_to_api`, `director_timeline_from_payload`, `copy_director_timeline_images`, `director_reference_timeline_segments`, `director_timeline_audio_segments`, `strip_director_image_loader_chain`, `patch_model_names`, `bypass_sage_attention_patches`, `patch_director_custom_audio`.
+- Produces: `build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]` returning a ComfyUI API dict whose `LTXDirector` node carries `timeline_data`, `use_custom_audio`, `overrideAudio=False`, `inpaint_audio`, durations, prompts, size, and whose `UNETLoader` keeps the distilled fp8 model with no `LoraLoaderModelOnly` node present. Block 0 does not stage or wire `reference_images`; it only clears native `global_reference_*` inputs as a placeholder for the later Ingredients/IC-LoRA work.
 
 - [ ] **Step 1: Write the failing builder test**
 
@@ -193,6 +195,36 @@ def test_v2_builder_sets_custom_audio_when_audio_present(monkeypatch, sample_run
     assert director["inputs"]["use_custom_audio"] is True
     timeline = __import__("json").loads(director["inputs"]["timeline_data"])
     assert timeline["audioSegments"] == [{"audioFile": "a.wav", "start": 0, "length": 48}]
+
+
+def test_v2_builder_leaves_global_references_as_placeholder(monkeypatch, sample_run):
+    monkeypatch.setattr(
+        server,
+        "object_info",
+        lambda: {
+            "LTXDirector": {
+                "input": {
+                    "required": {
+                        "global_reference_images": ["STRING"],
+                        "global_reference_strength": ["FLOAT"],
+                    }
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        server,
+        "copy_director_reference_images",
+        lambda *_args, **_kwargs: pytest.fail("Block 0 must not stage global reference images"),
+    )
+
+    run = {**sample_run, "reference_images": ["fixtures/character_front.png"], "global_reference_strength": 0.7}
+    api = server.build_ltx_director_v2_api(run)
+
+    director = _director_node(api)
+    assert director["inputs"]["global_reference_images"] == ""
+    assert director["inputs"]["global_reference_strength"] == 0.0
+    assert not any(n["class_type"] == "LTXVAddGuideMulti" for n in api.values())
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -211,7 +243,6 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     timeline = director_timeline_from_payload(run, fps=24)
     width = int(run["width"])
     height = int(run["height"])
-    reference_input_names = copy_director_reference_images(run, timeline, width, height)
     timeline_input_names = copy_director_timeline_images(run, timeline, width, height)
 
     director = next((node for node in api.values() if node.get("class_type") == "LTXDirector"), None)
@@ -221,7 +252,9 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["global_prompt"] = timeline["global_prompt"]
     director["inputs"]["duration_frames"] = timeline["duration_frames"]
     director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
-    guide_segments = director_reference_timeline_segments(timeline, reference_input_names, timeline_input_names)
+    # Block 0 placeholder: keep the existing reference_images payload accepted
+    # but do not stage or wire global references until the Ingredients/IC-LoRA plan.
+    guide_segments = director_reference_timeline_segments(timeline, [], timeline_input_names)
     audio_segments = director_timeline_audio_segments(run, timeline)
     director["inputs"]["timeline_data"] = json.dumps(
         {"segments": guide_segments, "audioSegments": audio_segments}, ensure_ascii=False
@@ -251,7 +284,6 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
         director["inputs"]["global_reference_strength"] = 0.0
 
     strip_director_image_loader_chain(api)
-    insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -408,4 +440,4 @@ git commit -m "fix: director v2 graph parity from manual run"
 - **Spec coverage:** This plan implements Block 0 only (v2 base swap, replace v1) from the design spec; Blocks 1–4 are explicitly deferred to their own plans and named in Global Constraints.
 - **Placeholder scan:** builder code is shown in full (adapted from the verified v1 builder); tests are concrete. The one inherently iterative part — live-graph parity — is a bounded manual step with a concrete debugging loop, not a placeholder.
 - **Type consistency:** `build_ltx_director_v2_api(run) -> dict[str, dict]` matches the v1 signature and the dispatch call site; `DIRECTOR_V2_WORKFLOW_PATH` is defined in Task 1 and consumed in Task 2; the `ltx_director_2` id/builder strings are consistent across registration, dispatch, and `workflow_status`.
-- **Risk carried forward:** IC-LoRA-on-distilled-fp8 compatibility and main-track video are Block 1+ concerns, not exercised here.
+- **Risk carried forward:** IC-LoRA-on-distilled-fp8 compatibility, Ingredients/global-reference wiring, and main-track video are Block 1+ concerns, not exercised here.

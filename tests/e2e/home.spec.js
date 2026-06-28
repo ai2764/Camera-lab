@@ -1195,18 +1195,70 @@ test("bernini mode subtabs stay horizontal on narrow screens", async ({ page }) 
 
 test("director workspace starts without generated empty prompt segments", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
 
   await expect(page.locator("#directorTimelinePanel")).toBeVisible();
+  await expect(page.locator(".director-lane")).toHaveCount(4);
+  const laneOrder = await page.locator(".director-lane").evaluateAll((lanes) => lanes.map((lane) => lane.dataset.lane));
+  expect(laneOrder).toEqual([
+    "main",
+    "video-audio",
+    "dialogue",
+    "ic-video",
+  ]);
+  await expect(page.locator(".director-lane[data-lane='main']")).toContainText("Main");
+  await expect(page.locator(".director-lane[data-lane='ic-video']")).toContainText("IC video");
+  await expect(page.locator(".director-lane[data-lane='video-audio']")).toContainText("Video audio");
+  await expect(page.locator(".director-lane[data-lane='video-audio']")).toContainText("Follows main video guides");
+  await expect(page.locator(".director-lane[data-lane='video-audio']")).not.toContainText("Detached video audio appears");
+  await expect(page.locator(".director-lane[data-lane='dialogue']")).toContainText("Dialogue");
+  await expect(page.locator("#addDirectorIcVideoBtn")).toBeVisible();
   await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
   await expect(page.locator("#directorSegmentInspector")).toContainText("Add a segment");
   await expect(page.locator("#directorTrack")).not.toContainText("empty prompt");
+  await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/continuous cinematic video/i);
+  await page.locator("#directorGlobalPrompt").fill("");
+  await page.evaluate(() => resetPrompt());
+  await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/continuous cinematic video/i);
+});
+
+test("director IC video lane uploads reference video into motion segments", async ({ page }) => {
+  await page.route("**/api/upload-video", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "tasks/camera_lab_uploads/videos/ic_reference.mp4",
+        name: "ic_reference.mp4",
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  const uploadRequest = page.waitForRequest("**/api/upload-video");
+  await page.locator("#directorIcVideoInput").setInputFiles({
+    name: "ic_reference.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("ic-video"),
+  });
+  await uploadRequest;
+
+  await expect(page.locator("#directorIcVideoTrack .director-ic-video-block")).toContainText("ic_reference.mp4");
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.motion_segments).toEqual([
+    expect.objectContaining({
+      type: "motion_video",
+      video_path: expect.stringContaining("ic_reference.mp4"),
+    }),
+  ]);
+  expect(payload.timeline_segments.some((segment) => segment.video_path?.includes("ic_reference.mp4"))).toBe(false);
 });
 
 test("director segment remove controls delete from timeline and inspector", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.locator("#addDirectorSegmentBtn").click();
 
@@ -1226,7 +1278,7 @@ test("director segment remove controls delete from timeline and inspector", asyn
 
 test("director uses only timeline audio segments", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
     state.audioPath = "uploads/full_track.wav";
@@ -1257,7 +1309,7 @@ test("director uses only timeline audio segments", async ({ page }) => {
 
   await expect(page.locator("#directorAudioModeHint")).toHaveCount(0);
   await expect(page.locator("#directorFullAudioModeBtn")).toHaveCount(0);
-  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toHaveCount(1);
+  await expect(page.locator(".director-lane[data-lane='dialogue'] #directorAudioTrack .director-audio-block.has-audio")).toHaveCount(1);
   await expect(page.locator("#audioUploadWrap")).toBeHidden();
 
   const payload = await page.evaluate(() => collectPayload());
@@ -1268,7 +1320,7 @@ test("director uses only timeline audio segments", async ({ page }) => {
 
 test("director timeline audio modal rounds clip duration up and labels the timeline", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
     state.castingLibrary = [{
@@ -1326,9 +1378,64 @@ test("director timeline audio modal rounds clip duration up and labels the timel
   expect(payload.audio_segments[0].audio_path).toContain("line_one.wav");
 });
 
+test("director video audio lane can add library audio clips", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.castingLibrary = [{
+      name: "video_fx",
+      file: "tts/library/current/video_fx.wav",
+      url: "/media?path=video_fx.wav",
+      voice: "fx",
+      duration: 1.2,
+    }];
+    state.directorSegments = [{
+      id: "seg_video_audio_add",
+      start: 0,
+      duration: 2,
+      prompt: "Shot with extra video audio.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorVideoAudioSegments = [];
+    state.directorAudioSegments = [];
+    state.directorSelectedId = "seg_video_audio_add";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+  });
+
+  await page.locator("#addDirectorVideoAudioBtn").click();
+  await expect(page.locator("#directorAudioModal")).toHaveClass(/open/);
+  await page.locator("#directorAudioLibrarySelect").selectOption("tts/library/current/video_fx.wav");
+  await page.locator("#directorAudioModalStart").fill("1");
+  await page.locator("#addDirectorAudioClipBtn").click();
+
+  const videoAudioBlock = page.locator("#directorVideoAudioTrack .director-video-audio-block");
+  await expect(videoAudioBlock).toContainText("video_fx");
+  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toHaveCount(0);
+  await videoAudioBlock.click();
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
+  await expect(page.locator("#directorVideoAudioStart")).toHaveValue("1");
+
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.audio_segments).toEqual([
+    expect.objectContaining({
+      source: "video",
+      audio_path: "tts/library/current/video_fx.wav",
+      start: 1,
+      duration: 1.5,
+      trim_start: 0,
+    }),
+  ]);
+});
+
 test("director timeline audio blocks can be dragged but keep fixed duration", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
     state.directorSegments = [
@@ -1393,7 +1500,7 @@ test("director timeline audio blocks can be dragged but keep fixed duration", as
 
 test("director timeline audio blocks have preview buttons", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
     window.Audio = class FakeAudio {
@@ -1459,14 +1566,14 @@ test("director timeline audio blocks have preview buttons", async ({ page }) => 
 
 test("use timeline restores segment timing from start frames, not guide frames", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
 
   const payload = await page.evaluate(() => {
     useRunTimeline({
       batch_id: "dry",
       run_id: "01_director",
-      workflow_id: "ltx_director_reference_mvp",
+      workflow_id: "ltx_director_2",
       seed: "123",
       director_timeline: {
         global_prompt: "same subject",
@@ -1507,14 +1614,14 @@ test("use timeline restores segment timing from start frames, not guide frames",
 
 test("use timeline restores audio timing from saved frame ranges", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
 
   const payload = await page.evaluate(() => {
     useRunTimeline({
       batch_id: "dry",
       run_id: "01_director",
-      workflow_id: "ltx_director_reference_mvp",
+      workflow_id: "ltx_director_2",
       seed: "123",
       director_timeline: {
         segments: [
@@ -1561,13 +1668,13 @@ test("use timeline allows replacing a restored segment image guide", async ({ pa
     });
   });
   await page.goto("/");
-  await expect(page.locator("#workflowSelect option[value='ltx_director_reference_mvp']")).toHaveCount(1);
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
     useRunTimeline({
       batch_id: "dry",
       run_id: "01_director",
-      workflow_id: "ltx_director_reference_mvp",
+      workflow_id: "ltx_director_2",
       director_timeline: {
         segments: [
           {
@@ -1595,6 +1702,133 @@ test("use timeline allows replacing a restored segment image guide", async ({ pa
   await expect(page.locator("#directorSegmentImageStatus")).toContainText("new_guide.png");
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.timeline_segments[0].image_path).toContain("new_guide.png");
+});
+
+test("use timeline allows replacing a restored segment with a video guide", async ({ page }) => {
+  await page.route("**/api/upload-image", async (route) => {
+    throw new Error(`video guide should not call upload-image: ${route.request().url()}`);
+  });
+  await page.route("**/api/upload-video", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "tasks/camera_lab_uploads/videos/new_guide.mp4",
+        name: "new_guide.mp4",
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    useRunTimeline({
+      batch_id: "dry",
+      run_id: "01_director",
+      workflow_id: "ltx_director_2",
+      director_timeline: {
+        segments: [
+          {
+            id: "seg_restored_video",
+            type: "text",
+            prompt: "video prompt",
+            duration: 1,
+            frames: 24,
+            start_frame: 0,
+            guide_frame: 0,
+            strength: 0.75,
+          },
+        ],
+      },
+    });
+  });
+
+  const uploadRequest = page.waitForRequest("**/api/upload-video");
+  await page.locator("#directorSegmentImageInput").setInputFiles({
+    name: "new_guide.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("new-video"),
+  });
+  await uploadRequest;
+
+  await expect(page.locator("#directorSegmentImageStatus")).toContainText("new_guide.mp4");
+  await expect(page.locator(".director-block.selected .director-block-ref")).toContainText("timeline video");
+  const videoAudioBlock = page.locator("#directorVideoAudioTrack .director-video-audio-block");
+  await expect(videoAudioBlock).toContainText("new_guide.mp4");
+  await videoAudioBlock.click();
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
+  await page.locator("#directorSegments .director-segment-chip").first().click();
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
+  await videoAudioBlock.click();
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
+  await page.locator("#directorVideoAudioStart").fill("0.5");
+  await page.locator("#directorVideoAudioTrimStart").fill("0.25");
+  await page.locator("#directorSegments .director-segment-chip").first().click();
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
+  await videoAudioBlock.click();
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.timeline_segments[0].type).toBe("video");
+  expect(payload.timeline_segments[0].video_path).toContain("new_guide.mp4");
+  expect(payload.timeline_segments[0].image_path).toBe("");
+  expect(payload.audio_segments).toEqual([
+    expect.objectContaining({
+      source: "video",
+      audio_path: expect.stringContaining("new_guide.mp4"),
+      start: 0.5,
+      duration: 1,
+      trim_start: 6,
+    }),
+  ]);
+});
+
+test("director queues media-only guides without global or segment prompts", async ({ page }) => {
+  await page.route("**/api/run", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "media_only_batch",
+        status: "queued",
+        runs: [],
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    document.getElementById("promptText").value = "";
+    document.getElementById("directorGlobalPrompt").value = "";
+    useRunTimeline({
+      batch_id: "dry",
+      run_id: "01_director",
+      workflow_id: "ltx_director_2",
+      director_timeline: {
+        segments: [
+          {
+            id: "media_only",
+            type: "video",
+            prompt: "",
+            duration: 1,
+            frames: 24,
+            start_frame: 0,
+            guide_frame: 0,
+            video_path: "tasks/camera_lab_uploads/videos/media_only.mp4",
+            strength: 0.75,
+          },
+        ],
+      },
+    });
+    document.getElementById("promptText").value = "";
+    document.getElementById("directorGlobalPrompt").value = "";
+  });
+
+  const runRequest = page.waitForRequest("**/api/run");
+  await page.locator("#runBtn").click();
+  const payload = JSON.parse((await runRequest).postData() || "{}");
+
+  expect(payload.global_prompt).toBe("");
+  expect(payload.timeline_segments[0].prompt).toBe("");
+  expect(payload.timeline_segments[0].video_path).toContain("media_only.mp4");
+  await expect(page.locator("#runHint")).not.toContainText("director workflow requires");
 });
 
 test("casting line regenerate refreshes the audio library dropdown", async ({ page }) => {
