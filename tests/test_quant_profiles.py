@@ -43,3 +43,18 @@ def test_ltx_gguf_workflow_only_uses_registered_models_and_gguf_loaders():
     referenced = {Path(r).name for r in referenced}
     assert referenced
     assert referenced <= registered, f"unregistered gguf files: {referenced - registered}"
+
+
+def test_bernini_gguf_workflow_only_uses_registered_models_and_gguf_loaders():
+    wf_path = ROOT / "workflows" / "app" / "wan22_bernini_gguf_i2v.json"
+    data = json.loads(wf_path.read_text(encoding="utf-8"))
+    blob = json.dumps(data)
+    registered = _registry_model_names("edit", "edit-bernini-gguf")
+    assert "UnetLoaderGGUF" in blob
+    import re
+    referenced = {Path(r).name for r in re.findall(r"[\w./-]+\.gguf", blob)}
+    assert referenced
+    assert referenced <= registered, f"unregistered gguf files: {referenced - registered}"
+    # both experts present
+    assert any("high_noise" in n for n in referenced)
+    assert any("low_noise" in n for n in referenced)

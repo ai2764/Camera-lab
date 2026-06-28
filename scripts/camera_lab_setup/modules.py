@@ -255,6 +255,7 @@ MODULES: tuple[CameraLabModule, ...] = (
             "wan22_bernini_rv2v.ui.json",
             "wan22_bernini_ads2v.ui.json",
             "wan_vace_inpainting.ui.json",
+            "wan22_bernini_gguf_i2v.json",
         ),
         model_profiles=(
             ModelProfile(
