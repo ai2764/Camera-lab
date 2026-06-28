@@ -116,7 +116,9 @@ def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
     assert status.missing == ()
 
 
-def test_resolver_does_not_auto_select_workflow_variant_profiles():
+def test_resolver_selects_workflow_variant_when_it_is_the_only_ready_profile():
+    # When only director-v2 models are installed (not v1), the resolver now picks v2 as the
+    # best ready candidate; _variant_warnings still surfaces the workflow_variant note.
     director = get_module("director")
     visibility = ComfyVisibility(
         nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
@@ -131,9 +133,9 @@ def test_resolver_does_not_auto_select_workflow_variant_profiles():
 
     status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
 
-    assert status.ready is False
-    assert status.profile == "director-v1-ltx23-fp8"
-    assert "ltx-2.3-22b-dev-fp8.safetensors" in status.missing
+    assert status.ready is True
+    assert status.profile == "director-v2-distilled-fp8"
+    assert status.recommendation == "recommended"
     assert any("director-v2-distilled-fp8" in warning for warning in status.warnings)
 
 
@@ -208,3 +210,55 @@ def test_motion_scail2_small_is_marked_unavailable_not_faked():
     small = next(p for p in motion.model_profiles if p.id == "motion-scail2-small")
     assert small.required_models == ()  # no public GGUF exists
     assert "no" in small.notes.lower() and "gguf" in small.notes.lower()
+
+
+def _ltx_visibility_all_tiers():
+    from scripts.camera_lab_setup.visibility import ComfyVisibility
+    diff = frozenset({
+        "LTX-2.3-distilled-Q2_K.gguf", "LTX-2.3-distilled-Q4_K_S.gguf",
+        "LTX-2.3-distilled-Q4_K_M.gguf", "LTX-2.3-distilled-Q8_0.gguf",
+    })
+    texts = frozenset({"gemma-3-12b-it-qat-UD-Q4_K_XL.gguf", "ltx-2.3-22b-dev_embeddings_connectors.safetensors"})
+    return ComfyVisibility(
+        nodes=frozenset({"LTXVConditioning", "UnetLoaderGGUF", "DualCLIPLoaderGGUF"}),
+        models={
+            "diffusion_models": diff,
+            "text_encoders": texts,
+            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+        },
+        source="test",
+    )
+
+
+def test_resolver_picks_highest_fitting_gguf_tier_by_vram():
+    from scripts.camera_lab_setup.hardware import HardwareProfile
+    from scripts.camera_lab_setup.resolver import resolve_module
+    camera = get_module("camera")
+    vis = _ltx_visibility_all_tiers()
+    assert resolve_module(camera, HardwareProfile(vram_gb=8), vis).profile == "camera-ltx23-gguf-q2"
+    assert resolve_module(camera, HardwareProfile(vram_gb=12), vis).profile == "camera-ltx23-gguf-q4s"
+    assert resolve_module(camera, HardwareProfile(vram_gb=16), vis).profile == "camera-ltx23-gguf-q4m"
+    s24 = resolve_module(camera, HardwareProfile(vram_gb=24), vis)
+    assert s24.profile == "camera-ltx23-gguf-q8"
+    assert s24.recommendation == "recommended"
+
+
+def test_resolver_marks_risky_when_only_oversized_tier_is_ready():
+    from scripts.camera_lab_setup.hardware import HardwareProfile
+    from scripts.camera_lab_setup.resolver import resolve_module
+    from scripts.camera_lab_setup.visibility import ComfyVisibility
+    camera = get_module("camera")
+    vis = ComfyVisibility(
+        nodes=frozenset({"LTXVConditioning", "UnetLoaderGGUF", "DualCLIPLoaderGGUF"}),
+        models={
+            "diffusion_models": frozenset({"LTX-2.3-distilled-Q8_0.gguf"}),
+            "text_encoders": frozenset({"gemma-3-12b-it-qat-UD-Q4_K_XL.gguf", "ltx-2.3-22b-dev_embeddings_connectors.safetensors"}),
+            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
+            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
+        },
+        source="test",
+    )
+    status = resolve_module(camera, HardwareProfile(vram_gb=8), vis)
+    assert status.profile == "camera-ltx23-gguf-q8"
+    assert status.recommendation == "risky"

@@ -92,11 +92,21 @@ def resolve_module(
     if not drop_in_candidates:
         drop_in_candidates = candidates
 
-    ready_candidates = [(profile, missing) for profile, missing in drop_in_candidates if not missing]
+    ready_candidates = [(profile, missing) for profile, missing in candidates if not missing]
     if ready_candidates:
-        profile, missing = ready_candidates[-1]
+        vram = hardware.vram_gb
+        def _floor(item):
+            return item[0].min_vram_gb if item[0].min_vram_gb is not None else 0
+        if vram is not None:
+            fitting = [item for item in ready_candidates if _floor(item) <= vram]
+            if fitting:
+                profile, missing = max(fitting, key=_floor)
+            else:
+                profile, missing = min(ready_candidates, key=_floor)
+        else:
+            profile, missing = min(ready_candidates, key=_floor)
     else:
-        profile, missing = min(drop_in_candidates, key=lambda item: len(item[1]))
+        profile, missing = min(candidates, key=lambda item: len(item[1]))
 
     ready = not missing
     recommendation, hardware_warnings = _hardware_recommendation(profile, hardware, ready)
