@@ -58,7 +58,11 @@ def visibility_from_object_info(object_info: Mapping[str, Any]) -> ComfyVisibili
 
 
 def model_visible(visibility: ComfyVisibility, model: ModelRef) -> bool:
-    return model.name in visibility.models.get(model.folder, frozenset())
+    names = visibility.models.get(model.folder, frozenset())
+    if model.name in names:
+        return True
+    normalized = model.name.replace("\\", "/")
+    return any(name.replace("\\", "/") == normalized for name in names)
 
 
 def node_visible(visibility: ComfyVisibility, node_name: str) -> bool:

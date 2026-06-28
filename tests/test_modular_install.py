@@ -81,6 +81,19 @@ def test_visibility_reads_combo_options_from_object_info():
     assert not model_visible(visibility, ModelRef("loras", "missing.safetensors"))
 
 
+def test_model_visibility_normalizes_path_separators():
+    visibility = ComfyVisibility(
+        nodes=frozenset(),
+        models={"diffusion_models": frozenset({"kijai-WAN2.2\\Wan22_Bernini_HIGH_fp8_e4m3fn_scaled.safetensors"})},
+        source="test",
+    )
+
+    assert model_visible(
+        visibility,
+        ModelRef("diffusion_models", "kijai-WAN2.2/Wan22_Bernini_HIGH_fp8_e4m3fn_scaled.safetensors"),
+    )
+
+
 def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
     director = get_module("director")
     visibility = ComfyVisibility(

@@ -4,6 +4,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,12 +14,15 @@ from camera_lab_common import (
     ENV_PATH,
     REPO_ROOT,
     comfy_root_from_env,
+    comfy_url_from_env,
+    http_json,
     install_workflows,
     load_env,
     python_executable,
 )
 from camera_lab_setup.hardware import detect_hardware
 from camera_lab_setup.modules import MODULES, CameraLabModule, ModelProfile, ModelRef, module_ids, selected_modules
+from camera_lab_setup.visibility import ComfyVisibility, model_visible, visibility_from_object_info
 
 
 DEFAULT_STORAGE_HEADROOM_GB = 20.0
@@ -66,23 +70,42 @@ def parse_modules(raw: str | None, all_modules: bool) -> list[str] | None:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-def drop_in_profiles(modules: list[CameraLabModule]) -> tuple[ModelProfile, ...]:
-    return tuple(
-        profile
-        for module in modules
-        for profile in module.model_profiles
-        if profile.compatibility == "drop_in" and profile.disk_gb > 0
+def profile_is_present(profile: ModelProfile, models_root: Path | None = None, visibility: ComfyVisibility | None = None) -> bool:
+    if not profile.required_models:
+        return False
+    return all(
+        (visibility is not None and model_visible(visibility, model))
+        or (models_root is not None and model_target_path(models_root, model).exists())
+        for model in profile.required_models
     )
+
+
+def drop_in_profiles(
+    modules: list[CameraLabModule],
+    models_root: Path | None = None,
+    visibility: ComfyVisibility | None = None,
+) -> tuple[ModelProfile, ...]:
+    profiles: list[ModelProfile] = []
+    for module in modules:
+        for profile in module.model_profiles:
+            if profile.compatibility != "drop_in" or profile.disk_gb <= 0 or not profile.required_models:
+                continue
+            if profile_is_present(profile, models_root=models_root, visibility=visibility):
+                continue
+            profiles.append(profile)
+    return tuple(profiles)
 
 
 def build_storage_plan(
     modules: list[CameraLabModule],
     *,
+    models_root: Path | None = None,
+    visibility: ComfyVisibility | None = None,
     available_gb: float | None = None,
     headroom_gb: float = DEFAULT_STORAGE_HEADROOM_GB,
     target_label: str = "ComfyUI models drive",
 ) -> StoragePlan:
-    profiles = drop_in_profiles(modules)
+    profiles = drop_in_profiles(modules, models_root=models_root, visibility=visibility)
     required_gb = sum(profile.disk_gb for profile in profiles)
     return StoragePlan(
         profiles=profiles,
@@ -97,17 +120,23 @@ def check_storage(
     modules: list[CameraLabModule],
     hardware,
     *,
+    models_root: Path | None = None,
+    visibility: ComfyVisibility | None = None,
     headroom_gb: float = DEFAULT_STORAGE_HEADROOM_GB,
 ) -> StoragePlan:
     if hardware.comfy_free_gb is not None:
         return build_storage_plan(
             modules,
+            models_root=models_root,
+            visibility=visibility,
             available_gb=hardware.comfy_free_gb,
             headroom_gb=headroom_gb,
             target_label="ComfyUI models drive",
         )
     return build_storage_plan(
         modules,
+        models_root=models_root,
+        visibility=visibility,
         available_gb=hardware.repo_free_gb,
         headroom_gb=headroom_gb,
         target_label="repo drive",
@@ -161,11 +190,23 @@ def print_storage_plan(plan: StoragePlan) -> None:
             print(f"  - {profile.id} needs about {profile.disk_gb:g} GB")
 
 
+def load_comfy_visibility() -> ComfyVisibility | None:
+    try:
+        return visibility_from_object_info(http_json(f"{comfy_url_from_env()}/object_info", timeout=30.0))
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"Warning: ComfyUI object_info unavailable for model visibility check: {exc}", file=sys.stderr)
+        return None
+
+
 def model_target_path(models_root: Path, model: ModelRef) -> Path:
     return models_root / model.folder / Path(model.name)
 
 
-def missing_downloadable_models(profiles: list[ModelProfile] | tuple[ModelProfile, ...], models_root: Path) -> MissingDownloadPlan:
+def missing_downloadable_models(
+    profiles: list[ModelProfile] | tuple[ModelProfile, ...],
+    models_root: Path,
+    visibility: ComfyVisibility | None = None,
+) -> MissingDownloadPlan:
     downloadable: list[DownloadCandidate] = []
     manual: list[ModelRef] = []
     seen: set[tuple[str, str]] = set()
@@ -176,7 +217,7 @@ def missing_downloadable_models(profiles: list[ModelProfile] | tuple[ModelProfil
                 continue
             seen.add(key)
             target = model_target_path(models_root, model)
-            if target.exists():
+            if target.exists() or (visibility is not None and model_visible(visibility, model)):
                 continue
             if model.source_url:
                 downloadable.append(DownloadCandidate(model=model, url=model.source_url, target=target))
@@ -214,6 +255,7 @@ def maybe_download_models(
     modules: list[CameraLabModule],
     comfy_root: Path | None,
     *,
+    visibility: ComfyVisibility | None = None,
     assume_yes: bool = False,
     skip_model_download: bool = False,
 ) -> None:
@@ -222,7 +264,8 @@ def maybe_download_models(
     if not comfy_root or not comfy_root.exists():
         print("COMFYUI_ROOT is not configured. Skipping model download prompt.", file=sys.stderr)
         return
-    plan = missing_downloadable_models(drop_in_profiles(modules), comfy_root / "models")
+    profiles = drop_in_profiles(modules, models_root=comfy_root / "models", visibility=visibility)
+    plan = missing_downloadable_models(profiles, comfy_root / "models", visibility=visibility)
     if plan.manual:
         print("Missing models without registered download URLs:")
         for model in plan.manual:
@@ -279,7 +322,12 @@ def main() -> int:
     for warning in hardware.warnings:
         print(f"Warning: {warning}", file=sys.stderr)
     print_profile_plan(modules_for_install)
-    storage_plan = check_storage(modules_for_install, hardware)
+    storage_plan = check_storage(
+        modules_for_install,
+        hardware,
+        models_root=(comfy_root / "models") if comfy_root and comfy_root.exists() else None,
+        visibility=load_comfy_visibility(),
+    )
     print_storage_plan(storage_plan)
     if not storage_plan.ok:
         print(
@@ -312,6 +360,7 @@ def main() -> int:
     maybe_download_models(
         modules_for_install,
         comfy_root,
+        visibility=load_comfy_visibility(),
         assume_yes=args.yes,
         skip_model_download=args.skip_model_download,
     )
