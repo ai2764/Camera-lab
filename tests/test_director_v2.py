@@ -37,6 +37,8 @@ def _stub_builder_graph(monkeypatch):
                 "use_custom_audio": False,
             },
         },
+        "132": {"class_type": "LTXDirectorGuide", "inputs": {"ic_lora_name": "None", "model": ["131", 0]}},
+        "133": {"class_type": "LTXDirectorGuide", "inputs": {"ic_lora_name": "None", "model": ["131", 0]}},
         "200": {"class_type": "SaveVideo", "inputs": {"filename_prefix": ""}},
         "201": {"class_type": "KSampler", "inputs": {"noise_seed": 0}},
     }
@@ -106,6 +108,69 @@ def test_v2_builder_patches_director_node_and_audio_flags(monkeypatch, sample_ru
     assert "segments" in timeline
     assert "audioSegments" in timeline
     assert "motionSegments" not in timeline
+
+
+def test_v2_builder_wires_ic_lora_into_guide_nodes(monkeypatch, sample_run):
+    _stub_builder_graph(monkeypatch)
+    monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
+    run = {**sample_run, "ic_lora_name": "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"}
+
+    api = server.build_ltx_director_v2_api(run)
+
+    guides = [n for n in api.values() if n["class_type"] == "LTXDirectorGuide"]
+    assert len(guides) == 2
+    assert all(
+        g["inputs"]["ic_lora_name"] == "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+        for g in guides
+    )
+
+
+def test_v2_builder_defaults_ic_lora_to_none(monkeypatch, sample_run):
+    _stub_builder_graph(monkeypatch)
+    monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
+
+    api = server.build_ltx_director_v2_api(sample_run)
+
+    guides = [n for n in api.values() if n["class_type"] == "LTXDirectorGuide"]
+    assert guides and all(g["inputs"]["ic_lora_name"] == "None" for g in guides)
+
+
+def test_director_ic_loras_filters_to_ic_lora_weights(monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "object_info",
+        lambda: {
+            "LTXDirectorGuide": {
+                "input": {
+                    "required": {
+                        "ic_lora_name": [
+                            [
+                                "None",
+                                "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+                                "some_other_lora.safetensors",
+                            ],
+                            {},
+                        ]
+                    }
+                }
+            }
+        },
+    )
+
+    loras = server.director_ic_loras()
+
+    assert loras[0] == "None"
+    assert "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors" in loras
+    assert "some_other_lora.safetensors" not in loras
+
+
+def test_director_ic_loras_handles_missing_object_info(monkeypatch):
+    def boom():
+        raise RuntimeError("comfy down")
+
+    monkeypatch.setattr(server, "object_info", boom)
+
+    assert server.director_ic_loras() == ["None"]
 
 
 def test_v2_builder_keeps_distilled_unet_and_no_lora(monkeypatch, sample_run):

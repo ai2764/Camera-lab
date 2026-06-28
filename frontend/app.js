@@ -979,6 +979,7 @@ function collectPayload() {
       timeline_segments: segments,
       motion_segments: motionSegments,
       audio_segments: audioSegments,
+      ic_lora_name: $("directorIcLora")?.value || "None",
       reference_images: collectReferenceImages(),
       audio_path: "",
     };
@@ -5544,8 +5545,20 @@ async function saveCustomVoice() {
   }
 }
 
+function fillDirectorIcLoras() {
+  const select = $("directorIcLora");
+  if (!select) return;
+  const options = state.config?.director?.ic_loras?.length ? state.config.director.ic_loras : ["None"];
+  const current = select.value || "None";
+  select.innerHTML = options
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name === "None" ? "No IC-LoRA" : fileNameFromPath(name))}</option>`)
+    .join("");
+  select.value = options.includes(current) ? current : "None";
+}
+
 async function loadConfig() {
   state.config = await api("/api/config");
+  fillDirectorIcLoras();
   fillSelect($("workflowSelect"), visibleWorkflowItems(state.config.workflows));
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
   if (state.workspace === "edit") {

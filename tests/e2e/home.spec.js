@@ -1256,6 +1256,32 @@ test("director IC video lane uploads reference video into motion segments", asyn
   expect(payload.timeline_segments.some((segment) => segment.video_path?.includes("ic_reference.mp4"))).toBe(false);
 });
 
+test("director IC-LoRA dropdown populates from config and feeds the payload", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.config.director = {
+      ic_loras: ["None", "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"],
+    };
+    fillDirectorIcLoras();
+  });
+
+  await expect(page.locator("#directorIcLora option")).toHaveCount(2);
+  await expect(page.locator("#directorIcLora option").nth(1)).toHaveText(
+    "ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+  );
+
+  await page.locator("#addDirectorSegmentBtn").click();
+  await page.locator("#directorIcLora").selectOption(
+    "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+  );
+
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.ic_lora_name).toBe("ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors");
+});
+
 test("director segment remove controls delete from timeline and inspector", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);

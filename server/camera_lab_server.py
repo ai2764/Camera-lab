@@ -652,6 +652,26 @@ MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
 }
 
 
+def director_ic_loras() -> list[str]:
+    """IC-LoRA options the LTXDirectorGuide node accepts, filtered to IC-LoRA
+    weights with "None" first. Returns ["None"] when ComfyUI or the node is
+    unavailable so the Director IC-LoRA dropdown always has a safe default."""
+    try:
+        node = object_info().get("LTXDirectorGuide", {})
+        entry = (node.get("input", {}).get("required", {}) or {}).get("ic_lora_name")
+    except Exception:
+        entry = None
+    options: list[str] = []
+    if isinstance(entry, list) and entry and isinstance(entry[0], list):
+        options = [str(item) for item in entry[0]]
+    ic = [
+        name
+        for name in options
+        if name != "None" and any(token in name.lower() for token in ("ic-lora", "iclora", "ic_lora"))
+    ]
+    return ["None", *ic]
+
+
 def available_models() -> dict[str, set[str]]:
     """Model files ComfyUI can actually load, per folder, read from /object_info
     loader combo lists. Location-agnostic: covers extra_model_paths and subfolders
@@ -1398,6 +1418,13 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     director["inputs"]["resize_method"] = "maintain aspect ratio"
     director["inputs"]["divisible_by"] = 32
     director["inputs"]["img_compression"] = 18
+
+    # IC-LoRA selection: drive both LTXDirectorGuide sampling stages. "None" keeps
+    # the IC reference track inert (model input is already wired in the workflow).
+    ic_lora_name = str(run.get("ic_lora_name") or "None")
+    for node in api.values():
+        if node.get("class_type") == "LTXDirectorGuide":
+            node["inputs"]["ic_lora_name"] = ic_lora_name
 
     node_info = object_info().get("LTXDirector", {})
     declared_inputs = node_info.get("input", {}) or {}
@@ -4403,6 +4430,7 @@ class Handler(BaseHTTPRequestHandler):
                         "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
                         "comfy": comfy,
                         "casting": casting_status(),
+                        "director": {"ic_loras": director_ic_loras()},
                     }
                 )
             if parsed.path == "/api/casting/library":
