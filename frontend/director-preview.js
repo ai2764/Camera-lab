@@ -17,6 +17,36 @@
   let playing = false;
   let rafId = 0;
   let lastTs = 0;
+  let audioEls = []; // [{ clip, el, active }]
+
+  function rebuildAudio() {
+    for (const item of audioEls) { try { item.el.pause(); } catch (e) {} }
+    audioEls = (timeline.audioClips || []).map((clip) => {
+      const el = new Audio();
+      el.preload = "auto";
+      if (clip.src) el.src = clip.src;
+      el.volume = Math.max(0, Math.min(1, Number(clip.volume == null ? 1 : clip.volume)));
+      return { clip, el, active: false };
+    });
+  }
+
+  function syncAudio(t, allowPlay) {
+    for (const item of audioEls) {
+      const start = Number(item.clip.start) || 0;
+      const end = start + (Number(item.clip.duration) || 0);
+      const covers = t >= start && t < end;
+      const into = Math.max(0, t - start + (Number(item.clip.trimStart) || 0));
+      if (covers) {
+        item.active = true;
+        try { if (Math.abs(item.el.currentTime - into) > 0.08) item.el.currentTime = into; } catch (e) {}
+        if (allowPlay && playing && item.el.paused) { item.el.play().catch(() => {}); }
+        if (!playing && !item.el.paused) item.el.pause();
+      } else {
+        item.active = false;
+        if (!item.el.paused) item.el.pause();
+      }
+    }
+  }
 
   function positionPlayhead() {
     if (!els.playheadEl) return;
@@ -37,6 +67,7 @@
       return;
     }
     renderFrame(currentTime);
+    syncAudio(currentTime, true);
     positionPlayhead();
     rafId = window.requestAnimationFrame(tick);
   }
@@ -45,6 +76,7 @@
     if (playing || timeline.duration <= 0) return;
     if (currentTime >= timeline.duration) currentTime = 0;
     playing = true;
+    syncAudio(currentTime, true);
     lastTs = 0;
     if (els.playButtonEl) els.playButtonEl.textContent = "❚❚";
     rafId = window.requestAnimationFrame(tick);
@@ -52,6 +84,7 @@
 
   function pause() {
     playing = false;
+    for (const item of audioEls) { if (!item.el.paused) item.el.pause(); }
     if (rafId) window.cancelAnimationFrame(rafId);
     rafId = 0;
     if (els.playButtonEl) els.playButtonEl.textContent = "▶";
@@ -95,6 +128,7 @@
     };
     if (els.playerEl) els.playerEl.style.aspectRatio = `${timeline.width} / ${timeline.height}`;
     currentTime = Math.min(currentTime, timeline.duration);
+    rebuildAudio();
     renderFrame(currentTime);
   }
 
@@ -124,6 +158,7 @@
   function seek(t) {
     currentTime = Math.max(0, Math.min(Number(t) || 0, timeline.duration));
     renderFrame(currentTime);
+    syncAudio(currentTime, false);
     positionPlayhead();
   }
 
@@ -131,5 +166,6 @@
     activeClipAt, mount, setTimeline, seek, renderFrame,
     play, pause, toggle, isPlaying, seekFromPointer,
     _state: () => ({ currentTime, timeline, playing }),
+    _audio: () => audioEls.map((item) => ({ start: Number(item.clip.start) || 0, active: item.active, volume: item.el.volume })),
   };
 })();

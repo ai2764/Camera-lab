@@ -2439,3 +2439,41 @@ test("director preview play toggles state and advances the playhead", async ({ p
   await page.evaluate(() => DirectorPreview.pause());
   expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(false);
 });
+
+test("director preview drives audio clips at their volume by playhead position", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+      playheadEl: document.getElementById("directorPlayhead"),
+      timelineEl: document.querySelector(".director-timeline-shell"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 6, width: 1280, height: 720,
+      clips: [{ start: 0, duration: 6, kind: "text", src: "", prompt: "x" }],
+      audioClips: [
+        { start: 0, duration: 2, trimStart: 0, src: "/favicon.ico", volume: 0.4 },
+        { start: 3, duration: 2, trimStart: 0, src: "/favicon.ico", volume: 1.5 },
+      ],
+    });
+  });
+
+  // At t=1 the first audio clip is active at gain 0.4; the second is not.
+  await page.evaluate(() => DirectorPreview.seek(1));
+  const a1 = await page.evaluate(() => DirectorPreview._audio());
+  expect(a1.find((a) => a.start === 0).active).toBe(true);
+  expect(a1.find((a) => a.start === 0).volume).toBeCloseTo(0.4, 5);
+  expect(a1.find((a) => a.start === 3).active).toBe(false);
+
+  // At t=3.5 the second clip is active and its >1 volume is capped to 1.0.
+  await page.evaluate(() => DirectorPreview.seek(3.5));
+  const a2 = await page.evaluate(() => DirectorPreview._audio());
+  expect(a2.find((a) => a.start === 3).active).toBe(true);
+  expect(a2.find((a) => a.start === 3).volume).toBeCloseTo(1.0, 5);
+});
