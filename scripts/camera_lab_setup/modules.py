@@ -51,6 +51,64 @@ LTX23_TEXT_MODELS = (
     ModelRef("text_encoders", "ltx-2.3_text_projection_bf16.safetensors"),
 )
 
+# Verified in Task 1. Gemma file + connectors path confirmed against the real repos.
+# NOTE: connectors file is gated on Lightricks HuggingFace — no public URL; manual download required.
+LTX23_GGUF_TEXT_MODELS = (
+    ModelRef("text_encoders", "gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+             _hf("unsloth/gemma-3-12b-it-qat-GGUF", "gemma-3-12b-it-qat-UD-Q4_K_XL.gguf")),
+    ModelRef("text_encoders", "ltx-2.3-22b-dev_embeddings_connectors.safetensors"),
+)
+LTX23_GGUF_NODES = ("UnetLoaderGGUF", "DualCLIPLoaderGGUF")
+LTX23_GGUF_SHARED = (
+    ModelRef("loras", "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"),
+    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
+)
+
+
+def _ltx_gguf_diffusion(name: str) -> ModelRef:
+    return ModelRef("diffusion_models", name, _hf("QuantStack/LTX-2.3-GGUF", f"LTX-2.3-distilled/{name}"))
+
+
+def _ltx_gguf_profile(
+    prefix: str,
+    suffix: str,
+    gguf: str,
+    *,
+    min_vram: float,
+    rec_vram: float,
+    disk: float,
+    quant: str,
+) -> "ModelProfile":
+    return ModelProfile(
+        id=f"{prefix}-ltx23-gguf-{suffix}",
+        label=f"LTX 2.3 GGUF {quant}",
+        required_models=(_ltx_gguf_diffusion(gguf), *LTX23_GGUF_TEXT_MODELS, *LTX23_GGUF_SHARED),
+        required_nodes=LTX23_GGUF_NODES,
+        min_vram_gb=min_vram,
+        recommended_vram_gb=rec_vram,
+        disk_gb=disk,
+        compatibility="workflow_variant",
+        quantization=quant,
+        size="small",
+        workflow_group="LTX Camera GGUF",
+        compatible_workflows=("ltx23_gguf_i2v_nag_extend.json",),
+        notes=(
+            "GGUF low-VRAM variant; loads via ComfyUI-GGUF + ComfyUI-KJNodes. "
+            "Text encoder (Gemma QAT) sets the VRAM floor. "
+            "Connectors file (ltx-2.3-22b-dev_embeddings_connectors.safetensors) is a gated "
+            "Lightricks file requiring manual download from HuggingFace."
+        ),
+    )
+
+
+def _ltx_gguf_ladder(prefix: str) -> "tuple[ModelProfile, ...]":
+    return (
+        _ltx_gguf_profile(prefix, "q2", "LTX-2.3-distilled-Q2_K.gguf", min_vram=8, rec_vram=10, disk=22, quant="GGUF Q2_K"),
+        _ltx_gguf_profile(prefix, "q4s", "LTX-2.3-distilled-Q4_K_S.gguf", min_vram=12, rec_vram=12, disk=27, quant="GGUF Q4_K_S"),
+        _ltx_gguf_profile(prefix, "q4m", "LTX-2.3-distilled-Q4_K_M.gguf", min_vram=16, rec_vram=16, disk=28, quant="GGUF Q4_K_M"),
+        _ltx_gguf_profile(prefix, "q8", "LTX-2.3-distilled-Q8_0.gguf", min_vram=20, rec_vram=24, disk=35, quant="GGUF Q8_0"),
+    )
+
 MODULES: tuple[CameraLabModule, ...] = (
     CameraLabModule(
         id="camera",
@@ -88,23 +146,7 @@ MODULES: tuple[CameraLabModule, ...] = (
                 ),
                 notes="Drop-in profile for checkpoint-based LTX 2.3 app workflows.",
             ),
-            ModelProfile(
-                id="camera-ltx23-gguf-q4",
-                label="LTX 2.3 GGUF Q4",
-                required_models=(
-                    ModelRef("diffusion_models", "LTXvideo/LTX-2/quantstack/LTX-2.3-distilled-Q4_K_S.gguf"),
-                    ModelRef("text_encoders", "gemma-3-12b-it-Q2_K.gguf"),
-                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
-                ),
-                min_vram_gb=8,
-                recommended_vram_gb=12,
-                disk_gb=20,
-                compatibility="workflow_variant",
-                quantization="GGUF Q4",
-                size="small",
-                workflow_group="LTX Camera",
-                notes="Requires a GGUF loader workflow variant; not drop-in for bundled checkpoint/UNET workflows.",
-            ),
+            *_ltx_gguf_ladder("camera"),
         ),
     ),
     CameraLabModule(
@@ -161,6 +203,7 @@ MODULES: tuple[CameraLabModule, ...] = (
                     "LTXDirectorCropGuides; not drop-in for ltx_director_reference_mvp.json."
                 ),
             ),
+            *_ltx_gguf_ladder("director"),
         ),
     ),
     CameraLabModule(

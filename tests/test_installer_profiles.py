@@ -87,7 +87,7 @@ def test_installer_can_list_profile_compatibility():
         check=True,
     )
 
-    assert "camera-ltx23-gguf-q4" in result.stdout
+    assert "camera-ltx23-gguf-q4s" in result.stdout
     assert "workflow_variant" in result.stdout
     assert "director-v2-distilled-fp8" in result.stdout
     assert "drop_in" in result.stdout

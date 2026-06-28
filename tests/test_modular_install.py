@@ -167,8 +167,24 @@ def test_workflow_sources_can_filter_by_module():
 
 def test_workflow_variant_profiles_are_visible_for_installer_guidance():
     camera = get_module("camera")
-    profile = next(item for item in camera.model_profiles if item.id == "camera-ltx23-gguf-q4")
+    profile = next(item for item in camera.model_profiles if item.id == "camera-ltx23-gguf-q4s")
 
     assert profile.compatibility == "workflow_variant"
-    assert profile.quantization == "GGUF Q4"
-    assert "GGUF loader" in profile.notes
+    assert profile.quantization == "GGUF Q4_K_S"
+    assert "ComfyUI-GGUF" in profile.notes
+
+
+def test_camera_has_ltx_gguf_ladder_with_ascending_vrams():
+    camera = get_module("camera")
+    ladder = [p for p in camera.model_profiles if p.id.startswith("camera-ltx23-gguf")]
+    ids = [p.id for p in ladder]
+    assert ids == ["camera-ltx23-gguf-q2", "camera-ltx23-gguf-q4s", "camera-ltx23-gguf-q4m", "camera-ltx23-gguf-q8"]
+    vrams = [p.min_vram_gb for p in ladder]
+    assert vrams == sorted(vrams)
+    q2 = ladder[0]
+    assert q2.min_vram_gb <= 8
+    # GGUF diffusion + Gemma encoder are both required, both via GGUF loaders
+    assert any(m.name == "LTX-2.3-distilled-Q2_K.gguf" and m.source_url for m in q2.required_models)
+    assert any(m.folder == "text_encoders" and m.name.endswith(".gguf") and m.source_url for m in q2.required_models)
+    assert "UnetLoaderGGUF" in q2.required_nodes
+    assert "DualCLIPLoaderGGUF" in q2.required_nodes
