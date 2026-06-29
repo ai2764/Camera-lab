@@ -1125,6 +1125,13 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
             }
         ]
     duration_frames = sum(segment["frames"] for segment in segments)
+    explicit_duration_frames = 0
+    if payload.get("duration_frames") is not None:
+        explicit_duration_frames = max(0, int(payload.get("duration_frames") or 0))
+    elif payload.get("duration") is not None:
+        explicit_duration_frames = max(0, round(float(payload.get("duration") or 0) * fps))
+    if explicit_duration_frames:
+        duration_frames = max(duration_frames, explicit_duration_frames)
     if payload.get("timeline_segments"):
         duration_frames = max(duration_frames, max(segment["start_frame"] + segment["frames"] for segment in segments))
     audio_segments = director_audio_segments_from_payload(payload, fps=fps)

@@ -964,7 +964,7 @@ function collectPayload() {
     const segments = collectDirectorSegments();
     const motionSegments = collectDirectorMotionSegments();
     const audioSegments = collectDirectorAudioSegments();
-    const duration = directorOutputDurationSeconds();
+    const duration = directorTotalSeconds();
     const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
     const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
     return {

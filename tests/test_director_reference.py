@@ -1229,6 +1229,37 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(guide_segments[2]["imageFile"], "end.png")
         self.assertEqual(guide_segments[2]["start"], 72)
 
+    def test_director_timeline_respects_explicit_duration_after_last_segment(self):
+        payload = {
+            "timeline_segments": [
+                {
+                    "id": "img_start",
+                    "type": "image",
+                    "prompt": "first image prompt",
+                    "duration": 1.0,
+                    "start": 0,
+                    "image_path": "fixtures/start.png",
+                    "strength": 0.8,
+                },
+                {
+                    "id": "img_end",
+                    "type": "image",
+                    "prompt": "final image prompt",
+                    "duration": 1.0,
+                    "start": 3.0,
+                    "image_path": "fixtures/end.png",
+                    "strength": 0.6,
+                },
+            ],
+            "duration": 6.0,
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["duration_frames"], 144)
+        self.assertEqual(timeline["local_prompts"], "first image prompt | final image prompt")
+        self.assertEqual(timeline["segment_lengths"], "72,72")
+
     def test_director_timeline_audio_segments_are_independent_from_image_segments(self):
         payload = {
             "timeline_segments": [

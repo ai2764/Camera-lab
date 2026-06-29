@@ -1224,6 +1224,48 @@ test("director workspace starts without generated empty prompt segments", async 
   await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/continuous cinematic video/i);
 });
 
+test("director payload keeps visible timeline duration for disconnected segments", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorSegments = [
+      {
+        id: "seg_start",
+        start: 0,
+        duration: 1,
+        prompt: "opening frame",
+        reference: "",
+        imagePath: "",
+        imageName: "",
+        imagePreviewUrl: "",
+        strength: 0.65,
+      },
+      {
+        id: "seg_end",
+        start: 3,
+        duration: 1,
+        prompt: "ending frame",
+        reference: "",
+        imagePath: "",
+        imageName: "",
+        imagePreviewUrl: "",
+        strength: 0.65,
+      },
+    ];
+    renderDirectorEditor();
+  });
+
+  const payload = await page.evaluate(() => collectPayload());
+
+  expect(payload.duration).toBe(6);
+  expect(payload.timeline_segments.map((segment) => [segment.start, segment.duration])).toEqual([
+    [0, 1],
+    [3, 1],
+  ]);
+});
+
 test("director timeline labels sit beside compact stacked tracks", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
