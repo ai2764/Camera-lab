@@ -1386,7 +1386,7 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 2px;
   border: 1px solid rgba(143,199,192,.28);
   background: rgba(8,8,6,.72);
@@ -1895,14 +1895,14 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 
 .director-waveform {
   position: absolute;
-  inset: 18px 38px 8px 48px;
+  inset: 30px 8px 8px 8px;
   z-index: 0;
   opacity: .78;
   pointer-events: none;
 }
 
 .director-video-audio-block .director-waveform {
-  inset: 18px 38px 8px 48px;
+  inset: 30px 8px 8px 8px;
 }
 
 .director-waveform::before {
@@ -2020,13 +2020,13 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 
 .director-audio-clear {
   position: absolute;
-  right: 7px;
-  top: 50%;
+  right: 8px;
+  top: 8px;
   z-index: 2;
-  transform: translateY(-50%);
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
+  transform: none;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   padding: 0;
   border-color: rgba(215,106,106,.38);
   color: #f0c3c3;
@@ -4382,6 +4382,14 @@ body.motion-workspace-active .motion-workspace {
   margin-top: 6px;
 }
 
+.director-timeline-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+}
+
 .director-timeline-shell { position: relative; }
 
 .director-playhead {
@@ -4400,15 +4408,13 @@ body.motion-workspace-active .motion-workspace {
 }
 
 .director-cut-button {
-  position: absolute;
-  top: 14px;
-  left: 50%;
+  position: relative;
   width: 24px;
   height: 24px;
   display: grid;
   place-items: center;
   padding: 0;
-  transform: translateX(-50%);
+  transform: none;
   border: 1px solid rgba(255,90,90,.9);
   background: rgba(20,12,11,.96);
   color: #ffd6d6;

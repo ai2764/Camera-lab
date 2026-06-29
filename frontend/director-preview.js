@@ -12,7 +12,7 @@
   }
 
   const els = {};
-  let timeline = { clips: [], audioClips: [], duration: 0, width: 16, height: 9 };
+  let timeline = { clips: [], audioClips: [], duration: 0, displayDuration: 0, width: 16, height: 9 };
   let currentTime = 0;
   let playing = false;
   let rafId = 0;
@@ -49,16 +49,31 @@
     }
   }
 
+  function timelineTrackMetrics() {
+    if (!els.timelineEl) return { left: 0, width: 1 };
+    const visibleTrack = els.timelineEl.querySelector(".director-lane:not([hidden]) .director-track")
+      || els.timelineEl.querySelector("#directorTrack")
+      || els.timelineEl.querySelector(".director-track");
+    const style = getComputedStyle(els.timelineEl);
+    const fallbackLeft = parseFloat(style.getPropertyValue("--director-timeline-label-width")) || 0;
+    const fallbackWidth = parseFloat(style.getPropertyValue("--director-timeline-track-min"))
+      || Math.max(1, els.timelineEl.scrollWidth - fallbackLeft);
+    if (!visibleTrack) return { left: fallbackLeft, width: fallbackWidth };
+    const rect = visibleTrack.getBoundingClientRect();
+    return {
+      left: Number.isFinite(visibleTrack.offsetLeft) ? visibleTrack.offsetLeft : fallbackLeft,
+      width: rect.width > 0 ? rect.width : fallbackWidth,
+    };
+  }
+
   function positionPlayhead() {
     if (!els.playheadEl) return;
-    const pct = timeline.duration > 0 ? Math.max(0, Math.min(1, currentTime / timeline.duration)) : 0;
+    const displayDuration = Math.max(timeline.duration, Number(timeline.displayDuration) || 0);
+    const pct = displayDuration > 0 ? Math.max(0, Math.min(1, currentTime / displayDuration)) : 0;
     els.playheadEl.style.setProperty("--director-playhead-pct", pct);
     if (els.timelineEl) {
-      const style = getComputedStyle(els.timelineEl);
-      const labelWidth = parseFloat(style.getPropertyValue("--director-timeline-label-width")) || 0;
-      const trackWidth = parseFloat(style.getPropertyValue("--director-timeline-track-min"))
-        || Math.max(1, els.timelineEl.scrollWidth - labelWidth);
-      els.playheadEl.style.setProperty("--director-playhead-left", `${labelWidth + (trackWidth * pct)}px`);
+      const metrics = timelineTrackMetrics();
+      els.playheadEl.style.setProperty("--director-playhead-left", `${metrics.left + (metrics.width * pct)}px`);
     }
   }
 
@@ -104,13 +119,11 @@
   function seekFromPointer(clientX) {
     if (!els.timelineEl || timeline.duration <= 0) return;
     const rect = els.timelineEl.getBoundingClientRect();
-    const style = getComputedStyle(els.timelineEl);
-    const labelWidth = parseFloat(style.getPropertyValue("--director-timeline-label-width")) || 0;
-    const trackWidth = parseFloat(style.getPropertyValue("--director-timeline-track-min"))
-      || Math.max(1, els.timelineEl.scrollWidth - labelWidth);
-    const trackX = clientX - rect.left - labelWidth + els.timelineEl.scrollLeft;
-    const ratio = Math.max(0, Math.min(1, trackX / trackWidth));
-    seek(ratio * timeline.duration);
+    const metrics = timelineTrackMetrics();
+    const trackX = clientX - rect.left - metrics.left + els.timelineEl.scrollLeft;
+    const ratio = Math.max(0, Math.min(1, trackX / metrics.width));
+    const displayDuration = Math.max(timeline.duration, Number(timeline.displayDuration) || 0);
+    seek(ratio * displayDuration);
   }
 
   function isTimelineControlTarget(target) {
@@ -168,6 +181,7 @@
       clips: (next && next.clips) || [],
       audioClips: (next && next.audioClips) || [],
       duration: Math.max(0, Number(next && next.duration) || 0),
+      displayDuration: Math.max(0, Number(next && next.displayDuration) || Number(next && next.duration) || 0),
       width: Number(next && next.width) || 16,
       height: Number(next && next.height) || 9,
     };

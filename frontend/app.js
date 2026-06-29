@@ -1035,6 +1035,7 @@ function collectPayload() {
     if (state.directorMode === "retake") {
       const retakeVideo = normalizedDirectorRetakeVideo();
       const duration = directorRetakeTotalSeconds();
+      const retakeRange = normalizedDirectorRetakeRange();
       return {
         workflow_id: workflow.id,
         camera_move: "director_ref",
@@ -1062,8 +1063,8 @@ function collectPayload() {
           file_name: retakeVideo.videoName || fileNameFromPath(retakeVideo.videoPath),
           duration: retakeVideo.duration,
         } : {},
-        retake_start: roundTenth(Math.max(0, Number(state.directorRetakeStart) || 0)),
-        retake_length: roundTenth(Math.max(0.1, Number(state.directorRetakeLength) || 0.1)),
+        retake_start: retakeRange.start,
+        retake_length: retakeRange.length,
         retake_prompt: $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "",
         retake_strength: Math.max(0, Math.min(1, Number($("directorRetakeStrength")?.value ?? state.directorRetakeStrength) || 1)),
       };
@@ -1196,6 +1197,29 @@ function ingredientsSheetSegment(duration) {
 }
 
 function collectDirectorSegments() {
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "main")
+      .filter((item) => item.prompt.trim() || item.mediaPath)
+      .map((item) => {
+        const start = DirectorTimelineModel.toSeconds(item.start, model.fps);
+        const duration = Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps));
+        return {
+          id: item.id,
+          type: item.kind === "video" ? "video" : (item.kind === "image" ? "image" : "text"),
+          prompt: item.prompt.trim(),
+          duration,
+          reference: "",
+          image_path: item.kind === "image" ? item.mediaPath : "",
+          video_path: item.kind === "video" ? item.mediaPath : "",
+          start,
+          guide_frame: Math.max(0, item.start + Math.round(Number(item.extra?.guideOffsetFrames) || 0)),
+          trim_start: item.kind === "video" ? item.trimStart : 0,
+          strength: Math.max(0, Math.min(1, Number(item.strength) || 0.65)),
+        };
+      });
+  }
   return normalizedDirectorSegments()
     .filter((segment) => segment.prompt.trim() || segment.imagePath || segment.videoPath)
     .map((segment) => ({
@@ -1215,6 +1239,21 @@ function collectDirectorSegments() {
 
 function collectDirectorAudioSegments() {
   syncDirectorVideoAudioSegments();
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => (item.track === "video_audio" || item.track === "dialogue") && item.mediaPath)
+      .map((item) => ({
+        id: item.id,
+        ...(item.track === "video_audio" ? { source: "video" } : {}),
+        audio_path: item.mediaPath,
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps)),
+        trim_start: item.trimStart,
+        volume: Math.max(0, Number(item.volume ?? 1)),
+      }))
+      .sort((a, b) => a.start - b.start);
+  }
   const videoAudioSegments = normalizedDirectorVideoAudioSegments()
     .map((segment) => ({
       id: segment.id,
@@ -1239,6 +1278,19 @@ function collectDirectorAudioSegments() {
 }
 
 function collectDirectorMotionSegments() {
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "ic_video" && item.mediaPath)
+      .map((item) => ({
+        id: item.id,
+        type: "motion_video",
+        video_path: item.mediaPath,
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps)),
+        trim_start: item.trimStart,
+      }));
+  }
   return normalizedDirectorIcVideoSegments()
     .filter((segment) => segment.videoPath)
     .map((segment) => ({
@@ -1550,6 +1602,37 @@ function normalizedDirectorVideoAudioSegments() {
     .sort((a, b) => a.start - b.start);
 }
 
+function directorTimelineFps() {
+  return 24;
+}
+
+function createDirectorTimelineModelFromState() {
+  if (!window.DirectorTimelineModel) return null;
+  return DirectorTimelineModel.fromAppState({
+    fps: directorTimelineFps(),
+    main: state.directorSegments,
+    videoAudio: state.directorVideoAudioSegments,
+    dialogue: state.directorAudioSegments,
+    icVideo: state.directorIcVideoSegments,
+  });
+}
+
+function applyDirectorTimelineModelToState(model) {
+  if (!model) return;
+  const next = model.toAppState();
+  state.directorSegments = next.main;
+  state.directorVideoAudioSegments = next.videoAudio;
+  state.directorAudioSegments = next.dialogue;
+  state.directorIcVideoSegments = next.icVideo;
+}
+
+function directorTrackForSelectionType(type = state.directorSelectionType) {
+  if (type === "audio") return "dialogue";
+  if (type === "video_audio") return "video_audio";
+  if (type === "ic_video") return "ic_video";
+  return "main";
+}
+
 function normalizedDirectorRetakeVideo() {
   const video = state.directorRetakeVideo;
   if (!video || !video.videoPath) return null;
@@ -1566,8 +1649,61 @@ function directorRetakeTotalSeconds() {
   return Math.max(0.5, video?.duration || 0.5);
 }
 
+function normalizedDirectorRetakeRange() {
+  const total = directorRetakeTotalSeconds();
+  if (!window.DirectorTimelineModel) {
+    const start = roundTenth(Math.max(0, Math.min(total - 0.1, Number(state.directorRetakeStart) || 0)));
+    const length = roundTenth(Math.max(0.1, Math.min(Number(state.directorRetakeLength) || 0.1, total - start)));
+    return { start, length };
+  }
+  const fps = directorTimelineFps();
+  const range = DirectorTimelineModel.clampRange({
+    start: DirectorTimelineModel.toFrame(state.directorRetakeStart, fps),
+    length: Math.max(1, DirectorTimelineModel.toFrame(state.directorRetakeLength, fps)),
+    total: Math.max(1, DirectorTimelineModel.toFrame(total, fps)),
+    minLength: Math.max(1, DirectorTimelineModel.toFrame(0.1, fps)),
+  });
+  return {
+    start: DirectorTimelineModel.toSeconds(range.start, fps),
+    length: DirectorTimelineModel.toSeconds(range.length, fps),
+  };
+}
+
 function currentDirectorPlayheadSeconds() {
   return Number(window.DirectorPreview?._state?.().currentTime) || 0;
+}
+
+function setDirectorRetakeRangeFromFrames(startFrame, lengthFrame, totalFrame) {
+  if (!window.DirectorTimelineModel) {
+    const fps = directorTimelineFps();
+    const total = Math.max(0.1, (Number(totalFrame) || fps) / fps);
+    const start = roundTenth(Math.max(0, Math.min(total - 0.1, (Number(startFrame) || 0) / fps)));
+    state.directorRetakeStart = start;
+    state.directorRetakeLength = roundTenth(Math.max(0.1, Math.min((Number(lengthFrame) || 1) / fps, total - start)));
+    return;
+  }
+  const fps = directorTimelineFps();
+  const range = DirectorTimelineModel.clampRange({
+    start: startFrame,
+    length: lengthFrame,
+    total: totalFrame,
+    minLength: Math.max(1, DirectorTimelineModel.toFrame(0.1, fps)),
+  });
+  state.directorRetakeStart = DirectorTimelineModel.toSeconds(range.start, fps);
+  state.directorRetakeLength = DirectorTimelineModel.toSeconds(range.length, fps);
+}
+
+function setDirectorRetakeRangeFromSeconds(start, length, total = directorRetakeTotalSeconds()) {
+  const fps = directorTimelineFps();
+  if (!window.DirectorTimelineModel) {
+    setDirectorRetakeRangeFromFrames(start, length, total);
+    return;
+  }
+  setDirectorRetakeRangeFromFrames(
+    DirectorTimelineModel.toFrame(start, fps),
+    Math.max(1, DirectorTimelineModel.toFrame(length, fps)),
+    Math.max(1, DirectorTimelineModel.toFrame(total, fps)),
+  );
 }
 
 function syncDirectorVideoAudioSegments() {
@@ -1661,23 +1797,15 @@ function removeDirectorIcVideoSegment(id) {
 
 function removeSelectedDirectorTimelineItem() {
   if (!state.directorSelectedId) return false;
-  if (state.directorSelectionType === "audio" && state.directorAudioSegments.some((item) => item.id === state.directorSelectedId)) {
-    removeDirectorAudioSegment(state.directorSelectedId);
-    return true;
-  }
-  if (state.directorSelectionType === "video_audio" && state.directorVideoAudioSegments.some((item) => item.id === state.directorSelectedId)) {
-    removeDirectorVideoAudioSegment(state.directorSelectedId);
-    return true;
-  }
-  if (state.directorSelectionType === "ic_video" && state.directorIcVideoSegments.some((item) => item.id === state.directorSelectedId)) {
-    removeDirectorIcVideoSegment(state.directorSelectedId);
-    return true;
-  }
-  if (state.directorSegments.some((item) => item.id === state.directorSelectedId)) {
-    removeDirectorSegment(state.directorSelectedId);
-    return true;
-  }
-  return false;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return false;
+  const removed = model.remove(directorTrackForSelectionType(), state.directorSelectedId);
+  if (!removed) return false;
+  applyDirectorTimelineModelToState(model);
+  state.directorSelectionType = "image";
+  state.directorSelectedId = state.directorSegments[0]?.id || "";
+  renderDirectorEditor();
+  return true;
 }
 
 function isDirectorTextEditingTarget(target) {
@@ -1711,32 +1839,14 @@ function directorPreciseTime(value) {
 
 function splitSelectedDirectorSegmentAtPlayhead() {
   if (!selectedDirectorSegmentCanSplit()) return false;
-  const collection = directorSelectedCollection();
-  const index = collection.findIndex((item) => item.id === state.directorSelectedId);
-  if (index < 0) return false;
-  const segment = collection[index];
-  const cutAt = Number(window.DirectorPreview?._state?.().currentTime) || 0;
-  const start = Number(segment.start) || 0;
-  const duration = Number(segment.duration) || 0;
-  const end = start + duration;
-  if (cutAt <= start + 0.01 || cutAt >= end - 0.01) return false;
-  const leftDuration = directorPreciseTime(cutAt - start);
-  const rightDuration = directorPreciseTime(end - cutAt);
-  if (leftDuration <= 0 || rightDuration <= 0) return false;
-  const right = {
-    ...segment,
-    id: `${segment.id}_split_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    start: directorPreciseTime(cutAt),
-    duration: rightDuration,
-  };
-  const shouldAdvanceTrim = ["audio", "video_audio", "ic_video"].includes(state.directorSelectionType)
-    || (state.directorSelectionType === "image" && Boolean(segment.videoPath));
-  if (shouldAdvanceTrim) {
-    right.trimStart = directorPreciseTime((Number(segment.trimStart) || 0) + leftDuration);
-  }
-  segment.duration = leftDuration;
-  collection.splice(index + 1, 0, right);
-  state.directorSelectedId = right.id;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return false;
+  const cutFrame = DirectorTimelineModel.toFrame(Number(window.DirectorPreview?._state?.().currentTime) || 0, directorTimelineFps());
+  const track = directorTrackForSelectionType();
+  const newId = model.split(track, state.directorSelectedId, cutFrame);
+  if (!newId) return false;
+  applyDirectorTimelineModelToState(model);
+  state.directorSelectedId = newId;
   renderDirectorEditor();
   $("runHint").textContent = "Selected timeline clip split at playhead";
   return true;
@@ -1940,10 +2050,10 @@ function directorVideoPosterCanvasHtml(videoSrc, trimStart = 0, label = "video f
   return `<canvas class="director-block-image director-video-poster-canvas" data-video-src="${escapeHtml(videoSrc || "")}" data-trim-start="${escapeHtml(trimStart || 0)}" data-video-poster-status="pending" aria-label="${escapeHtml(label)}"></canvas>`;
 }
 
-function directorWaveformHtml(audioSrc) {
+function directorWaveformHtml(audioSrc, trimStart = 0, duration = 0, audioDuration = 0) {
   return `
     <div class="director-waveform" aria-hidden="true">
-      <canvas class="director-waveform-canvas" data-audio-src="${escapeHtml(audioSrc || "")}"></canvas>
+      <canvas class="director-waveform-canvas" data-audio-src="${escapeHtml(audioSrc || "")}" data-trim-start="${escapeHtml(trimStart || 0)}" data-duration="${escapeHtml(duration || 0)}" data-audio-duration="${escapeHtml(audioDuration || 0)}"></canvas>
     </div>
   `;
 }
@@ -2020,6 +2130,15 @@ function waveformPeaksFromAudioBuffer(buffer, count = 128) {
   });
 }
 
+function trimDirectorWaveformPeaks(peaks = [], trimStart = 0, duration = 0, audioDuration = 0) {
+  if (!peaks.length || !audioDuration || !duration) return peaks;
+  const startRatio = Math.max(0, Math.min(1, trimStart / audioDuration));
+  const endRatio = Math.max(startRatio, Math.min(1, (trimStart + duration) / audioDuration));
+  const startIndex = Math.floor(startRatio * peaks.length);
+  const endIndex = Math.max(startIndex + 2, Math.ceil(endRatio * peaks.length));
+  return peaks.slice(startIndex, Math.min(peaks.length, endIndex));
+}
+
 async function hydrateDirectorWaveforms() {
   const canvases = Array.from(document.querySelectorAll(".director-waveform-canvas:not([data-hydrated])"));
   if (!canvases.length) return;
@@ -2041,7 +2160,10 @@ async function hydrateDirectorWaveforms() {
         try { await ctx.close(); } catch (e) {}
         directorWaveformCache.set(src, waveformPeaksFromAudioBuffer(buffer));
       }
-      drawDirectorWaveform(canvas, directorWaveformCache.get(src));
+      const trimStart = Math.max(0, Number(canvas.dataset.trimStart) || 0);
+      const duration = Math.max(0, Number(canvas.dataset.duration) || 0);
+      const audioDuration = Math.max(0, Number(canvas.dataset.audioDuration) || 0);
+      drawDirectorWaveform(canvas, trimDirectorWaveformPeaks(directorWaveformCache.get(src), trimStart, duration, audioDuration));
       canvas.dataset.hydrated = "true";
     } catch (e) {
       drawDirectorWaveform(canvas);
@@ -2256,18 +2378,12 @@ function createDirectorAudioBlock(segment, index, total) {
   block.setAttribute("aria-label", `Audio for segment S${index + 1}`);
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
-  const label = hasAudio ? directorAudioLabel(segment) : "Add audio";
-  const timing = hasAudio ? directorAudioTimingLabel(segment) : "";
   const waveformSrc = hasAudio ? directorAudioUrl(segment) : "";
+  const clipDuration = fixedDirectorAudioDuration(segment);
+  const sourceDuration = directorAudioDuration(segment);
   block.innerHTML = `
-    ${hasAudio ? directorWaveformHtml(waveformSrc) : ""}
+    ${hasAudio ? directorWaveformHtml(waveformSrc, segment.trimStart || 0, clipDuration, sourceDuration) : ""}
     ${hasAudio ? `<button class="director-block-edit" type="button" aria-label="Edit audio clip S${index + 1}" title="Edit audio clip">Edit</button>` : ""}
-    <span>S${index + 1}</span>
-    <div class="director-audio-copy">
-      <strong>${escapeHtml(label)}</strong>
-      ${timing ? `<em>${escapeHtml(timing)}</em>` : ""}
-    </div>
-    ${hasAudio ? `<span class="director-audio-actions"></span>` : ""}
     ${hasAudio ? `<button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete audio clip S${index + 1}">x</button>` : ""}
   `;
   const select = () => {
@@ -2298,32 +2414,6 @@ function createDirectorAudioBlock(segment, index, total) {
       openDirectorSegmentModal("audio", segment.id);
     });
   }
-  const actions = block.querySelector(".director-audio-actions");
-  if (actions) {
-    const previewButton = makeCastingPreviewButton(directorAudioUrl(segment), `Preview audio ${index + 1}`);
-    previewButton.classList.add("director-audio-preview");
-    previewButton.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-    });
-    previewButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    actions.appendChild(previewButton);
-  }
-  const copy = block.querySelector(".director-audio-copy");
-  if (copy) {
-    copy.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-      startDirectorDrag(event, segment.id, "audio");
-    });
-  }
-  const labelIndex = block.querySelector("span");
-  if (labelIndex) {
-    labelIndex.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-      startDirectorDrag(event, segment.id, "audio");
-    });
-  }
   block.addEventListener("mousemove", () => {
     block.style.cursor = "grab";
   });
@@ -2346,13 +2436,8 @@ function createDirectorVideoAudioBlock(segment, index, total) {
   block.style.width = `${(segment.duration / total) * 100}%`;
   const waveformSrc = segment.audioPath ? mediaUrl(segment.audioPath) : "";
   block.innerHTML = `
-    ${directorWaveformHtml(waveformSrc)}
+    ${directorWaveformHtml(waveformSrc, segment.trimStart || 0, segment.duration || 0, segment.audioDuration || 0)}
     <button class="director-block-edit" type="button" aria-label="Edit video audio ${index + 1}" title="Edit video audio">Edit</button>
-    <span>V${index + 1}</span>
-    <div class="director-audio-copy">
-      <strong>${escapeHtml(segment.audioName || "Video audio")}</strong>
-      <em>Extracted audio</em>
-    </div>
     <button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete video audio ${index + 1}">x</button>
   `;
   const select = () => {
@@ -2434,6 +2519,25 @@ function directorPreviewClips() {
       trimStart: 0,
     }];
   }
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "main")
+      .map((item) => {
+        let kind = "text";
+        let src = "";
+        if (item.kind === "video") { kind = "video"; src = item.previewUrl || mediaUrl(item.mediaPath); }
+        else if (item.kind === "image") { kind = "image"; src = item.previewUrl || mediaUrl(item.mediaPath); }
+        return {
+          start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+          duration: DirectorTimelineModel.toSeconds(item.length, model.fps),
+          kind,
+          src,
+          prompt: item.prompt || "",
+          trimStart: item.kind === "video" ? DirectorTimelineModel.toSeconds(item.trimStart, model.fps) : 0,
+        };
+      });
+  }
   return normalizedDirectorSegments().map((segment) => {
     let kind = "text";
     let src = "";
@@ -2451,7 +2555,29 @@ function directorPreviewClips() {
 }
 
 function directorPreviewAudioClips() {
-  if (state.directorMode === "retake") return [];
+  if (state.directorMode === "retake") {
+    const video = normalizedDirectorRetakeVideo();
+    if (!video?.videoPath) return [];
+    return [{
+      start: 0,
+      duration: video.duration,
+      trimStart: 0,
+      src: video.videoPreviewUrl || mediaUrl(video.videoPath),
+      volume: 1,
+    }];
+  }
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => (item.track === "video_audio" || item.track === "dialogue") && item.mediaPath)
+      .map((item) => ({
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: DirectorTimelineModel.toSeconds(item.length, model.fps),
+        trimStart: DirectorTimelineModel.toSeconds(item.trimStart, model.fps),
+        src: mediaUrl(item.mediaPath),
+        volume: Math.max(0, Number(item.volume ?? 1)),
+      }));
+  }
   const lanes = [...normalizedDirectorVideoAudioSegments(), ...normalizedDirectorAudioSegments()];
   return lanes
     .filter((segment) => segment.audioPath)
@@ -2480,7 +2606,8 @@ function syncDirectorPreview() {
   DirectorPreview.setTimeline({
     clips: directorPreviewClips(),
     audioClips: directorPreviewAudioClips(),
-    duration: state.directorMode === "retake" ? directorRetakeTotalSeconds() : directorTotalSeconds(),
+    duration: state.directorMode === "retake" ? directorRetakeTotalSeconds() : directorOutputDurationSeconds(),
+    displayDuration: state.directorMode === "retake" ? directorRetakeTotalSeconds() : directorTotalSeconds(),
     width: size.width,
     height: size.height,
   });
@@ -2512,8 +2639,9 @@ function renderDirectorRetakePanel() {
   const video = normalizedDirectorRetakeVideo();
   const status = $("directorRetakeStatus");
   if (status) {
-    const start = Math.max(0, Number(state.directorRetakeStart) || 0);
-    const end = start + Math.max(0, Number(state.directorRetakeLength) || 0);
+    const range = normalizedDirectorRetakeRange();
+    const start = range.start;
+    const end = start + range.length;
     status.textContent = video
       ? `${video.videoName || fileNameFromPath(video.videoPath)} | Retake ${formatSeconds(start)} - ${formatSeconds(end)}`
       : "Upload a base video, then use { and } at the playhead to set the retake range.";
@@ -2570,8 +2698,9 @@ function renderDirectorRetakeTrack(track, total) {
     removeDirectorRetakeVideo();
   });
   track.appendChild(block);
-  const start = Math.max(0, Math.min(total, Number(state.directorRetakeStart) || 0));
-  const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  const range = normalizedDirectorRetakeRange();
+  const start = Math.max(0, Math.min(total, range.start));
+  const length = Math.max(0.1, range.length);
   const end = Math.max(start + 0.1, Math.min(total, start + length));
   const selection = document.createElement("div");
   selection.className = "director-retake-selection";
@@ -3053,28 +3182,22 @@ function updateDirectorBlockCursor(event, block) {
 function onDirectorDrag(event) {
   const drag = state.directorDrag;
   if (!drag) return;
-  const isAudio = drag.type === "audio";
-  const isVideoAudio = drag.type === "video_audio";
-  const isIcVideo = drag.type === "ic_video";
-  const segments = isIcVideo
-    ? state.directorIcVideoSegments
-    : (isVideoAudio ? state.directorVideoAudioSegments : (isAudio ? state.directorAudioSegments : state.directorSegments));
-  const segment = segments.find((item) => item.id === drag.id);
-  if (!segment) return;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return;
   const deltaSeconds = ((event.clientX - drag.startX) / Math.max(1, drag.rect.width)) * drag.total;
+  const deltaFrames = Math.round(deltaSeconds * directorTimelineFps());
   if (Math.abs(event.clientX - drag.startX) > 3) drag.moved = true;
+  const track = drag.type === "audio" ? "dialogue" : drag.type === "video_audio" ? "video_audio" : drag.type === "ic_video" ? "ic_video" : "main";
+  const originalStartFrame = DirectorTimelineModel.toFrame(drag.originalStart, directorTimelineFps());
+  const originalDurationFrame = Math.max(1, DirectorTimelineModel.toFrame(drag.originalDuration, directorTimelineFps()));
   if (drag.type === "image" && drag.edge === "left") {
-    const nextStart = Math.max(0, drag.originalStart + deltaSeconds);
-    const end = drag.originalStart + drag.originalDuration;
-    segment.start = roundTenth(Math.min(nextStart, end - 0.5));
-    segment.duration = roundTenth(end - segment.start);
+    model.resizeLeft(track, drag.id, originalStartFrame + deltaFrames);
   } else if (drag.type === "image" && drag.edge === "right") {
-    segment.duration = roundTenth(Math.max(0.5, drag.originalDuration + deltaSeconds));
+    model.resizeRight(track, drag.id, originalStartFrame + originalDurationFrame + deltaFrames);
   } else {
-    segment.start = roundTenth(Math.max(0, drag.originalStart + deltaSeconds));
+    model.move(track, drag.id, originalStartFrame + deltaFrames);
   }
-  if (isAudio) segment.duration = fixedDirectorAudioDuration(segment);
-  if (isAudio) keepDirectorAudioSegmentsSeparated(segment.id);
+  applyDirectorTimelineModelToState(model);
   renderDirectorTimelineOnly();
 }
 
@@ -3504,8 +3627,7 @@ async function uploadDirectorRetakeVideo(file) {
     videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
     duration: videoDuration,
   };
-  state.directorRetakeStart = Math.min(Math.max(0, state.directorRetakeStart || 0), Math.max(0, videoDuration - 0.1));
-  state.directorRetakeLength = Math.max(0.1, Math.min(state.directorRetakeLength || Math.min(1, videoDuration), videoDuration - state.directorRetakeStart));
+  setDirectorRetakeRangeFromSeconds(state.directorRetakeStart || 0, state.directorRetakeLength || Math.min(1, videoDuration), videoDuration);
   renderDirectorEditor();
   $("runHint").textContent = "Retake base video added";
 }
@@ -3517,19 +3639,25 @@ function setDirectorMode(mode) {
 
 function setDirectorRetakeStartAtPlayhead() {
   const total = directorRetakeTotalSeconds();
-  const playhead = roundTenth(Math.max(0, Math.min(total, currentDirectorPlayheadSeconds())));
-  const end = Math.max(playhead + 0.1, Math.min(total, (Number(state.directorRetakeStart) || 0) + (Number(state.directorRetakeLength) || 1)));
-  state.directorRetakeStart = playhead;
-  state.directorRetakeLength = roundTenth(Math.max(0.1, end - playhead));
+  const fps = directorTimelineFps();
+  const totalFrame = DirectorTimelineModel.toFrame(total, fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
+  const playheadFrame = Math.max(0, Math.min(totalFrame, DirectorTimelineModel.toFrame(currentDirectorPlayheadSeconds(), fps)));
+  const currentEndFrame = Math.min(totalFrame, DirectorTimelineModel.toFrame((Number(state.directorRetakeStart) || 0) + (Number(state.directorRetakeLength) || 1), fps));
+  const endFrame = Math.max(playheadFrame + minLengthFrame, currentEndFrame);
+  setDirectorRetakeRangeFromFrames(playheadFrame, endFrame - playheadFrame, totalFrame);
   renderDirectorEditor();
 }
 
 function setDirectorRetakeEndAtPlayhead() {
   const total = directorRetakeTotalSeconds();
-  const start = Math.max(0, Number(state.directorRetakeStart) || 0);
-  const playhead = roundTenth(Math.max(0, Math.min(total, currentDirectorPlayheadSeconds())));
-  const end = Math.max(start + 0.1, playhead);
-  state.directorRetakeLength = roundTenth(Math.min(total - start, end - start));
+  const fps = directorTimelineFps();
+  const totalFrame = DirectorTimelineModel.toFrame(total, fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
+  const startFrame = DirectorTimelineModel.toFrame(state.directorRetakeStart, fps);
+  const playheadFrame = Math.max(0, Math.min(totalFrame, DirectorTimelineModel.toFrame(currentDirectorPlayheadSeconds(), fps)));
+  const endFrame = Math.max(startFrame + minLengthFrame, playheadFrame);
+  setDirectorRetakeRangeFromFrames(startFrame, Math.min(totalFrame - startFrame, endFrame - startFrame), totalFrame);
   renderDirectorEditor();
 }
 
@@ -3550,6 +3678,9 @@ function startDirectorRetakeSelectionDrag(event) {
   const mode = directorRetakeDragModeFromEvent(event);
   const originalStart = Number(state.directorRetakeStart) || 0;
   const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  const fps = directorTimelineFps();
+  const originalStartFrame = DirectorTimelineModel.toFrame(originalStart, fps);
+  const lengthFrame = Math.max(1, DirectorTimelineModel.toFrame(length, fps));
   state.directorRetakeDrag = {
     mode,
     startX: event.clientX,
@@ -3557,6 +3688,10 @@ function startDirectorRetakeSelectionDrag(event) {
     originalEnd: originalStart + length,
     length,
     total: directorRetakeTotalSeconds(),
+    originalStartFrame,
+    originalEndFrame: originalStartFrame + lengthFrame,
+    lengthFrame,
+    totalFrame: Math.max(1, DirectorTimelineModel.toFrame(directorRetakeTotalSeconds(), fps)),
     width: Math.max(1, rect.width),
   };
   document.body.classList.add("director-dragging");
@@ -3613,19 +3748,17 @@ function onDirectorRetakeSelectionDrag(event) {
   const drag = state.directorRetakeDrag;
   if (!drag) return;
   const deltaSeconds = ((event.clientX - drag.startX) / drag.width) * drag.total;
-  const minLength = 0.1;
+  const fps = directorTimelineFps();
+  const deltaFrames = Math.round(deltaSeconds * fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
   if (drag.mode === "left") {
-    const nextStart = Math.max(0, Math.min(drag.originalEnd - minLength, drag.originalStart + deltaSeconds));
-    state.directorRetakeStart = roundTenth(nextStart);
-    state.directorRetakeLength = roundTenth(Math.max(minLength, drag.originalEnd - nextStart));
+    const nextStart = Math.max(0, Math.min(drag.originalEndFrame - minLengthFrame, drag.originalStartFrame + deltaFrames));
+    setDirectorRetakeRangeFromFrames(nextStart, drag.originalEndFrame - nextStart, drag.totalFrame);
   } else if (drag.mode === "right") {
-    const nextEnd = Math.max(drag.originalStart + minLength, Math.min(drag.total, drag.originalEnd + deltaSeconds));
-    state.directorRetakeStart = roundTenth(drag.originalStart);
-    state.directorRetakeLength = roundTenth(Math.max(minLength, nextEnd - drag.originalStart));
+    const nextEnd = Math.max(drag.originalStartFrame + minLengthFrame, Math.min(drag.totalFrame, drag.originalEndFrame + deltaFrames));
+    setDirectorRetakeRangeFromFrames(drag.originalStartFrame, nextEnd - drag.originalStartFrame, drag.totalFrame);
   } else {
-    const maxStart = Math.max(0, drag.total - drag.length);
-    state.directorRetakeStart = roundTenth(Math.max(0, Math.min(maxStart, drag.originalStart + deltaSeconds)));
-    state.directorRetakeLength = roundTenth(drag.length);
+    setDirectorRetakeRangeFromFrames(drag.originalStartFrame + deltaFrames, drag.lengthFrame, drag.totalFrame);
   }
   renderDirectorTimelineOnly();
 }
@@ -3643,9 +3776,10 @@ function stopDirectorRetakeSelectionDrag() {
 async function sendDirectorRetakeSelectionToEdit(target) {
   const video = normalizedDirectorRetakeVideo();
   if (!video?.videoPath || !target) return;
-  const start = roundTenth(Math.max(0, Number(state.directorRetakeStart) || 0));
-  const length = roundTenth(Math.max(0.1, Number(state.directorRetakeLength) || 0.1));
-  const end = roundTenth(Math.min(directorRetakeTotalSeconds(), start + length));
+  const range = normalizedDirectorRetakeRange();
+  const start = range.start;
+  const length = range.length;
+  const end = Math.min(directorRetakeTotalSeconds(), start + length);
   const prompt = $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "";
   const buttons = [...document.querySelectorAll("#directorRetakeEditModes button")];
   buttons.forEach((button) => { button.disabled = true; });

@@ -243,3 +243,14 @@ ComfyUI (LTX Director 2)  →  AV video out
 - Director-native **retake** (seamless same-model temporal in-paint) incl. resolving the
   `override_audio` vs mixer conflict.
 - Optional motion/structure IC-LoRA with a track-extraction preprocessing pipeline.
+
+## Director Timeline Model Contract
+
+- Camera Lab Director editing logic uses a frame-first model that mirrors LTXDirector `timeline_data`.
+- Internal model fields are `start`, `length`, and `trimStart` in frames.
+- UI state may expose `start`, `duration`, and `trimStart` in seconds, but editing operations must convert to the frame model first.
+- Splitting media clips advances the right clip `trimStart` by the left clip length.
+- Image clips are not splittable.
+- Audio, video-audio, main video, and IC video clips are splittable.
+- Payload `trim_start` is emitted in frames.
+- Payload `start` and `duration` remain seconds for Camera Lab server compatibility.

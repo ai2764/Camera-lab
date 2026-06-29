@@ -732,8 +732,12 @@ test("result video edit menu sends a video into Director Retake", async ({ page 
   });
 
   const card = page.locator("#resultsGrid .result-card").filter({ hasText: "director result prompt" });
-  await card.locator(".result-video-edit-button").click();
-  await card.locator(".result-video-edit-menu button", { hasText: "Retake" }).click();
+  const editMenuButton = card.locator(".result-video-edit-button");
+  await expect(editMenuButton).toBeVisible();
+  await editMenuButton.evaluate((button) => button.click());
+  const retakeMenuItem = card.locator(".result-video-edit-menu button", { hasText: "Retake" });
+  await expect(retakeMenuItem).toBeVisible();
+  await retakeMenuItem.evaluate((button) => button.click());
 
   await expect(page.locator("#directorWorkspaceTab")).toHaveClass(/active/);
   await expect(page.locator("#directorModeRetakeBtn")).toHaveClass(/active/);
@@ -1544,10 +1548,10 @@ test("director retake tab uploads one base video and emits native retake payload
     video_path: expect.stringContaining("retake_base.mp4"),
     file_name: "retake_base.mp4",
   }));
-  expect(payload.retake_start).toBe(1.2);
-  expect(queuedPayload.retake_start).toBe(1.2);
-  expect(payload.retake_length).toBe(2.2);
-  expect(queuedPayload.retake_length).toBe(2.2);
+  expect(payload.retake_start).toBeCloseTo(29 / 24, 3);
+  expect(queuedPayload.retake_start).toBeCloseTo(29 / 24, 3);
+  expect(payload.retake_length).toBeCloseTo(53 / 24, 3);
+  expect(queuedPayload.retake_length).toBeCloseTo(53 / 24, 3);
   expect(payload.retake_prompt).toBe("redo the hand gesture");
   expect(queuedPayload.retake_prompt).toBe("redo the hand gesture");
 });
@@ -1628,6 +1632,39 @@ test("director retake selection can be dragged and base video removed", async ({
   expect(await page.evaluate(() => state.directorRetakeVideo)).toBeNull();
 });
 
+test("director retake preview includes base video audio", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#directorModeRetakeBtn").click();
+  await page.evaluate(() => {
+    state.directorRetakeVideo = {
+      videoPath: "tasks/camera_lab_runs/retake/clip_with_audio.mp4",
+      videoName: "clip_with_audio.mp4",
+      videoPreviewUrl: "",
+      videoPosterUrl: "",
+      duration: 6,
+    };
+    state.directorRetakeStart = 1;
+    state.directorRetakeLength = 2;
+    renderDirectorEditor();
+  });
+
+  const previewState = await page.evaluate(() => DirectorPreview._state());
+  expect(previewState.timeline.audioClips).toEqual([
+    expect.objectContaining({
+      start: 0,
+      duration: 6,
+      trimStart: 0,
+      src: expect.stringContaining("clip_with_audio.mp4"),
+      volume: 1,
+    }),
+  ]);
+  expect(await page.evaluate(() => DirectorPreview._audio())).toEqual([
+    expect.objectContaining({ start: 0, volume: 1 }),
+  ]);
+});
+
 test("director retake selection handles resize the selected range", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
@@ -1689,8 +1726,8 @@ test("director retake edit mode buttons trim the selection into Edit inputs", as
   await page.route("**/api/trim-video", async (route) => {
     const payload = route.request().postDataJSON();
     expect(payload.video_path).toContain("clip.mp4");
-    expect(payload.start).toBe(1.2);
-    expect(payload.end).toBe(3.4);
+    expect(payload.start).toBeCloseTo(29 / 24, 3);
+    expect(payload.end).toBeCloseTo(82 / 24, 2);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -2173,6 +2210,49 @@ test("director selected timeline segments can be deleted with keyboard", async (
   await expect(page.locator("#directorAudioTrack .director-audio-block")).toHaveCount(0);
 });
 
+test("director frame model preserves audio clip lengths after repeated split and delete", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_anchor", start: 0, duration: 8, prompt: "anchor", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_chain", start: 1, duration: 6, trimStart: 0.5, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 10, volume: 1 }];
+    state.directorVideoAudioSegments = [];
+    state.directorIcVideoSegments = [];
+    state.directorSelectedId = "aud_chain";
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+    DirectorPreview.seek(3);
+  });
+
+  await page.locator("#directorCutAtPlayheadBtn").click();
+  await page.evaluate(() => {
+    state.directorSelectedId = state.directorAudioSegments[1].id;
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+    DirectorPreview.seek(5);
+  });
+  await page.locator("#directorCutAtPlayheadBtn").click();
+
+  expect(await page.evaluate(() => state.directorAudioSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
+    { start: 1, duration: 2, trimStart: 0.5 },
+    { start: 3, duration: 2, trimStart: 2.5 },
+    { start: 5, duration: 2, trimStart: 4.5 },
+  ]);
+
+  await page.evaluate(() => {
+    state.directorSelectedId = state.directorAudioSegments[1].id;
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+  });
+  await page.keyboard.press("Delete");
+
+  expect(await page.evaluate(() => state.directorAudioSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
+    { start: 1, duration: 2, trimStart: 0.5 },
+    { start: 5, duration: 2, trimStart: 4.5 },
+  ]);
+});
+
 test("clicking a director segment selects it without opening the modal", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
@@ -2289,6 +2369,27 @@ test("director playhead scissors preserves trim offsets when splitting audio and
   expect(await page.evaluate(() => state.directorAudioSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
     { start: 1, duration: 1.5, trimStart: 0.5 },
     { start: 2.5, duration: 2.5, trimStart: 2 },
+  ]);
+  expect(await page.evaluate(() => {
+    const blocks = [...document.querySelectorAll("#directorAudioTrack .director-audio-block")];
+    return blocks.map((block) => ({
+      left: block.style.left,
+      width: block.style.width,
+    }));
+  })).toEqual([
+    { left: "12.5%", width: "18.75%" },
+    { left: "31.25%", width: "31.25%" },
+  ]);
+  expect(await page.evaluate(() => {
+    const canvases = [...document.querySelectorAll("#directorAudioTrack .director-waveform-canvas")];
+    return canvases.map((canvas) => ({
+      trimStart: canvas.dataset.trimStart,
+      duration: canvas.dataset.duration,
+      audioDuration: canvas.dataset.audioDuration,
+    }));
+  })).toEqual([
+    { trimStart: "0.5", duration: "1.5", audioDuration: "6" },
+    { trimStart: "2", duration: "2.5", audioDuration: "6" },
   ]);
   expect(await page.evaluate(() => collectPayload().audio_segments
     .filter((segment) => segment.id && segment.id.startsWith("aud_cut"))
@@ -2418,6 +2519,15 @@ test("director audio delete buttons use x labels", async ({ page }) => {
   await expect(page.locator("#directorVideoAudioTrack .director-audio-clear")).toHaveText("x");
   await expect(page.locator("#directorAudioTrack .director-audio-clear svg")).toHaveCount(0);
   await expect(page.locator("#directorVideoAudioTrack .director-audio-clear svg")).toHaveCount(0);
+
+  for (const trackId of ["directorAudioTrack", "directorVideoAudioTrack"]) {
+    const editBox = await page.locator(`#${trackId} .director-block-edit`).boundingBox();
+    const clearBox = await page.locator(`#${trackId} .director-audio-clear`).boundingBox();
+    expect(editBox).not.toBeNull();
+    expect(clearBox).not.toBeNull();
+    expect(Math.abs(clearBox.y - editBox.y)).toBeLessThanOrEqual(2);
+    expect(clearBox.x).toBeGreaterThan(editBox.x + editBox.width);
+  }
 });
 
 test("director timeline does not render the lower segment duration list", async ({ page }) => {
@@ -2496,7 +2606,7 @@ test("director uses only timeline audio segments", async ({ page }) => {
   expect(payload.audio_segments[0].audio_path).toContain("line_one.wav");
 });
 
-test("director timeline audio modal rounds clip duration up and labels the timeline", async ({ page }) => {
+test("director timeline audio modal rounds clip duration up and keeps timeline compact", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
@@ -2547,7 +2657,7 @@ test("director timeline audio modal rounds clip duration up and labels the timel
   await expect(page.locator("#directorAudioDuration")).toHaveCount(0);
   await expect(page.locator("#directorSegmentInspector")).toContainText("Duration");
   await expect(page.locator("#directorSegmentInspector")).toContainText("2.5s");
-  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toContainText("Audio 2.13s -> Clip 2.5s");
+  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).not.toContainText("Audio 2.13s -> Clip 2.5s");
 
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.segments[0].duration).toBe(1);
@@ -2592,7 +2702,7 @@ test("director video audio lane can add library audio clips", async ({ page }) =
   await page.locator("#addDirectorAudioClipBtn").click();
 
   const videoAudioBlock = page.locator("#directorVideoAudioTrack .director-video-audio-block");
-  await expect(videoAudioBlock).toContainText("video_fx");
+  await expect(videoAudioBlock).not.toContainText("video_fx");
   await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toHaveCount(0);
   await videoAudioBlock.click();
   await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
@@ -2645,18 +2755,15 @@ test("director timeline audio blocks can be dragged but keep fixed duration", as
   await page.locator("#directorAudioTrack .director-audio-block.has-audio").scrollIntoViewIfNeeded();
   const trackBox = await page.locator("#directorAudioTrack").boundingBox();
   const block = page.locator("#directorAudioTrack .director-audio-block.has-audio");
-  const copy = block.locator(".director-audio-copy");
   let blockBox = await block.boundingBox();
-  let copyBox = await copy.boundingBox();
   expect(trackBox).not.toBeNull();
   expect(blockBox).not.toBeNull();
-  expect(copyBox).not.toBeNull();
   const oneSecond = trackBox.width / 6;
-  const y = copyBox.y + copyBox.height / 2;
+  const y = blockBox.y + blockBox.height / 2;
 
-  await page.mouse.move(copyBox.x + copyBox.width / 2, y);
+  await page.mouse.move(blockBox.x + blockBox.width / 2, y);
   await page.mouse.down();
-  await page.mouse.move(copyBox.x + copyBox.width / 2 + oneSecond * 2, y, { steps: 8 });
+  await page.mouse.move(blockBox.x + blockBox.width / 2 + oneSecond * 2, y, { steps: 8 });
   await page.mouse.up();
 
   await expect(page.locator("#directorAudioStart")).toHaveValue("2");
@@ -2675,7 +2782,7 @@ test("director timeline audio blocks can be dragged but keep fixed duration", as
   expect(payload.audio_segments[0].duration).toBe(1);
 });
 
-test("director timeline segment drag snaps to 0.1 seconds", async ({ page }) => {
+test("director timeline segment drag snaps to frame-derived seconds", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
@@ -2727,10 +2834,10 @@ test("director timeline segment drag snaps to 0.1 seconds", async ({ page }) => 
 
   const payload = await page.evaluate(() => collectPayload());
   const moved = payload.timeline_segments.find((segment) => segment.id === "seg_drag_tenth");
-  expect(moved.start).toBe(1.3);
+  expect(moved.start).toBeCloseTo(31 / 24, 3);
 });
 
-test("director timeline resize handles snap to 0.1 seconds and show thick edge guides", async ({ page }) => {
+test("director timeline resize handles snap to frame-derived seconds and show thick edge guides", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
@@ -2766,7 +2873,7 @@ test("director timeline resize handles snap to 0.1 seconds and show thick edge g
     onDirectorDrag({ clientX: 130 });
     stopDirectorDrag();
   });
-  expect(await page.evaluate(() => state.directorSegments[0].duration)).toBe(2.3);
+  expect(await page.evaluate(() => state.directorSegments[0].duration)).toBeCloseTo(55 / 24, 3);
 
   await page.evaluate(() => {
     const segment = state.directorSegments[0];
@@ -2790,7 +2897,10 @@ test("director timeline resize handles snap to 0.1 seconds and show thick edge g
   expect(await page.evaluate(() => ({
     start: state.directorSegments[0].start,
     duration: state.directorSegments[0].duration,
-  }))).toEqual({ start: 1.3, duration: 2.7 });
+  }))).toEqual({
+    start: expect.closeTo(31 / 24, 3),
+    duration: expect.closeTo(65 / 24, 3),
+  });
 
   const handleGuide = await page.locator("#directorTrack .resize-handle.left").evaluate((el) => {
     const style = getComputedStyle(el, "::before");
@@ -2801,6 +2911,120 @@ test("director timeline resize handles snap to 0.1 seconds and show thick edge g
   });
   expect(handleGuide.width).toBeGreaterThanOrEqual(5);
   expect(handleGuide.opacity).toBeGreaterThan(0.5);
+});
+
+test("director frame model drag preserves audio trim and duration", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_anchor", start: 0, duration: 10, prompt: "anchor", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_drag_model", start: 1, duration: 2, trimStart: 3, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 12 }];
+    state.directorSelectedId = "aud_drag_model";
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    state.directorDrag = {
+      id: "aud_drag_model",
+      type: "audio",
+      edge: "",
+      rect: { width: 600 },
+      total: 6,
+      startX: 0,
+      originalStart: 1,
+      originalDuration: 2,
+      moved: false,
+    };
+    onDirectorDrag({ clientX: 120 });
+    stopDirectorDrag();
+  });
+
+  const seg = await page.evaluate(() => state.directorAudioSegments.find((item) => item.id === "aud_drag_model"));
+  expect(seg.duration).toBe(2);
+  expect(seg.trimStart).toBe(3);
+  expect(seg.start).toBeGreaterThan(1);
+});
+
+test("director frame model resize left advances video trim", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_resize_model",
+      start: 0,
+      duration: 4,
+      trimStart: 1,
+      prompt: "video",
+      reference: "",
+      videoPath: "fixtures/guide.mp4",
+      videoName: "guide.mp4",
+      videoPreviewUrl: "/media/fixtures/guide.mp4",
+      strength: 0.65,
+    }];
+    state.directorSelectedId = "seg_resize_model";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    state.directorDrag = {
+      id: "seg_resize_model",
+      type: "image",
+      edge: "left",
+      rect: { width: 600 },
+      total: 6,
+      startX: 0,
+      originalStart: 0,
+      originalDuration: 4,
+      moved: false,
+    };
+    onDirectorDrag({ clientX: 80 });
+    stopDirectorDrag();
+  });
+
+  const seg = await page.evaluate(() => state.directorSegments[0]);
+  expect(seg.start).toBeGreaterThan(0);
+  expect(seg.duration).toBeLessThan(4);
+  expect(seg.trimStart).toBeGreaterThan(1);
+});
+
+test("director frame model serializes payload for all timeline tracks", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_payload",
+      start: 1,
+      duration: 2,
+      trimStart: 0.5,
+      prompt: "video",
+      reference: "",
+      videoPath: "fixtures/guide.mp4",
+      videoName: "guide.mp4",
+      audioExtracted: true,
+      strength: 0.7,
+    }];
+    state.directorVideoAudioSegments = [{ id: "va_payload", start: 1, duration: 2, trimStart: 0.5, audioPath: "fixtures/guide.mp4", audioName: "guide.mp4", audioDuration: 5, source: "video" }];
+    state.directorAudioSegments = [{ id: "aud_payload", start: 3, duration: 1.5, trimStart: 1, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 5, volume: 0.8 }];
+    state.directorIcVideoSegments = [{ id: "ic_payload", start: 2, duration: 3, trimStart: 0.25, videoPath: "fixtures/motion.mp4", videoName: "motion.mp4", videoDuration: 8 }];
+    renderDirectorEditor();
+  });
+
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.timeline_segments).toEqual([
+    expect.objectContaining({ id: "seg_payload", start: 1, duration: 2, trim_start: 12, type: "video" }),
+  ]);
+  expect(payload.audio_segments).toEqual([
+    expect.objectContaining({ id: "va_payload", source: "video", start: 1, duration: 2, trim_start: 12 }),
+    expect.objectContaining({ id: "aud_payload", start: 3, duration: 1.5, trim_start: 24, volume: 0.8 }),
+  ]);
+  expect(payload.motion_segments).toEqual([
+    expect.objectContaining({ id: "ic_payload", start: 2, duration: 3, trim_start: 6 }),
+  ]);
 });
 
 test("director video audio drag does not move the preview playhead", async ({ page }) => {
@@ -2859,22 +3083,11 @@ test("director video audio drag does not move the preview playhead", async ({ pa
   expect(currentTime).toBe(0);
 });
 
-test("director timeline audio blocks have preview buttons", async ({ page }) => {
+test("director timeline audio blocks keep waveform clear of left overlays", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
   await page.evaluate(() => {
-    window.Audio = class FakeAudio {
-      constructor(url) {
-        this.url = url;
-      }
-      addEventListener() {}
-      play() {
-        return new Promise(() => {});
-      }
-      pause() {}
-      set src(_value) {}
-    };
     state.castingLibrary = [{
       name: "line_one",
       file: "tts/library/current/line_one.wav",
@@ -2904,21 +3117,41 @@ test("director timeline audio blocks have preview buttons", async ({ page }) => 
       audioName: "line_one.wav",
       audioDuration: 1,
     }];
+    state.directorVideoAudioSegments = [{
+      id: "video_audio_preview_1",
+      start: 0,
+      duration: 1,
+      trimStart: 0,
+      audioPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      audioName: "guide.mp4",
+      audioDuration: 1,
+      source: "video",
+    }];
     state.directorSelectedId = "aud_preview_1";
     state.directorSelectionType = "audio";
     renderDirectorEditor();
   });
 
   await page.locator("#directorAudioTrack .director-audio-block.has-audio").scrollIntoViewIfNeeded();
-  const preview = page.locator("#directorAudioTrack .director-audio-preview");
-  await expect(preview).toHaveAttribute("aria-label", "Preview audio 1");
-
-  await preview.click();
-  await expect(preview).toHaveAttribute("aria-label", "Stop preview");
-  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toHaveCount(1);
-
-  await preview.click();
-  await expect(preview).toHaveAttribute("aria-label", "Preview audio 1");
+  await expect(page.locator("#directorAudioTrack .director-audio-preview")).toHaveCount(0);
+  await expect(page.locator("#directorAudioTrack .director-audio-copy")).toHaveCount(0);
+  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio > span")).toHaveCount(0);
+  await expect(page.locator("#directorVideoAudioTrack .director-audio-copy")).toHaveCount(0);
+  await expect(page.locator("#directorVideoAudioTrack .director-video-audio-block > span")).toHaveCount(0);
+  const fit = await page.evaluate(() => {
+    return ["#directorAudioTrack .director-audio-block.has-audio", "#directorVideoAudioTrack .director-video-audio-block"].map((selector) => {
+      const block = document.querySelector(selector).getBoundingClientRect();
+      const waveform = document.querySelector(`${selector} .director-waveform`).getBoundingClientRect();
+      return {
+        leftInset: waveform.left - block.left,
+        rightInset: block.right - waveform.right,
+      };
+    });
+  });
+  for (const item of fit) {
+    expect(item.leftInset).toBeLessThanOrEqual(10);
+    expect(item.rightInset).toBeLessThanOrEqual(10);
+  }
 
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.audio_segments[0].start).toBe(0);
@@ -3768,7 +4001,7 @@ test("director preview shows video, image, and text frames by seek position", as
   await expect(page.locator("#directorPreviewOverlay")).toHaveText("a quiet street");
 });
 
-test("director preview stage follows portrait frame aspect ratio", async ({ page }) => {
+test("director preview stage stays landscape for portrait frame sizes", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
@@ -3795,8 +4028,7 @@ test("director preview stage follows portrait frame aspect ratio", async ({ page
     const box = el.getBoundingClientRect();
     return box.width / box.height;
   });
-  expect(ratio).toBeGreaterThan(0.52);
-  expect(ratio).toBeLessThan(0.62);
+  expect(ratio).toBeCloseTo(16 / 9, 2);
 });
 
 test("director preview is a primary control without reserved blank space", async ({ page }) => {
@@ -3878,7 +4110,7 @@ test("director preview play toggles state and advances the playhead", async ({ p
   expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(false);
 });
 
-test("director preview playhead uses only the scissors control above the line", async ({ page }) => {
+test("director timeline toolbar sits below preview and above the playhead line", async ({ page }) => {
   await page.goto("/");
   await page.locator("#directorWorkspaceTab").click();
   const marker = await page.locator("#directorPlayhead").evaluate((el) => {
@@ -3893,6 +4125,25 @@ test("director preview playhead uses only the scissors control above the line", 
   expect(marker.frameContent).toBe("none");
   await expect(page.locator("#directorCutAtPlayheadBtn")).toHaveCount(1);
   await expect(page.locator("#directorCutAtPlayheadBtn svg")).toHaveCount(1);
+  expect(await page.locator("#directorPlayhead #directorCutAtPlayheadBtn").count()).toBe(0);
+  const order = await page.evaluate(() => {
+    const preview = document.getElementById("directorPreview").getBoundingClientRect();
+    const toolbar = document.querySelector(".director-timeline-toolbar").getBoundingClientRect();
+    const timeline = document.querySelector(".director-timeline-shell").getBoundingClientRect();
+    const tabs = document.querySelector(".director-timeline-toolbar .director-mode-tabs").getBoundingClientRect();
+    const scissors = document.getElementById("directorCutAtPlayheadBtn").getBoundingClientRect();
+    return {
+      previewBottom: preview.bottom,
+      toolbarTop: toolbar.top,
+      toolbarBottom: toolbar.bottom,
+      timelineTop: timeline.top,
+      tabsTop: tabs.top,
+      scissorsTop: scissors.top,
+    };
+  });
+  expect(order.toolbarTop).toBeGreaterThanOrEqual(order.previewBottom - 1);
+  expect(order.toolbarBottom).toBeLessThanOrEqual(order.timelineTop + 1);
+  expect(Math.abs(order.tabsTop - order.scissorsTop)).toBeLessThanOrEqual(4);
 });
 
 test("director preview playhead can be dragged across the timeline", async ({ page }) => {
@@ -3951,6 +4202,47 @@ test("director preview playhead can be dragged across the timeline", async ({ pa
   const currentTime = await page.evaluate(() => DirectorPreview._state().currentTime);
   expect(currentTime).toBeGreaterThan(4.45);
   expect(currentTime).toBeLessThan(4.55);
+});
+
+test("director preview playhead uses display duration for short timelines", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator(".director-timeline-shell")).toBeVisible();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "short_preview", start: 0, duration: 2, prompt: "short preview", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [];
+    state.directorVideoAudioSegments = [];
+    state.directorIcVideoSegments = [];
+    renderDirectorEditor();
+    DirectorPreview.seek(1);
+  });
+
+  const stateAtOne = await page.evaluate(() => DirectorPreview._state());
+  expect(stateAtOne.timeline.duration).toBe(2);
+  expect(stateAtOne.timeline.displayDuration).toBe(6);
+  const visualDelta = await page.evaluate(() => {
+    const track = document.getElementById("directorTrack").getBoundingClientRect();
+    const playhead = document.getElementById("directorPlayhead").getBoundingClientRect();
+    const expectedX = track.left + track.width * (1 / 6);
+    const actualX = playhead.left + playhead.width / 2;
+    return Math.abs(actualX - expectedX);
+  });
+  expect(visualDelta).toBeLessThan(2);
+
+  await page.evaluate(() => {
+    const shell = document.querySelector(".director-timeline-shell");
+    const track = document.getElementById("directorTrack");
+    const rect = track.getBoundingClientRect();
+    const eventInit = {
+      clientX: rect.left + rect.width * (1 / 3),
+      pointerId: 7,
+      bubbles: true,
+    };
+    shell.dispatchEvent(new PointerEvent("pointerdown", eventInit));
+    shell.dispatchEvent(new PointerEvent("pointerup", eventInit));
+  });
+  expect(await page.evaluate(() => DirectorPreview._state().currentTime)).toBeCloseTo(2, 3);
 });
 
 test("dragging the director playhead does not select timeline text", async ({ page }) => {
@@ -4046,5 +4338,5 @@ test("director editor feeds the preview from timeline state", async ({ page }) =
   await expect(page.locator("#directorPreviewOverlay")).toBeVisible();
   await expect(page.locator("#directorPreviewOverlay")).toHaveText("opening shot");
   const st = await page.evaluate(() => DirectorPreview._state());
-  expect(st.timeline.duration).toBeGreaterThan(0);
+  expect(st.timeline.duration).toBe(2);
 });

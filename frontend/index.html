@@ -320,10 +320,6 @@
           </div>
           <div class="director-workspace-grid">
             <section class="director-main-editor">
-              <div class="director-mode-tabs" role="tablist" aria-label="Director mode">
-                <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">生成</button>
-                <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
-              </div>
               <div class="director-preview" id="directorPreview">
                 <div class="director-preview-stage">
                   <video id="directorPreviewVideo" class="director-preview-media" muted playsinline preload="metadata" style="display:none"></video>
@@ -335,11 +331,16 @@
                   <span id="directorPreviewTime" class="director-preview-time">0.0s / 0.0s</span>
                 </div>
               </div>
+              <div class="director-timeline-toolbar">
+                <div class="director-mode-tabs" role="tablist" aria-label="Director mode">
+                  <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">生成</button>
+                  <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
+                </div>
+                <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
+              </div>
               <div class="director-timeline-shell">
                 <div class="director-ruler" id="directorRuler"></div>
-                <div class="director-playhead" id="directorPlayhead">
-                  <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
-                </div>
+                <div class="director-playhead" id="directorPlayhead"></div>
                 <section class="director-lane" data-lane="main">
                   <div class="director-track-label">
                     <span>Main</span>
@@ -1017,8 +1018,9 @@
     </section>
   </div>
 
+  <script src="/static/director-timeline-model.js?v=director-frame-model-1"></script>
   <script src="/static/director-preview.js?v=director-key-delete-scroll-1"></script>
-  <script src="/static/app.js?v=director-key-delete-scroll-1"></script>
+  <script src="/static/app.js?v=director-audio-waveform-trim-1"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
