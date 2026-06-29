@@ -682,6 +682,7 @@ test("result video edit menu only offers Bernini video input modes", async ({ pa
   await expect(card.locator(".result-video-edit-menu")).toContainText("ADS2V Source video");
   await expect(card.locator(".result-video-edit-menu")).toContainText("ADS2V Reference video");
   await expect(card.locator(".result-video-edit-menu")).toContainText("Inpaint Source video");
+  await expect(card.locator(".result-video-edit-menu")).toContainText("Retake");
   await expect(card.locator(".result-video-edit-menu button", { hasText: /^T2V Source video$/ })).toHaveCount(0);
   await expect(card.locator(".result-video-edit-menu button", { hasText: /^I2V Source video$/ })).toHaveCount(0);
   await expect(card.locator(".result-video-edit-menu button", { hasText: /^R2V Source video$/ })).toHaveCount(0);
@@ -709,6 +710,38 @@ test("result video edit menu only offers Bernini video input modes", async ({ pa
   const inpaintPayload = await page.evaluate(() => collectPayload());
   expect(inpaintPayload.workflow_id).toBe("wan_vace_inpaint");
   expect(inpaintPayload.source_video_path).toContain("output.mp4");
+});
+
+test("result video edit menu sends a video into Director Retake", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#editWorkspaceTab").click();
+  await page.evaluate(() => {
+    mergeHistoryRuns([{
+      batch_id: "batch_retake_result",
+      run_id: "01_result",
+      workflow_id: "bernini_t2v",
+      workflow_mode: "bernini_t2v",
+      workflow_label: "WAN2.2 Bernini T2V",
+      status: "done",
+      video: "tasks/camera_lab_runs/batch_retake_result/01_result/output.mp4",
+      prompt: "director result prompt",
+      duration: 5.5,
+    }], true);
+    renderScopedHistory();
+  });
+
+  const card = page.locator("#resultsGrid .result-card").filter({ hasText: "director result prompt" });
+  await card.locator(".result-video-edit-button").click();
+  await card.locator(".result-video-edit-menu button", { hasText: "Retake" }).click();
+
+  await expect(page.locator("#directorWorkspaceTab")).toHaveClass(/active/);
+  await expect(page.locator("#directorModeRetakeBtn")).toHaveClass(/active/);
+  await expect(page.locator("#directorRetakeTrack .director-retake-block")).toContainText("output.mp4");
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.retake_mode).toBe(true);
+  expect(payload.retake_video.video_path).toContain("output.mp4");
+  expect(payload.retake_video.duration).toBe(5.5);
 });
 
 test("result video edit menu can extract a frame from the playback timeline", async ({ page }) => {
@@ -1227,7 +1260,7 @@ test("director workspace starts without generated empty prompt segments", async 
   await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/continuous cinematic video/i);
 });
 
-test("director payload keeps visible timeline duration for disconnected segments", async ({ page }) => {
+test("director payload spans the last segment end for disconnected segments", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
@@ -1262,11 +1295,53 @@ test("director payload keeps visible timeline duration for disconnected segments
 
   const payload = await page.evaluate(() => collectPayload());
 
-  expect(payload.duration).toBe(6);
+  // Gap from 1s-3s is preserved (seg_end starts at 3s); generation spans the last
+  // segment end (4s), not the x1.3-padded ruler value.
+  expect(payload.duration).toBe(4);
   expect(payload.timeline_segments.map((segment) => [segment.start, segment.duration])).toEqual([
     [0, 1],
     [3, 1],
   ]);
+});
+
+test("director generation duration spans the longest track without display padding", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorSegments = [0, 1, 2].map((i) => ({
+      id: `seg_${i}`,
+      start: i * 4,
+      duration: 4,
+      prompt: `shot ${i}`,
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }));
+    state.directorVideoAudioSegments = [
+      {
+        id: "va1",
+        start: 0,
+        duration: 13.33,
+        trimStart: 0,
+        audioPath: "tasks/camera_lab_uploads/audio/song.mp3",
+        audioName: "song.mp3",
+        audioDuration: 13.33,
+        volume: 1,
+      },
+    ];
+    state.directorAudioSegments = [];
+    renderDirectorEditor();
+  });
+
+  const payload = await page.evaluate(() => collectPayload());
+
+  // Segments span 12s, the video-audio clip spans 13.33s -> generation follows the
+  // longest track (rounded up to 13.5s), NOT the padded ruler value (12 * 1.3 = 16).
+  expect(payload.duration).toBe(13.5);
 });
 
 test("director timeline labels sit beside compact stacked tracks", async ({ page }) => {
@@ -1322,6 +1397,34 @@ test("director timeline scrolls horizontally without vertical scrollbar", async 
   expect(metrics.verticalScrollRange).toBeLessThanOrEqual(1);
 });
 
+test("director timeline expands horizontally for long clips", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorSegments = [];
+    state.directorAudioSegments = [{
+      id: "aud_long_scroll",
+      start: 18,
+      duration: 8,
+      trimStart: 0,
+      audioPath: "tasks/camera_lab_uploads/audio/long.wav",
+      audioName: "long.wav",
+      audioDuration: 8,
+    }];
+    state.directorSelectedId = "aud_long_scroll";
+    state.directorSelectionType = "audio";
+    renderDirectorEditor();
+  });
+
+  const metrics = await page.locator(".director-timeline-shell").evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth + 200);
+});
+
 test("director IC video lane uploads reference video into motion segments", async ({ page }) => {
   await page.route("**/api/upload-video", async (route) => {
     await route.fulfill({
@@ -1374,6 +1477,16 @@ test("director IC video lane uploads reference video into motion segments", asyn
 });
 
 test("director retake tab uploads one base video and emits native retake payload", async ({ page }) => {
+  await page.route("**/api/run", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "dry_retake",
+        status: "queued",
+        runs: [{ run_id: "01_director", status: "queued", workflow_id: "ltx_director_2" }],
+      }),
+    });
+  });
   await page.route("**/api/upload-video", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -1391,6 +1504,7 @@ test("director retake tab uploads one base video and emits native retake payload
   await expect(page.locator("#directorModeGenerateBtn")).toHaveClass(/active/);
   await page.locator("#directorModeRetakeBtn").click();
   await expect(page.locator("#directorModeRetakeBtn")).toHaveClass(/active/);
+  await expect(page.locator("#runBtn")).toHaveText("Queue Director Retake");
   await expect(page.locator("#directorRetakeTrack")).toBeVisible();
   await expect(page.locator("#directorTrack")).not.toBeVisible();
 
@@ -1414,9 +1528,16 @@ test("director retake tab uploads one base video and emits native retake payload
   await page.locator("#directorRetakePrompt").fill("redo the hand gesture");
 
   const payload = await page.evaluate(() => collectPayload());
+  const runRequest = page.waitForRequest("**/api/run");
+  await page.locator("#runBtn").click();
+  const queuedPayload = JSON.parse((await runRequest).postData());
+  await expect(page.locator("#runBtn")).toHaveText("Queue Director Retake");
+  await expect(page.locator("#runBtn")).toBeEnabled();
 
   expect(payload.retake_mode).toBe(true);
+  expect(queuedPayload.retake_mode).toBe(true);
   expect(payload.timeline_segments).toEqual([]);
+  expect(queuedPayload.timeline_segments).toEqual([]);
   expect(payload.motion_segments).toEqual([]);
   expect(payload.audio_segments).toEqual([]);
   expect(payload.retake_video).toEqual(expect.objectContaining({
@@ -1424,8 +1545,231 @@ test("director retake tab uploads one base video and emits native retake payload
     file_name: "retake_base.mp4",
   }));
   expect(payload.retake_start).toBe(1.2);
+  expect(queuedPayload.retake_start).toBe(1.2);
   expect(payload.retake_length).toBe(2.2);
+  expect(queuedPayload.retake_length).toBe(2.2);
   expect(payload.retake_prompt).toBe("redo the hand gesture");
+  expect(queuedPayload.retake_prompt).toBe("redo the hand gesture");
+});
+
+test("director generate queue is blocked when a retake base video is loaded", async ({ page }) => {
+  let runRequests = 0;
+  await page.route("**/api/run", async (route) => {
+    runRequests += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ batch_id: "unexpected", status: "queued", runs: [] }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorMode = "generate";
+    state.directorRetakeVideo = {
+      videoPath: "tasks/camera_lab_runs/retake/clip.mp4",
+      videoName: "clip.mp4",
+      videoPreviewUrl: "",
+      videoPosterUrl: "",
+      duration: 6,
+    };
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorModeGenerateBtn")).toHaveClass(/active/);
+  await expect(page.locator("#runBtn")).toHaveText("Queue Run");
+  await page.locator("#runBtn").click();
+
+  await expect(page.locator("#runHint")).toContainText("Retake base video is loaded");
+  expect(runRequests).toBe(0);
+});
+
+test("director retake selection can be dragged and base video removed", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#directorModeRetakeBtn").click();
+  await page.evaluate(() => {
+    state.directorRetakeVideo = {
+      videoPath: "tasks/camera_lab_runs/retake/clip.mp4",
+      videoName: "clip.mp4",
+      videoPreviewUrl: "",
+      videoPosterUrl: "",
+      duration: 6,
+    };
+    state.directorRetakeStart = 1;
+    state.directorRetakeLength = 2;
+    renderDirectorEditor();
+  });
+
+  const selection = page.locator("#directorRetakeTrack .director-retake-selection");
+  await selection.scrollIntoViewIfNeeded();
+  const box = await selection.boundingBox();
+  const trackBox = await page.locator("#directorRetakeTrack").boundingBox();
+  expect(box).not.toBeNull();
+  expect(trackBox).not.toBeNull();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + trackBox.width / 6, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  const dragged = await page.evaluate(() => ({
+    start: state.directorRetakeStart,
+    length: state.directorRetakeLength,
+    payload: collectPayload(),
+  }));
+  expect(dragged.start).toBeCloseTo(2, 1);
+  expect(dragged.length).toBe(2);
+  expect(dragged.payload.retake_start).toBeCloseTo(2, 1);
+  expect(dragged.payload.retake_length).toBe(2);
+
+  await page.locator("#directorRetakeTrack .director-retake-remove").click();
+  await expect(page.locator("#directorRetakeTrack .director-retake-block")).toHaveCount(0);
+  expect(await page.evaluate(() => state.directorRetakeVideo)).toBeNull();
+});
+
+test("director retake selection handles resize the selected range", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#directorModeRetakeBtn").click();
+  await page.evaluate(() => {
+    state.directorRetakeVideo = {
+      videoPath: "tasks/camera_lab_runs/retake/clip.mp4",
+      videoName: "clip.mp4",
+      videoPreviewUrl: "",
+      videoPosterUrl: "",
+      duration: 6,
+    };
+    state.directorRetakeStart = 2;
+    state.directorRetakeLength = 2;
+    renderDirectorEditor();
+  });
+
+  const trackBox = await page.locator("#directorRetakeTrack").boundingBox();
+  const leftHandle = page.locator("#directorRetakeTrack .director-retake-handle-left");
+  const rightHandle = page.locator("#directorRetakeTrack .director-retake-handle-right");
+  await expect(leftHandle).toBeVisible();
+  await expect(rightHandle).toBeVisible();
+  const leftBox = await leftHandle.boundingBox();
+  const rightBox = await rightHandle.boundingBox();
+  expect(trackBox).not.toBeNull();
+  expect(leftBox).not.toBeNull();
+  expect(rightBox).not.toBeNull();
+  const oneSecond = trackBox.width / 6;
+
+  await page.mouse.move(leftBox.x + leftBox.width / 2, leftBox.y + leftBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(leftBox.x + leftBox.width / 2 - oneSecond, leftBox.y + leftBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  let range = await page.evaluate(() => ({ start: state.directorRetakeStart, length: state.directorRetakeLength }));
+  expect(range.start).toBeCloseTo(1, 1);
+  expect(range.length).toBeCloseTo(3, 1);
+
+  const rightBoxAfter = await rightHandle.boundingBox();
+  expect(rightBoxAfter).not.toBeNull();
+  await page.mouse.move(rightBoxAfter.x + rightBoxAfter.width / 2, rightBoxAfter.y + rightBoxAfter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rightBoxAfter.x + rightBoxAfter.width / 2 + oneSecond, rightBoxAfter.y + rightBoxAfter.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  range = await page.evaluate(() => ({
+    start: state.directorRetakeStart,
+    length: state.directorRetakeLength,
+    payload: collectPayload(),
+  }));
+  expect(range.start).toBeCloseTo(1, 1);
+  expect(range.length).toBeCloseTo(4, 1);
+  expect(range.payload.retake_start).toBeCloseTo(1, 1);
+  expect(range.payload.retake_length).toBeCloseTo(4, 1);
+});
+
+test("director retake edit mode buttons trim the selection into Edit inputs", async ({ page }) => {
+  await page.route("**/api/trim-video", async (route) => {
+    const payload = route.request().postDataJSON();
+    expect(payload.video_path).toContain("clip.mp4");
+    expect(payload.start).toBe(1.2);
+    expect(payload.end).toBe(3.4);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "tasks/camera_lab_uploads/videos/retake_clip_1_2_3_4.mp4",
+        name: "retake_clip_1_2_3_4.mp4",
+        duration: 2.2,
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#directorModeRetakeBtn").click();
+  await page.evaluate(() => {
+    state.directorRetakeVideo = {
+      videoPath: "tasks/camera_lab_runs/retake/clip.mp4",
+      videoName: "clip.mp4",
+      videoPreviewUrl: "",
+      videoPosterUrl: "",
+      duration: 6,
+    };
+    state.directorRetakeStart = 1.2;
+    state.directorRetakeLength = 2.2;
+    state.directorRetakePrompt = "make the gesture more subtle";
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorRetakeEditModes")).toContainText("V2V");
+  await expect(page.locator("#directorRetakeEditModes")).toContainText("Inpaint");
+  await page.getByRole("button", { name: "V2V", exact: true }).click();
+
+  await expect(page.locator("#editWorkspaceTab")).toHaveClass(/active/);
+  await expect(page.locator("#workflowSelect")).toHaveValue("bernini_v2v");
+  await expect(page.locator("#berniniSourceVideoStatus")).toContainText("retake_clip_1_2_3_4.mp4");
+  await expect(page.locator("#promptText")).toHaveValue("make the gesture more subtle");
+  await expect(page.locator("#runHint")).toContainText("Loaded retake selection into V2V");
+  let payload = await page.evaluate(() => collectPayload());
+  expect(payload.duration).toBe(2.2);
+  expect(payload.source_video_path).toContain("retake_clip_1_2_3_4.mp4");
+
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#directorModeRetakeBtn").click();
+  await page.getByRole("button", { name: "Inpaint", exact: true }).click();
+  await expect(page.locator("#workflowSelect")).toHaveValue("wan_vace_inpaint");
+  await expect(page.locator("#inpaintSourceVideoStatus")).toContainText("retake_clip_1_2_3_4.mp4");
+  payload = await page.evaluate(() => collectPayload());
+  expect(payload.duration).toBe(2.2);
+  expect(payload.source_video_path).toContain("retake_clip_1_2_3_4.mp4");
+});
+
+test("director retake result card shows the retake prompt instead of global prompt", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    mergeHistoryRuns([{
+      batch_id: "batch_retake_prompt",
+      run_id: "01_director",
+      workflow_id: "ltx_director_2",
+      workflow_mode: "director_ref",
+      workflow_label: "LTX Director v2",
+      status: "done",
+      video: "tasks/camera_lab_runs/batch_retake_prompt/01_director/output.mp4",
+      prompt: "replace the middle action",
+      global_prompt: "keep the existing scene continuous",
+      retake_prompt: "replace the middle action",
+      director_timeline: {
+        retake_mode: true,
+        retake_prompt: "replace the middle action",
+        global_prompt: "keep the existing scene continuous",
+        segments: [],
+      },
+    }], true);
+    renderScopedHistory();
+  });
+
+  const card = page.locator("#directorResultsGrid .result-card").filter({ hasText: "replace the middle action" });
+  await expect(card.locator(".paths")).toHaveText("replace the middle action");
+  await expect(card.locator(".paths")).not.toContainText("keep the existing scene continuous");
 });
 
 test("director IC video segments can be dragged on their timeline", async ({ page }) => {
@@ -1787,6 +2131,46 @@ test("director segment remove controls delete from timeline and inspector", asyn
   await page.evaluate(() => openDirectorSegmentModal("image", state.directorSegments[0].id));
   await page.locator("#removeDirectorSegmentBtn").click();
   await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
+});
+
+test("director selected timeline segments can be deleted with keyboard", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_keyboard_delete",
+      start: 0,
+      duration: 2,
+      prompt: "delete me",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorAudioSegments = [{
+      id: "aud_keyboard_delete",
+      start: 2,
+      duration: 2,
+      trimStart: 0,
+      audioPath: "tasks/camera_lab_uploads/audio/delete.wav",
+      audioName: "delete.wav",
+      audioDuration: 2,
+    }];
+    state.directorSelectedId = "seg_keyboard_delete";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+  });
+
+  await page.locator("#directorTrack .director-block").click();
+  await page.keyboard.press("Backspace");
+  await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
+
+  await page.locator("#directorAudioTrack .director-audio-block").click();
+  await page.keyboard.press("Delete");
+  await expect(page.locator("#directorAudioTrack .director-audio-block")).toHaveCount(0);
 });
 
 test("clicking a director segment selects it without opening the modal", async ({ page }) => {

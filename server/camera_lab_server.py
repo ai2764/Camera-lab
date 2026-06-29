@@ -114,6 +114,10 @@ SCAIL_VIDEO_TEMPLATE = APP_WORKFLOW_ROOT / "scail2_video.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
+DIRECTOR_DEFAULT_GLOBAL_PROMPT = (
+    "A continuous cinematic video with coherent subject identity, consistent lighting, "
+    "natural motion, and smooth visual continuity across the full timeline."
+)
 
 
 def tts_env_path(value: str | Path) -> Path:
@@ -1284,27 +1288,11 @@ def director_prompt_segments_from_timeline(segments: list[dict[str, Any]], durat
 
 
 def director_prompt_segments_from_retake(payload: dict[str, Any], duration_frames: int, fps: int = 24) -> tuple[str, str]:
-    global_prompt = str(payload.get("global_prompt") or payload.get("prompt") or "video").strip() or "video"
-    retake_prompt = str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip() or "video"
-    retake_start = max(0, round(float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0) * fps))
-    retake_length = max(1, round(float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0) * fps))
-    retake_start = min(retake_start, max(0, duration_frames - 1))
-    retake_end = min(duration_frames, retake_start + retake_length)
-    lengths: list[int] = []
-    prompts: list[str] = []
-    if retake_start > 0:
-        lengths.append(retake_start)
-        prompts.append(global_prompt)
-    if retake_end > retake_start:
-        lengths.append(retake_end - retake_start)
-        prompts.append(retake_prompt)
-    if retake_end < duration_frames:
-        lengths.append(duration_frames - retake_end)
-        prompts.append(global_prompt)
-    if not lengths:
-        lengths = [max(1, duration_frames)]
-        prompts = [retake_prompt]
-    return " | ".join(prompts), ",".join(str(length) for length in lengths)
+    # Retake is driven by native timeline_data fields. Supplying normal
+    # local_prompts/segment_lengths here makes LTXDirector treat the full video
+    # as a normal segmented generation, so preserved regions follow the global
+    # prompt instead of staying frozen.
+    return "", ""
 
 
 def normalize_reference_image_paths(refs: Any) -> list[str]:
@@ -1492,7 +1480,10 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     director = next((node for node in api.values() if node.get("class_type") == "LTXDirector"), None)
     if not director:
         raise RuntimeError("Director v2 workflow does not contain an LTXDirector node")
-    director["inputs"]["global_prompt"] = timeline["global_prompt"]
+    retake_conditioning_prompt = ""
+    if timeline.get("retake_mode"):
+        retake_conditioning_prompt = str(timeline.get("retake_prompt") or "").strip() or "retake video"
+    director["inputs"]["global_prompt"] = retake_conditioning_prompt if timeline.get("retake_mode") else timeline["global_prompt"]
     director["inputs"]["duration_frames"] = timeline["duration_frames"]
     director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
     # Block 0 placeholder: keep reference_images accepted but do not stage or
@@ -1517,7 +1508,7 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
                 "imageFile": retake_file,
                 "videoDurationFrames": int(retake_video.get("duration_frames") or timeline["duration_frames"]),
             },
-            "retake_global_prompt": timeline["global_prompt"],
+            "retake_global_prompt": retake_conditioning_prompt,
         })
     director["inputs"]["timeline_data"] = json.dumps(timeline_data, ensure_ascii=False)
     director["inputs"]["overrideAudio"] = False
@@ -5512,6 +5503,10 @@ def validate_seed(value: Any) -> int:
     return seed
 
 
+def is_default_director_global_prompt(value: str) -> bool:
+    return " ".join(value.split()).lower() == " ".join(DIRECTOR_DEFAULT_GLOBAL_PROMPT.split()).lower()
+
+
 def build_director_prompt_summary(payload: dict[str, Any]) -> str:
     global_prompt = str(payload.get("global_prompt") or "").strip()
     if bool(payload.get("retake_mode") or payload.get("retakeMode")):
@@ -5520,23 +5515,31 @@ def build_director_prompt_summary(payload: dict[str, Any]) -> str:
         has_retake_video = isinstance(retake_video, dict) and bool(
             str(retake_video.get("video_path") or retake_video.get("imageFile") or "").strip()
         )
-        if global_prompt or retake_prompt or has_retake_video:
-            return "\n\n".join([part for part in [global_prompt, retake_prompt or "retake video"] if part])
+        if retake_prompt or has_retake_video:
+            return retake_prompt or "retake video"
     raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segment_prompts = [
         str(segment.get("prompt") or "").strip()
         for segment in raw_segments
         if str(segment.get("prompt") or "").strip()
     ]
+    has_visual_guide = any(
+        str(segment.get("image_path") or segment.get("video_path") or "").strip()
+        for segment in raw_segments
+    )
+    has_ic_video = any(
+        str(segment.get("video_path") or segment.get("videoFile") or segment.get("file") or "").strip()
+        for segment in (payload.get("motion_segments") or payload.get("motionSegments") or [])
+    )
+    if (
+        global_prompt
+        and is_default_director_global_prompt(global_prompt)
+        and not raw_segments
+        and not has_visual_guide
+        and not has_ic_video
+    ):
+        raise ValueError("director workflow requires actual content: add a segment, guide, or retake video")
     if not global_prompt and not segment_prompts:
-        has_visual_guide = any(
-            str(segment.get("image_path") or segment.get("video_path") or "").strip()
-            for segment in raw_segments
-        )
-        has_ic_video = any(
-            str(segment.get("video_path") or segment.get("videoFile") or segment.get("file") or "").strip()
-            for segment in (payload.get("motion_segments") or payload.get("motionSegments") or [])
-        )
         if has_visual_guide or has_ic_video:
             return "visual guide"
         raise ValueError("director workflow requires a global prompt, segment prompt, or visual guide")

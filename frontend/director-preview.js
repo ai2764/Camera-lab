@@ -53,6 +53,13 @@
     if (!els.playheadEl) return;
     const pct = timeline.duration > 0 ? Math.max(0, Math.min(1, currentTime / timeline.duration)) : 0;
     els.playheadEl.style.setProperty("--director-playhead-pct", pct);
+    if (els.timelineEl) {
+      const style = getComputedStyle(els.timelineEl);
+      const labelWidth = parseFloat(style.getPropertyValue("--director-timeline-label-width")) || 0;
+      const trackWidth = parseFloat(style.getPropertyValue("--director-timeline-track-min"))
+        || Math.max(1, els.timelineEl.scrollWidth - labelWidth);
+      els.playheadEl.style.setProperty("--director-playhead-left", `${labelWidth + (trackWidth * pct)}px`);
+    }
   }
 
   function tick(ts) {
@@ -97,16 +104,18 @@
   function seekFromPointer(clientX) {
     if (!els.timelineEl || timeline.duration <= 0) return;
     const rect = els.timelineEl.getBoundingClientRect();
-    const labelWidth = parseFloat(getComputedStyle(els.timelineEl).getPropertyValue("--director-timeline-label-width")) || 0;
-    const trackLeft = rect.left + labelWidth;
-    const trackWidth = Math.max(1, rect.width - labelWidth);
-    const ratio = Math.max(0, Math.min(1, (clientX - trackLeft) / trackWidth));
+    const style = getComputedStyle(els.timelineEl);
+    const labelWidth = parseFloat(style.getPropertyValue("--director-timeline-label-width")) || 0;
+    const trackWidth = parseFloat(style.getPropertyValue("--director-timeline-track-min"))
+      || Math.max(1, els.timelineEl.scrollWidth - labelWidth);
+    const trackX = clientX - rect.left - labelWidth + els.timelineEl.scrollLeft;
+    const ratio = Math.max(0, Math.min(1, trackX / trackWidth));
     seek(ratio * timeline.duration);
   }
 
   function isTimelineControlTarget(target) {
     return Boolean(target && target.closest(
-      ".director-block, .director-audio-block, .director-video-audio-block, .director-ic-video-block, .director-audio-clear, button, input, select, textarea"
+      ".director-block, .director-audio-block, .director-video-audio-block, .director-ic-video-block, .director-retake-selection, .director-audio-clear, button, input, select, textarea"
     ));
   }
 

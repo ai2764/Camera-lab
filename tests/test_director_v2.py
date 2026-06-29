@@ -417,10 +417,9 @@ def test_v2_builder_maps_retake_video_to_native_timeline_data(monkeypatch, sampl
 
     director = _director_node(api)
     assert director["inputs"]["duration_frames"] == 144
-    assert director["inputs"]["segment_lengths"] == "48,36,60"
-    assert director["inputs"]["local_prompts"] == (
-        "keep the existing scene continuous | replace the middle action | keep the existing scene continuous"
-    )
+    assert director["inputs"]["global_prompt"] == "replace the middle action"
+    assert director["inputs"]["segment_lengths"] == ""
+    assert director["inputs"]["local_prompts"] == ""
     timeline = json.loads(director["inputs"]["timeline_data"])
     assert timeline["segments"] == []
     assert timeline["audioSegments"] == []
@@ -434,6 +433,7 @@ def test_v2_builder_maps_retake_video_to_native_timeline_data(monkeypatch, sampl
         "imageFile": "base_retake.mp4",
         "videoDurationFrames": 144,
     }
+    assert timeline["retake_global_prompt"] == "replace the middle action"
 
 
 def test_director_timeline_from_payload_preserves_video_guides():

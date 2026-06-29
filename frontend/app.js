@@ -112,6 +112,7 @@ const INPAINT_WORKFLOW_MODE = "wan_vace_inpaint";
 const INPAINT_DEFAULT_PROMPT = "Place the reference object naturally inside the painted area, matching lighting, scale, perspective, and motion.";
 const INPAINT_DEFAULT_NEGATIVE = "bad video";
 const DIRECTOR_DEFAULT_GLOBAL_PROMPT = "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.";
+const DIRECTOR_TIMELINE_PIXELS_PER_SECOND = 96;
 
 const state = {
   config: null,
@@ -164,6 +165,7 @@ const state = {
   directorRetakeLength: 1,
   directorRetakePrompt: "",
   directorRetakeStrength: 1,
+  directorRetakeDrag: null,
   directorAudioModalTarget: "dialogue",
   directorSelectedId: "",
   directorSelectionType: "image",
@@ -461,6 +463,7 @@ function setWorkspace(workspace, { syncWorkflow = true } = {}) {
   rememberCurrentWorkflow();
   updateWorkflowFields();
   renderScopedHistory();
+  updateRunButtonLabel();
   if (workspace === "photography") {
     window.dispatchEvent(new CustomEvent("camera-lab:photography-visible"));
   }
@@ -527,16 +530,57 @@ function useResultVideoForEdit(run, workflowId, slotKey, kind = "bernini") {
     : `Loaded result video into ${BERNINI_TASKS[workflowId]?.tag || "Bernini"}`;
 }
 
+function useResultVideoForRetake(run) {
+  if (!run?.video) return;
+  state.directorRetakeVideo = {
+    videoPath: run.video,
+    videoName: fileNameFromPath(run.video),
+    videoPreviewUrl: mediaUrl(run.video),
+    videoPosterUrl: "",
+    duration: Math.max(0.5, Number(run.duration || run.director_timeline?.duration_seconds || 2) || 2),
+  };
+  state.directorRetakeStart = 0;
+  state.directorRetakeLength = Math.min(1, state.directorRetakeVideo.duration);
+  state.directorRetakePrompt = "";
+  state.directorMode = "retake";
+  setWorkspace("director");
+  setDirectorMode("retake");
+  $("runHint").textContent = "Loaded result video into Director Retake";
+}
+
+function directorRetakeEditTargets() {
+  const available = new Set((state.config?.workflows || []).map((workflow) => workflow.id));
+  const targets = [];
+  for (const [workflowId, task] of Object.entries(BERNINI_TASKS)) {
+    if (!available.has(workflowId) || !task.sourceVideo) continue;
+    targets.push({
+      id: workflowId,
+      label: task.tag,
+      kind: "bernini",
+      slotKey: "berniniSource",
+    });
+  }
+  if (available.has(INPAINT_WORKFLOW_MODE)) {
+    targets.push({
+      id: INPAINT_WORKFLOW_MODE,
+      label: "Inpaint",
+      kind: "inpaint",
+      slotKey: "inpaintSource",
+    });
+  }
+  return targets;
+}
+
 function renderResultVideoEditMenu(run) {
   const targets = berniniResultVideoTargets();
-  if (!run?.video || !targets.length) return null;
+  if (!run?.video) return null;
   const wrap = document.createElement("div");
   wrap.className = "result-video-edit";
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "result-video-edit-button";
   trigger.textContent = "Edit";
-  trigger.setAttribute("aria-label", "Edit result video in Bernini");
+  trigger.setAttribute("aria-label", "Edit result video");
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".result-video-edit.open").forEach((node) => {
@@ -555,6 +599,15 @@ function renderResultVideoEditMenu(run) {
     openFrameExtract(run);
   });
   menu.appendChild(extractItem);
+  const retakeItem = document.createElement("button");
+  retakeItem.type = "button";
+  retakeItem.textContent = "Retake";
+  retakeItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    wrap.classList.remove("open");
+    useResultVideoForRetake(run);
+  });
+  menu.appendChild(retakeItem);
   targets.forEach((target) => {
     const item = document.createElement("button");
     item.type = "button";
@@ -955,6 +1008,18 @@ function updateWorkflowFields() {
     ensureDirectorGlobalPromptDefault();
     renderDirectorEditor();
   }
+  updateRunButtonLabel();
+}
+
+function runButtonIdleText() {
+  if (state.workspace === "director" && state.directorMode === "retake") return "Queue Director Retake";
+  return "Queue Run";
+}
+
+function updateRunButtonLabel({ force = false } = {}) {
+  const button = $("runBtn");
+  if (!button || (!force && button.textContent === "Queueing...")) return;
+  button.textContent = runButtonIdleText();
 }
 
 function collectPayload() {
@@ -1006,7 +1071,9 @@ function collectPayload() {
     const segments = collectDirectorSegments();
     const motionSegments = collectDirectorMotionSegments();
     const audioSegments = collectDirectorAudioSegments();
-    const duration = directorTotalSeconds();
+    // Generation length = real content extent (longest track). directorTotalSeconds()
+    // adds a x1.3 ruler-only headroom and must NOT define the generated duration.
+    const duration = directorOutputDurationSeconds();
     const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
     const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
     return {
@@ -1527,13 +1594,22 @@ function syncDirectorVideoAudioSegments() {
 function directorOutputDurationSeconds() {
   const imageEnd = normalizedDirectorSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   const audioEnd = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  const videoAudioEnd = normalizedDirectorVideoAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   const icVideoEnd = normalizedDirectorIcVideoSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
-  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd, icVideoEnd) * 2) / 2);
+  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd, videoAudioEnd, icVideoEnd) * 2) / 2);
 }
 
 function directorTotalSeconds() {
   const end = directorOutputDurationSeconds();
   return Math.max(6, Math.ceil(end * 1.3 * 2) / 2);
+}
+
+function updateDirectorTimelineScale(total) {
+  const shell = document.querySelector(".director-timeline-shell");
+  if (!shell) return;
+  const duration = Math.max(6, Number(total) || 6);
+  const trackWidth = Math.max(520, Math.ceil(duration * DIRECTOR_TIMELINE_PIXELS_PER_SECOND));
+  shell.style.setProperty("--director-timeline-track-min", `${trackWidth}px`);
 }
 
 function selectDirectorSegment(id) {
@@ -1581,6 +1657,44 @@ function removeDirectorIcVideoSegment(id) {
     state.directorSelectedId = state.directorSegments[0]?.id || "";
   }
   renderDirectorEditor();
+}
+
+function removeSelectedDirectorTimelineItem() {
+  if (!state.directorSelectedId) return false;
+  if (state.directorSelectionType === "audio" && state.directorAudioSegments.some((item) => item.id === state.directorSelectedId)) {
+    removeDirectorAudioSegment(state.directorSelectedId);
+    return true;
+  }
+  if (state.directorSelectionType === "video_audio" && state.directorVideoAudioSegments.some((item) => item.id === state.directorSelectedId)) {
+    removeDirectorVideoAudioSegment(state.directorSelectedId);
+    return true;
+  }
+  if (state.directorSelectionType === "ic_video" && state.directorIcVideoSegments.some((item) => item.id === state.directorSelectedId)) {
+    removeDirectorIcVideoSegment(state.directorSelectedId);
+    return true;
+  }
+  if (state.directorSegments.some((item) => item.id === state.directorSelectedId)) {
+    removeDirectorSegment(state.directorSelectedId);
+    return true;
+  }
+  return false;
+}
+
+function isDirectorTextEditingTarget(target) {
+  if (!target) return false;
+  if (target.closest("input, textarea, select, [contenteditable='true']")) return true;
+  return false;
+}
+
+function handleDirectorTimelineDeleteKey(event) {
+  if (event.key !== "Backspace" && event.key !== "Delete") return;
+  if (state.workspace !== "director" || state.directorMode === "retake") return;
+  if (isDirectorTextEditingTarget(event.target)) return;
+  if ($("directorSegmentModal")?.classList.contains("open")) return;
+  if (removeSelectedDirectorTimelineItem()) {
+    event.preventDefault();
+    $("runHint").textContent = "Selected timeline segment removed";
+  }
 }
 
 function directorSelectedCollection() {
@@ -2386,6 +2500,7 @@ function updateDirectorModeUi() {
   });
   if ($("directorRetakePanel")) $("directorRetakePanel").hidden = !isRetake;
   if ($("directorCutAtPlayheadBtn")) $("directorCutAtPlayheadBtn").style.display = isRetake ? "none" : "";
+  updateRunButtonLabel();
 }
 
 function renderDirectorRetakePanel() {
@@ -2393,6 +2508,7 @@ function renderDirectorRetakePanel() {
   const strength = $("directorRetakeStrength");
   if (prompt && document.activeElement !== prompt) prompt.value = state.directorRetakePrompt || "";
   if (strength && document.activeElement !== strength) strength.value = state.directorRetakeStrength ?? 1;
+  renderDirectorRetakeEditModes();
   const video = normalizedDirectorRetakeVideo();
   const status = $("directorRetakeStatus");
   if (status) {
@@ -2404,7 +2520,33 @@ function renderDirectorRetakePanel() {
   }
 }
 
+function renderDirectorRetakeEditModes() {
+  const wrap = $("directorRetakeEditModes");
+  if (!wrap) return;
+  const targets = directorRetakeEditTargets();
+  const video = normalizedDirectorRetakeVideo();
+  wrap.innerHTML = "";
+  if (!targets.length) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  targets.forEach((target) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "director-retake-edit-mode";
+    button.textContent = target.label;
+    button.disabled = !video;
+    button.title = video
+      ? `Trim the retake selection and open ${target.label}`
+      : "Add a retake video first";
+    button.addEventListener("click", () => sendDirectorRetakeSelectionToEdit(target));
+    wrap.appendChild(button);
+  });
+}
+
 function renderDirectorRetakeTrack(track, total) {
+  track.onmousedown = startDirectorRetakeTrackMouseDown;
   const video = normalizedDirectorRetakeVideo();
   if (!video) {
     track.innerHTML = "<span>Drop one generated video here for retake</span>";
@@ -2418,10 +2560,15 @@ function renderDirectorRetakeTrack(track, total) {
   const preview = video.videoPreviewUrl || (video.videoPath ? mediaUrl(video.videoPath) : "");
   block.innerHTML = `
     ${poster ? `<img class="director-block-image" src="${escapeHtml(poster)}" alt="retake video first frame">` : (preview ? directorVideoPosterCanvasHtml(preview, 0, "retake video first frame") : "")}
+    <button class="director-retake-remove" type="button" aria-label="Remove Retake video">x</button>
     <span class="director-block-index">BASE</span>
     <span class="director-block-prompt">${escapeHtml(video.videoName || fileNameFromPath(video.videoPath) || "Retake video")}</span>
     <span class="director-block-ref">retakeVideo</span>
   `;
+  block.querySelector(".director-retake-remove").addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeDirectorRetakeVideo();
+  });
   track.appendChild(block);
   const start = Math.max(0, Math.min(total, Number(state.directorRetakeStart) || 0));
   const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
@@ -2430,6 +2577,12 @@ function renderDirectorRetakeTrack(track, total) {
   selection.className = "director-retake-selection";
   selection.style.left = `${(start / total) * 100}%`;
   selection.style.width = `${((end - start) / total) * 100}%`;
+  selection.innerHTML = `
+    <span class="director-retake-handle director-retake-handle-left" data-retake-handle="left" aria-hidden="true"></span>
+    <span class="director-retake-handle director-retake-handle-right" data-retake-handle="right" aria-hidden="true"></span>
+  `;
+  selection.addEventListener("pointerdown", startDirectorRetakeSelectionDrag);
+  selection.addEventListener("mousedown", startDirectorRetakeSelectionDrag);
   track.appendChild(selection);
 }
 
@@ -2448,6 +2601,7 @@ function renderDirectorEditor() {
   const icVideoSegments = normalizedDirectorIcVideoSegments();
   const isRetake = state.directorMode === "retake";
   const total = isRetake ? directorRetakeTotalSeconds() : directorTotalSeconds();
+  updateDirectorTimelineScale(total);
   updateDirectorModeUi();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
@@ -2803,6 +2957,7 @@ function renderDirectorTimelineOnly() {
   const icVideoSegments = normalizedDirectorIcVideoSegments();
   const isRetake = state.directorMode === "retake";
   const total = isRetake ? directorRetakeTotalSeconds() : directorTotalSeconds();
+  updateDirectorTimelineScale(total);
   updateDirectorModeUi();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
@@ -3376,6 +3531,141 @@ function setDirectorRetakeEndAtPlayhead() {
   const end = Math.max(start + 0.1, playhead);
   state.directorRetakeLength = roundTenth(Math.min(total - start, end - start));
   renderDirectorEditor();
+}
+
+function removeDirectorRetakeVideo() {
+  state.directorRetakeVideo = null;
+  state.directorRetakeStart = 0;
+  state.directorRetakeLength = 1;
+  renderDirectorEditor();
+}
+
+function startDirectorRetakeSelectionDrag(event) {
+  if (event.button !== 0 || !state.directorRetakeVideo) return;
+  if (state.directorRetakeDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const track = $("directorRetakeTrack");
+  const rect = track.getBoundingClientRect();
+  const mode = directorRetakeDragModeFromEvent(event);
+  const originalStart = Number(state.directorRetakeStart) || 0;
+  const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  state.directorRetakeDrag = {
+    mode,
+    startX: event.clientX,
+    originalStart,
+    originalEnd: originalStart + length,
+    length,
+    total: directorRetakeTotalSeconds(),
+    width: Math.max(1, rect.width),
+  };
+  document.body.classList.add("director-dragging");
+  document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+  window.addEventListener("pointermove", onDirectorRetakeSelectionDrag);
+  window.addEventListener("pointerup", stopDirectorRetakeSelectionDrag, { once: true });
+  window.addEventListener("pointercancel", stopDirectorRetakeSelectionDrag, { once: true });
+  window.addEventListener("mousemove", onDirectorRetakeSelectionDrag);
+  window.addEventListener("mouseup", stopDirectorRetakeSelectionDrag, { once: true });
+}
+
+function directorRetakeDragModeFromEvent(event) {
+  const handle = event.target.closest?.("[data-retake-handle]")?.dataset?.retakeHandle || "";
+  if (handle === "left" || handle === "right") return handle;
+  const selection = document.querySelector("#directorRetakeTrack .director-retake-selection");
+  if (!selection) return "move";
+  const rect = selection.getBoundingClientRect();
+  const edge = Math.min(18, Math.max(10, rect.width * 0.2));
+  if (event.clientX <= rect.left + edge) return "left";
+  if (event.clientX >= rect.right - edge) return "right";
+  return "move";
+}
+
+function maybeStartDirectorRetakeSelectionDrag(event) {
+  if (state.directorMode !== "retake" || event.button !== 0 || !state.directorRetakeVideo) return;
+  if (event.target.closest?.(".director-retake-remove")) return;
+  const selection = document.querySelector("#directorRetakeTrack .director-retake-selection");
+  if (!selection) return;
+  const rect = selection.getBoundingClientRect();
+  const inside = event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+  if (!inside) return;
+  startDirectorRetakeSelectionDrag(event);
+}
+
+function startDirectorRetakeTrackMouseDown(event) {
+  if (event.button !== 0 || !state.directorRetakeVideo) return;
+  if (event.target.closest?.(".director-retake-remove")) return;
+  const track = $("directorRetakeTrack");
+  const rect = track.getBoundingClientRect();
+  const total = directorRetakeTotalSeconds();
+  const x = event.clientX - rect.left;
+  const start = Math.max(0, Number(state.directorRetakeStart) || 0);
+  const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  const selLeft = (start / total) * rect.width;
+  const selRight = ((start + length) / total) * rect.width;
+  if (x < selLeft || x > selRight) return;
+  startDirectorRetakeSelectionDrag(event);
+}
+
+function onDirectorRetakeSelectionDrag(event) {
+  const drag = state.directorRetakeDrag;
+  if (!drag) return;
+  const deltaSeconds = ((event.clientX - drag.startX) / drag.width) * drag.total;
+  const minLength = 0.1;
+  if (drag.mode === "left") {
+    const nextStart = Math.max(0, Math.min(drag.originalEnd - minLength, drag.originalStart + deltaSeconds));
+    state.directorRetakeStart = roundTenth(nextStart);
+    state.directorRetakeLength = roundTenth(Math.max(minLength, drag.originalEnd - nextStart));
+  } else if (drag.mode === "right") {
+    const nextEnd = Math.max(drag.originalStart + minLength, Math.min(drag.total, drag.originalEnd + deltaSeconds));
+    state.directorRetakeStart = roundTenth(drag.originalStart);
+    state.directorRetakeLength = roundTenth(Math.max(minLength, nextEnd - drag.originalStart));
+  } else {
+    const maxStart = Math.max(0, drag.total - drag.length);
+    state.directorRetakeStart = roundTenth(Math.max(0, Math.min(maxStart, drag.originalStart + deltaSeconds)));
+    state.directorRetakeLength = roundTenth(drag.length);
+  }
+  renderDirectorTimelineOnly();
+}
+
+function stopDirectorRetakeSelectionDrag() {
+  if (!state.directorRetakeDrag) return;
+  state.directorRetakeDrag = null;
+  document.body.classList.remove("director-dragging");
+  document.body.style.cursor = "";
+  window.removeEventListener("pointermove", onDirectorRetakeSelectionDrag);
+  window.removeEventListener("mousemove", onDirectorRetakeSelectionDrag);
+  renderDirectorEditor();
+}
+
+async function sendDirectorRetakeSelectionToEdit(target) {
+  const video = normalizedDirectorRetakeVideo();
+  if (!video?.videoPath || !target) return;
+  const start = roundTenth(Math.max(0, Number(state.directorRetakeStart) || 0));
+  const length = roundTenth(Math.max(0.1, Number(state.directorRetakeLength) || 0.1));
+  const end = roundTenth(Math.min(directorRetakeTotalSeconds(), start + length));
+  const prompt = $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "";
+  const buttons = [...document.querySelectorAll("#directorRetakeEditModes button")];
+  buttons.forEach((button) => { button.disabled = true; });
+  $("runHint").textContent = `Creating ${target.label} clip from retake selection...`;
+  try {
+    const clipped = await api("/api/trim-video", {
+      method: "POST",
+      body: JSON.stringify({ video_path: video.videoPath, start, end }),
+    });
+    const clippedDuration = Math.max(0.1, Number(clipped.duration) || (end - start));
+    if (target.kind === "inpaint") setInpaintWorkflow();
+    else setBerniniWorkflow(target.id);
+    if ($("durationInput")) $("durationInput").value = String(roundTenth(clippedDuration));
+    setVideoSlot(target.slotKey, clipped.path, clipped.name, { duration: clippedDuration, trimmed: true });
+    if ($("promptText")) $("promptText").value = prompt;
+    $("runHint").textContent = `Loaded retake selection into ${target.label} (${formatSeconds(start)} - ${formatSeconds(end)})`;
+  } catch (err) {
+    $("runHint").textContent = `Retake edit handoff failed: ${err.message}`;
+    buttons.forEach((button) => { button.disabled = false; });
+  }
 }
 
 async function uploadDirectorSegmentAudio(segmentId, file) {
@@ -4919,10 +5209,22 @@ async function prepareInpaintMaskForRun() {
   $("inpaintMaskStatus").textContent = "Mask ready";
 }
 
+function validateDirectorRunMode() {
+  if (state.workspace !== "director" || !isDirectorWorkflow(currentDirectorWorkflow())) return;
+  const retakeVideo = normalizedDirectorRetakeVideo();
+  if (state.directorMode === "retake" && !retakeVideo) {
+    throw new Error("Add a retake base video before queueing Director Retake.");
+  }
+  if (state.directorMode !== "retake" && retakeVideo) {
+    throw new Error("Retake base video is loaded. Switch to Retake or remove it before Generate.");
+  }
+}
+
 async function startBatch() {
   $("runBtn").disabled = true;
   $("runBtn").textContent = "Queueing...";
   try {
+    validateDirectorRunMode();
     if (isInpaintWorkflow(state.workspace === "edit" ? currentEditWorkflow() : currentWorkflow())) {
       await prepareInpaintMaskForRun();
     }
@@ -4943,7 +5245,7 @@ async function startBatch() {
     $("runHint").textContent = err.message;
   } finally {
     $("runBtn").disabled = false;
-    $("runBtn").textContent = "Queue Run";
+    updateRunButtonLabel({ force: true });
   }
 }
 
@@ -6775,6 +7077,7 @@ $("frameExtractPlayer").addEventListener("timeupdate", () => {
   updateFrameExtractReadout(time);
 });
 $("saveFrameExtractBtn").addEventListener("click", saveFrameExtract);
+document.addEventListener("mousedown", maybeStartDirectorRetakeSelectionDrag, true);
 window.addEventListener("resize", () => {
   updateVideoPreviewLayout();
   updateVideoClipperLayout();
@@ -6783,6 +7086,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && $("videoPreviewModal").classList.contains("open")) closeVideoPreview();
   if (event.key === "Escape" && $("frameExtractModal").classList.contains("open")) closeFrameExtract();
   if (event.key === "Escape" && $("videoClipperModal").classList.contains("open")) closeVideoClipper();
+  handleDirectorTimelineDeleteKey(event);
 });
 $("storyboardImportInput").addEventListener("change", () => {
   $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";

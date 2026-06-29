@@ -1294,6 +1294,50 @@ class DirectorReferenceTests(unittest.TestCase):
             ],
         )
 
+    def test_director_retake_timeline_does_not_segment_global_prompt(self):
+        timeline = server.director_timeline_from_payload(
+            {
+                "duration": 6,
+                "global_prompt": "keep the existing scene continuous",
+                "retake_mode": True,
+                "retake_video": {
+                    "video_path": "tasks/camera_lab_uploads/videos/base.mp4",
+                    "file_name": "base.mp4",
+                    "duration": 6,
+                },
+                "retake_start": 2,
+                "retake_length": 1.5,
+                "retake_prompt": "replace the middle action",
+            },
+            fps=24,
+        )
+
+        self.assertEqual(timeline["local_prompts"], "")
+        self.assertEqual(timeline["segment_lengths"], "")
+        self.assertEqual(timeline["retake_start"], 48)
+        self.assertEqual(timeline["retake_length"], 36)
+        self.assertEqual(timeline["retake_prompt"], "replace the middle action")
+
+    def test_director_retake_prompt_summary_uses_retake_prompt_for_output_display(self):
+        prompt = server.build_director_prompt_summary({
+            "global_prompt": "keep the existing scene continuous",
+            "retake_mode": True,
+            "retake_video": {"video_path": "tasks/camera_lab_uploads/videos/base.mp4"},
+            "retake_start": 2,
+            "retake_length": 1.5,
+            "retake_prompt": "replace the middle action",
+        })
+
+        self.assertEqual(prompt, "replace the middle action")
+
+    def test_director_default_empty_timeline_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "add a segment, guide, or retake video"):
+            server.build_director_prompt_summary({
+                "global_prompt": "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.",
+                "timeline_segments": [],
+                "motion_segments": [],
+            })
+
     def test_director_v2_global_reference_images_are_placeholder_only(self):
         run = {
             "batch_id": "dry",

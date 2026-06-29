@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=director-preview-fixed-16x9-1">
+  <link rel="stylesheet" href="/static/styles.css?v=director-key-delete-scroll-1">
 </head>
 <body>
   <header class="topbar">
@@ -256,17 +256,6 @@
         <textarea id="promptText" class="variant-prompt" rows="16"></textarea>
       </article>
       <section id="directorTimelinePanel" class="director-only director-editor">
-        <div class="director-stage-head">
-          <div>
-            <div class="eyebrow">Director</div>
-            <h2>Timeline Studio</h2>
-          </div>
-          <div class="director-stage-meta">
-            <span>01 Global</span>
-            <span>02 Timeline Segments</span>
-            <span>03 Output</span>
-          </div>
-        </div>
         <section class="director-workbench-section director-global-zone">
           <div class="director-section-heading">
             <div>
@@ -419,6 +408,8 @@
                   Retake strength
                   <input id="directorRetakeStrength" type="number" min="0" max="1" step="0.05" value="1">
                 </label>
+                <div class="director-retake-edit-label">Send selection to Edit</div>
+                <div class="director-retake-edit-modes" id="directorRetakeEditModes" aria-label="Send retake selection to Edit mode"></div>
                 <span id="directorRetakeStatus" class="hint">Upload a base video, then use { and } at the playhead to set the retake range.</span>
               </section>
             </section>
@@ -1026,8 +1017,8 @@
     </section>
   </div>
 
-  <script src="/static/director-preview.js?v=preview-player-fixed-16x9-1"></script>
-  <script src="/static/app.js?v=late-preview-poll-1"></script>
+  <script src="/static/director-preview.js?v=director-key-delete-scroll-1"></script>
+  <script src="/static/app.js?v=director-key-delete-scroll-1"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
