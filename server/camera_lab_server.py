@@ -1062,6 +1062,9 @@ def kj_dynamic_inputs(node: dict, nodes_by_id: dict[int, dict], links: dict[int,
 
 
 def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> dict[str, Any]:
+    retake_mode = bool(payload.get("retake_mode") or payload.get("retakeMode"))
+    retake_video_raw = payload.get("retake_video") or payload.get("retakeVideo") or {}
+    retake_video = retake_video_raw if isinstance(retake_video_raw, dict) else {}
     raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segments: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_segments, start=1):
@@ -1109,7 +1112,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "trimStart": max(0, int(trim_start or 0)),
             }
         )
-    if not segments:
+    if not segments and not retake_mode:
         segments = [
             {
                 "prompt": str(payload.get("prompt") or "A continuous cinematic shot.").strip(),
@@ -1125,6 +1128,11 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
             }
         ]
     duration_frames = sum(segment["frames"] for segment in segments)
+    retake_video_duration = retake_video.get("videoDurationFrames") or retake_video.get("duration_frames")
+    if retake_video_duration is None and retake_video.get("duration") is not None:
+        retake_video_duration = round(float(retake_video.get("duration") or 0) * fps)
+    if retake_mode and retake_video_duration is not None:
+        duration_frames = max(duration_frames, max(1, int(retake_video_duration or 1)))
     explicit_duration_frames = 0
     if payload.get("duration_frames") is not None:
         explicit_duration_frames = max(0, int(payload.get("duration_frames") or 0))
@@ -1141,7 +1149,12 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
     if audio_segments:
         duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in audio_segments))
     duration_seconds = round(duration_frames / fps, 3)
-    local_prompts, segment_lengths = director_prompt_segments_from_timeline(segments, duration_frames)
+    if retake_mode:
+        local_prompts, segment_lengths = director_prompt_segments_from_retake(payload, duration_frames, fps=fps)
+    else:
+        local_prompts, segment_lengths = director_prompt_segments_from_timeline(segments, duration_frames)
+    retake_start = max(0, round(float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0) * fps))
+    retake_length = max(1, round(float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0) * fps))
     return {
         "global_prompt": str(payload.get("global_prompt") or "").strip(),
         "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
@@ -1153,6 +1166,16 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         "segments": segments,
         "audio_segments": audio_segments,
         "motion_segments": motion_segments,
+        "retake_mode": retake_mode,
+        "retake_video": {
+            "video_path": str(retake_video.get("video_path") or retake_video.get("imageFile") or "").strip(),
+            "file_name": str(retake_video.get("file_name") or retake_video.get("fileName") or "").strip(),
+            "duration_frames": max(1, int(retake_video_duration or duration_frames or 1)),
+        } if retake_mode else {},
+        "retake_start": min(retake_start, max(0, duration_frames - 1)),
+        "retake_length": max(1, min(retake_length, max(1, duration_frames - retake_start))),
+        "retake_prompt": str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip(),
+        "retake_strength": max(0.0, min(1.0, float(payload.get("retake_strength", payload.get("retakeStrength", 1.0)) or 1.0))),
         "guide_frames": [],
         "guide_strengths": [],
         "guide_roles": [],
@@ -1257,6 +1280,30 @@ def director_prompt_segments_from_timeline(segments: list[dict[str, Any]], durat
     clamped_cursor = min(current_cursor, duration_frames)
     if lengths and clamped_cursor < duration_frames:
         lengths[-1] += duration_frames - clamped_cursor
+    return " | ".join(prompts), ",".join(str(length) for length in lengths)
+
+
+def director_prompt_segments_from_retake(payload: dict[str, Any], duration_frames: int, fps: int = 24) -> tuple[str, str]:
+    global_prompt = str(payload.get("global_prompt") or payload.get("prompt") or "video").strip() or "video"
+    retake_prompt = str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip() or "video"
+    retake_start = max(0, round(float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0) * fps))
+    retake_length = max(1, round(float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0) * fps))
+    retake_start = min(retake_start, max(0, duration_frames - 1))
+    retake_end = min(duration_frames, retake_start + retake_length)
+    lengths: list[int] = []
+    prompts: list[str] = []
+    if retake_start > 0:
+        lengths.append(retake_start)
+        prompts.append(global_prompt)
+    if retake_end > retake_start:
+        lengths.append(retake_end - retake_start)
+        prompts.append(retake_prompt)
+    if retake_end < duration_frames:
+        lengths.append(duration_frames - retake_end)
+        prompts.append(global_prompt)
+    if not lengths:
+        lengths = [max(1, duration_frames)]
+        prompts = [retake_prompt]
     return " | ".join(prompts), ",".join(str(length) for length in lengths)
 
 
@@ -1421,6 +1468,19 @@ def copy_director_motion_segments(run: dict[str, Any], motion_segments: list[dic
     return copied
 
 
+def copy_director_retake_video(run: dict[str, Any], retake_video: dict[str, Any]) -> str:
+    raw_path = retake_video.get("video_path") or retake_video.get("imageFile")
+    if not raw_path:
+        return ""
+    src = Path(str(raw_path))
+    if not src.exists():
+        return ""
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_retake_base{src.suffix or '.mp4'}"
+    shutil.copy2(src, COMFY_INPUT / name)
+    return name
+
+
 def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     workflow_json = json.loads(DIRECTOR_V2_WORKFLOW_PATH.read_text(encoding="utf-8"))
     api = workflow_to_api(workflow_json)
@@ -1443,11 +1503,27 @@ def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
     timeline_data = {"segments": guide_segments, "audioSegments": audio_segments}
     if motion_segments:
         timeline_data["motionSegments"] = motion_segments
+    if timeline.get("retake_mode"):
+        retake_video = timeline.get("retake_video") or {}
+        retake_file = copy_director_retake_video(run, retake_video)
+        timeline_data.update({
+            "retakeMode": True,
+            "retakeStart": int(timeline.get("retake_start") or 0),
+            "retakeLength": int(timeline.get("retake_length") or 1),
+            "retakePrompt": timeline.get("retake_prompt") or "",
+            "retakeStrength": float(timeline.get("retake_strength") or 1.0),
+            "retakeVideo": {
+                "fileName": retake_video.get("file_name") or Path(str(retake_video.get("video_path") or "")).name,
+                "imageFile": retake_file,
+                "videoDurationFrames": int(retake_video.get("duration_frames") or timeline["duration_frames"]),
+            },
+            "retake_global_prompt": timeline["global_prompt"],
+        })
     director["inputs"]["timeline_data"] = json.dumps(timeline_data, ensure_ascii=False)
     director["inputs"]["overrideAudio"] = False
     director["inputs"]["inpaint_audio"] = bool(run.get("inpaint_audio", True))
     director["inputs"]["use_custom_audio"] = False
-    if audio_segments:
+    if audio_segments or timeline.get("retake_mode"):
         director["inputs"]["use_custom_audio"] = True
     director["inputs"]["local_prompts"] = timeline["local_prompts"]
     director["inputs"]["segment_lengths"] = timeline["segment_lengths"]
@@ -4653,11 +4729,14 @@ class Handler(BaseHTTPRequestHandler):
         director_segments = payload.get("timeline_segments") or payload.get("segments") or []
         director_audio_segments = payload.get("audio_segments") or []
         director_motion_segments = payload.get("motion_segments") or []
+        director_retake_mode = bool(payload.get("retake_mode") or payload.get("retakeMode"))
+        director_retake_video = payload.get("retake_video") or payload.get("retakeVideo") or {}
         if workflow["mode"] == "director_ref":
             reference_images = validate_reference_images(payload.get("reference_images") or {})
             director_segments = validate_director_segments(payload.get("timeline_segments") or payload.get("segments") or [])
             director_audio_segments = validate_director_audio_segments(payload.get("audio_segments") or [])
             director_motion_segments = validate_director_motion_segments(payload.get("motion_segments") or [])
+            director_retake_video = validate_director_retake_video(director_retake_video)
         seed = validate_seed(payload.get("seed"))
         split_options = bernini_split_options(workflow["mode"], payload)
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
@@ -4699,6 +4778,12 @@ class Handler(BaseHTTPRequestHandler):
                     "segments": director_segments,
                     "audio_segments": director_audio_segments,
                     "motion_segments": director_motion_segments,
+                    "retake_mode": director_retake_mode,
+                    "retake_video": director_retake_video,
+                    "retake_start": float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0),
+                    "retake_length": float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0),
+                    "retake_prompt": payload.get("retake_prompt", payload.get("retakePrompt", "")) or "",
+                    "retake_strength": float(payload.get("retake_strength", payload.get("retakeStrength", 1.0)) or 1.0),
                     "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or (INPAINT_DEFAULT_NEGATIVE if is_inpaint_mode(workflow["mode"]) else DEFAULT_NEGATIVE),
                     "status": "queued",
@@ -5429,6 +5514,14 @@ def validate_seed(value: Any) -> int:
 
 def build_director_prompt_summary(payload: dict[str, Any]) -> str:
     global_prompt = str(payload.get("global_prompt") or "").strip()
+    if bool(payload.get("retake_mode") or payload.get("retakeMode")):
+        retake_prompt = str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip()
+        retake_video = payload.get("retake_video") or payload.get("retakeVideo") or {}
+        has_retake_video = isinstance(retake_video, dict) and bool(
+            str(retake_video.get("video_path") or retake_video.get("imageFile") or "").strip()
+        )
+        if global_prompt or retake_prompt or has_retake_video:
+            return "\n\n".join([part for part in [global_prompt, retake_prompt or "retake video"] if part])
     raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segment_prompts = [
         str(segment.get("prompt") or "").strip()
@@ -5503,6 +5596,19 @@ def validate_director_motion_segments(raw: list[dict[str, Any]]) -> list[dict[st
         item["type"] = "motion_video"
         segments.append(item)
     return segments
+
+
+def validate_director_retake_video(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    item = dict(raw)
+    video_path = str(item.get("video_path") or item.get("imageFile") or "").strip()
+    if video_path:
+        item["video_path"] = str(safe_media_path(video_path))
+    else:
+        item["video_path"] = ""
+    item["file_name"] = str(item.get("file_name") or item.get("fileName") or Path(video_path).name).strip()
+    return item
 
 
 def verify_dropdown_workflows() -> list[str]:

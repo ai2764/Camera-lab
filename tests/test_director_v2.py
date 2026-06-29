@@ -388,6 +388,54 @@ def test_v2_builder_maps_ic_video_guides_to_motion_segments(monkeypatch, sample_
     ]
 
 
+def test_v2_builder_maps_retake_video_to_native_timeline_data(monkeypatch, sample_run):
+    _stub_builder_graph(monkeypatch)
+    monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
+    monkeypatch.setattr(server, "copy_director_timeline_media", lambda run, timeline, width, height: {})
+    monkeypatch.setattr(server, "director_timeline_audio_segments", lambda run, timeline: [])
+    monkeypatch.setattr(server, "copy_director_motion_segments", lambda run, motion_segments: [])
+    monkeypatch.setattr(server, "copy_director_retake_video", lambda run, retake_video: "base_retake.mp4")
+
+    run = {
+        **sample_run,
+        "duration": 6,
+        "global_prompt": "keep the existing scene continuous",
+        "timeline_segments": [],
+        "retake_mode": True,
+        "retake_video": {
+            "video_path": "tasks/camera_lab_uploads/videos/base.mp4",
+            "file_name": "base.mp4",
+            "duration": 6,
+        },
+        "retake_start": 2,
+        "retake_length": 1.5,
+        "retake_prompt": "replace the middle action",
+        "retake_strength": 0.75,
+    }
+
+    api = server.build_ltx_director_v2_api(run)
+
+    director = _director_node(api)
+    assert director["inputs"]["duration_frames"] == 144
+    assert director["inputs"]["segment_lengths"] == "48,36,60"
+    assert director["inputs"]["local_prompts"] == (
+        "keep the existing scene continuous | replace the middle action | keep the existing scene continuous"
+    )
+    timeline = json.loads(director["inputs"]["timeline_data"])
+    assert timeline["segments"] == []
+    assert timeline["audioSegments"] == []
+    assert timeline["retakeMode"] is True
+    assert timeline["retakeStart"] == 48
+    assert timeline["retakeLength"] == 36
+    assert timeline["retakePrompt"] == "replace the middle action"
+    assert timeline["retakeStrength"] == 0.75
+    assert timeline["retakeVideo"] == {
+        "fileName": "base.mp4",
+        "imageFile": "base_retake.mp4",
+        "videoDurationFrames": 144,
+    }
+
+
 def test_director_timeline_from_payload_preserves_video_guides():
     timeline = server.director_timeline_from_payload(
         {

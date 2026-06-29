@@ -331,6 +331,10 @@
           </div>
           <div class="director-workspace-grid">
             <section class="director-main-editor">
+              <div class="director-mode-tabs" role="tablist" aria-label="Director mode">
+                <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">生成</button>
+                <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
+              </div>
               <div class="director-preview" id="directorPreview">
                 <div class="director-preview-stage">
                   <video id="directorPreviewVideo" class="director-preview-media" muted playsinline preload="metadata" style="display:none"></video>
@@ -357,6 +361,21 @@
                     </div>
                   </div>
                   <div class="director-track" id="directorTrack"></div>
+                </section>
+                <section class="director-lane director-retake-lane" data-lane="retake" hidden>
+                  <div class="director-track-label">
+                    <span>Retake video</span>
+                    <small>Base video and selected regenerate range</small>
+                    <div class="timeline-tools director-retake-tools">
+                      <button id="directorRetakeSetStartBtn" class="timeline-tool-button" type="button" title="Set retake start at playhead">{</button>
+                      <button id="directorRetakeSetEndBtn" class="timeline-tool-button" type="button" title="Set retake end at playhead">}</button>
+                      <button id="addDirectorRetakeVideoBtn" class="timeline-add" type="button" title="Add retake base video" aria-label="Add retake base video">+</button>
+                      <input id="directorRetakeVideoInput" type="file" accept="video/*" hidden>
+                    </div>
+                  </div>
+                  <div class="director-track director-retake-track" id="directorRetakeTrack">
+                    <span>Drop one generated video here for retake</span>
+                  </div>
                 </section>
                 <section class="director-lane director-lane-muted" data-lane="video-audio">
                   <div class="director-track-label">
@@ -391,6 +410,17 @@
                   </div>
                 </section>
               </div>
+              <section class="director-retake-panel" id="directorRetakePanel" hidden>
+                <label>
+                  Retake prompt
+                  <textarea id="directorRetakePrompt" rows="3" placeholder="Prompt for the selected retake range"></textarea>
+                </label>
+                <label>
+                  Retake strength
+                  <input id="directorRetakeStrength" type="number" min="0" max="1" step="0.05" value="1">
+                </label>
+                <span id="directorRetakeStatus" class="hint">Upload a base video, then use { and } at the playhead to set the retake range.</span>
+              </section>
             </section>
           </div>
         </section>

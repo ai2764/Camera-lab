@@ -1382,6 +1382,31 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   user-select: none;
 }
 
+.director-mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 2px;
+  border: 1px solid rgba(143,199,192,.28);
+  background: rgba(8,8,6,.72);
+}
+
+.director-mode-tab {
+  min-width: 72px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.director-mode-tab.active {
+  background: rgba(215,180,106,.2);
+  color: var(--accent);
+}
+
 .timeline-add {
   width: 34px;
   height: 34px;
@@ -1405,6 +1430,31 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   left: 8px;
   right: 7px;
   bottom: 6px;
+}
+
+.director-retake-tools {
+  position: absolute;
+  left: 8px;
+  right: 7px;
+  bottom: 6px;
+}
+
+.director-retake-tools .timeline-tool-button {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.director-retake-tools .timeline-add {
+  margin-left: auto;
+  width: 24px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  line-height: 1;
+  font-size: 16px;
 }
 
 .timeline-tool-button {
@@ -1617,6 +1667,91 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 .director-ic-video-block > span {
   position: relative;
   z-index: 1;
+}
+
+.director-retake-block {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  min-width: 80px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: end;
+  gap: 4px;
+  border: 1px solid rgba(215,180,106,.72);
+  background: #10100d;
+  color: var(--text);
+  padding: 7px 30px 7px 10px;
+  overflow: hidden;
+}
+
+.director-retake-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.18) 0%, transparent 34%),
+    linear-gradient(0deg, rgba(0,0,0,.84) 0%, rgba(0,0,0,.4) 44%, transparent 78%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.director-retake-block .director-block-image,
+.director-retake-block .director-video-poster-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: .44;
+  z-index: 0;
+}
+
+.director-retake-block > span {
+  position: relative;
+  z-index: 1;
+}
+
+.director-retake-selection {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  border: 1px solid rgba(143,199,192,.9);
+  background: rgba(143,199,192,.16);
+  box-shadow: inset 0 0 0 1px rgba(8,8,6,.5);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.director-retake-selection::before,
+.director-retake-selection::after {
+  position: absolute;
+  top: -17px;
+  color: var(--accent-2);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.director-retake-selection::before {
+  content: "{";
+  left: -6px;
+}
+
+.director-retake-selection::after {
+  content: "}";
+  right: -6px;
+}
+
+.director-retake-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 10px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.director-retake-panel .hint {
+  grid-column: 1 / -1;
 }
 
 .director-audio-track {

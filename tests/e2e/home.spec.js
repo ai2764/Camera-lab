@@ -1199,14 +1199,17 @@ test("director workspace starts without generated empty prompt segments", async 
   await page.locator("#directorWorkspaceTab").click();
 
   await expect(page.locator("#directorTimelinePanel")).toBeVisible();
-  await expect(page.locator(".director-lane")).toHaveCount(4);
-  const laneOrder = await page.locator(".director-lane").evaluateAll((lanes) => lanes.map((lane) => lane.dataset.lane));
-  expect(laneOrder).toEqual([
+  await expect(page.locator(".director-lane")).toHaveCount(5);
+  const visibleLaneOrder = await page.locator(".director-lane").evaluateAll((lanes) => lanes
+    .filter((lane) => getComputedStyle(lane).display !== "none")
+    .map((lane) => lane.dataset.lane));
+  expect(visibleLaneOrder).toEqual([
     "main",
     "video-audio",
     "dialogue",
     "ic-video",
   ]);
+  await expect(page.locator(".director-lane[data-lane='retake']")).not.toBeVisible();
   await expect(page.locator(".director-lane[data-lane='main']")).toContainText("Main");
   await expect(page.locator(".director-lane[data-lane='ic-video']")).toContainText("IC video");
   await expect(page.locator(".director-lane[data-lane='video-audio']")).toContainText("Video audio");
@@ -1272,7 +1275,8 @@ test("director timeline labels sit beside compact stacked tracks", async ({ page
   await page.locator("#directorWorkspaceTab").click();
 
   const metrics = await page.evaluate(() => {
-    const lanes = [...document.querySelectorAll(".director-lane")];
+    const lanes = [...document.querySelectorAll(".director-lane")]
+      .filter((lane) => getComputedStyle(lane).display !== "none");
     const label = document.querySelector(".director-lane[data-lane='main'] .director-track-label").getBoundingClientRect();
     const track = document.querySelector("#directorTrack").getBoundingClientRect();
     const storyboardParentLane = document.querySelector("#openStoryboardImportBtn").closest(".director-lane")?.dataset.lane || "";
@@ -1367,6 +1371,61 @@ test("director IC video lane uploads reference video into motion segments", asyn
     }),
   ]);
   expect(payload.timeline_segments.some((segment) => segment.video_path?.includes("ic_reference.mp4"))).toBe(false);
+});
+
+test("director retake tab uploads one base video and emits native retake payload", async ({ page }) => {
+  await page.route("**/api/upload-video", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "tasks/camera_lab_uploads/videos/retake_base.mp4",
+        name: "retake_base.mp4",
+        poster_path: "tasks/camera_lab_uploads/videos/retake_base_first_frame.jpg",
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await expect(page.locator("#directorModeGenerateBtn")).toHaveClass(/active/);
+  await page.locator("#directorModeRetakeBtn").click();
+  await expect(page.locator("#directorModeRetakeBtn")).toHaveClass(/active/);
+  await expect(page.locator("#directorRetakeTrack")).toBeVisible();
+  await expect(page.locator("#directorTrack")).not.toBeVisible();
+
+  await page.locator("#directorRetakeVideoInput").setInputFiles({
+    name: "retake_base.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("retake-video"),
+  });
+  await expect(page.locator("#directorRetakeTrack .director-retake-block")).toContainText("retake_base.mp4");
+
+  await page.evaluate(() => {
+    state.directorRetakeVideo.duration = 6;
+    renderDirectorEditor();
+    DirectorPreview.seek(1.2);
+  });
+  await page.locator("#directorRetakeSetStartBtn").click();
+  await page.evaluate(() => {
+    DirectorPreview.seek(3.4);
+  });
+  await page.locator("#directorRetakeSetEndBtn").click();
+  await page.locator("#directorRetakePrompt").fill("redo the hand gesture");
+
+  const payload = await page.evaluate(() => collectPayload());
+
+  expect(payload.retake_mode).toBe(true);
+  expect(payload.timeline_segments).toEqual([]);
+  expect(payload.motion_segments).toEqual([]);
+  expect(payload.audio_segments).toEqual([]);
+  expect(payload.retake_video).toEqual(expect.objectContaining({
+    video_path: expect.stringContaining("retake_base.mp4"),
+    file_name: "retake_base.mp4",
+  }));
+  expect(payload.retake_start).toBe(1.2);
+  expect(payload.retake_length).toBe(2.2);
+  expect(payload.retake_prompt).toBe("redo the hand gesture");
 });
 
 test("director IC video segments can be dragged on their timeline", async ({ page }) => {
