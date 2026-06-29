@@ -1,6 +1,6 @@
 # Director Timeline Preview Player — Design
 
-> Status: design (brainstormed 2026-06-28). Implementation plan to follow via writing-plans.
+> Status: implemented on branch `director2` (commits `8303e60`, `7e6fc6d`, `0e8edbb`, `efffc73`). Post-review aspect-ratio fix is in the working tree pending commit.
 > Branch: `director2`.
 
 ## Goal

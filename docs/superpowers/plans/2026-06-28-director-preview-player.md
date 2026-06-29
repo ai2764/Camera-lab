@@ -8,6 +8,17 @@
 
 **Tech Stack:** Static vanilla JS (no bundler), HTML/CSS, Playwright e2e (`page.evaluate` drives the module deterministically via `seek`).
 
+## Progress
+
+- **Implemented through Task 4** on branch `director2`.
+- Commits landed:
+  - `8303e60 feat: director preview player frame rendering`
+  - `7e6fc6d feat: director preview playhead, transport, and scrub`
+  - `0e8edbb feat: director preview synced audio lanes at volume`
+  - `efffc73 feat: feed director preview from timeline state`
+- Post-review aspect-ratio fix implemented in the working tree, pending commit: `.director-preview-stage` now follows the frame aspect ratio instead of staying fixed at 16:9; regression test added for 720x1280 portrait preview.
+- Latest focused verification run: Director preview frame/portrait-ratio/playhead/audio e2e passed; JS checks passed for `frontend/director-preview.js` and `tests/e2e/home.spec.js`.
+
 ## Global Constraints
 
 - The module is standalone: it consumes only what `setTimeline` is given; it must not reference `state`, `$`, or any `app.js` global.
@@ -45,7 +56,7 @@
   - `seek(t)`, `renderFrame(t)`.
 - Consumes: nothing.
 
-- [ ] **Step 1: Create the module with `activeClipAt`, `mount`, `setTimeline`, `seek`, `renderFrame`**
+- [x] **Step 1: Create the module with `activeClipAt`, `mount`, `setTimeline`, `seek`, `renderFrame`**
 
 Create `frontend/director-preview.js`:
 
@@ -126,7 +137,7 @@ Create `frontend/director-preview.js`:
 })();
 ```
 
-- [ ] **Step 2: Add the player markup and script include to `index.html`**
+- [x] **Step 2: Add the player markup and script include to `index.html`**
 
 In `frontend/index.html`, immediately inside `director-main-editor` and before
 `<div class="director-timeline-shell">` (line 333), insert:
@@ -158,7 +169,7 @@ to:
   <script src="/static/app.js?v=late-preview-poll-1"></script>
 ```
 
-- [ ] **Step 3: Add minimal CSS**
+- [x] **Step 3: Add minimal CSS**
 
 Append to `frontend/styles.css`:
 
@@ -207,7 +218,7 @@ Append to `frontend/styles.css`:
 }
 ```
 
-- [ ] **Step 4: Write the failing e2e test for frame rendering**
+- [x] **Step 4: Write the failing e2e test for frame rendering**
 
 Append to `tests/e2e/home.spec.js`:
 
@@ -253,12 +264,12 @@ test("director preview shows video, image, and text frames by seek position", as
 });
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `npx playwright test tests/e2e/home.spec.js --grep "preview shows video, image, and text" --reporter=line`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/director-preview.js frontend/index.html frontend/styles.css tests/e2e/home.spec.js
@@ -277,7 +288,7 @@ git commit -m "feat: director preview player frame rendering"
 - Consumes: Task 1 `DirectorPreview` (mount/setTimeline/seek/renderFrame).
 - Produces: `play()`, `pause()`, `toggle()`, `isPlaying()`; playhead positioned via `els.playheadEl` over `els.timelineEl`; `seekFromPointer(clientX)` maps a timeline click to a seek.
 
-- [ ] **Step 1: Add the playhead element + the timeline ref**
+- [x] **Step 1: Add the playhead element + the timeline ref**
 
 In `frontend/index.html`, inside `director-timeline-shell` (after `<div class="director-ruler" id="directorRuler"></div>`, line 341), add:
 
@@ -301,7 +312,7 @@ Append to `frontend/styles.css`:
 }
 ```
 
-- [ ] **Step 2: Write the failing e2e test for play/pause + playhead**
+- [x] **Step 2: Write the failing e2e test for play/pause + playhead**
 
 Append to `tests/e2e/home.spec.js`:
 
@@ -338,7 +349,7 @@ test("director preview play toggles state and advances the playhead", async ({ p
 });
 ```
 
-- [ ] **Step 3: Add the clock, playhead positioning, and pointer seek to the module**
+- [x] **Step 3: Add the clock, playhead positioning, and pointer seek to the module**
 
 In `frontend/director-preview.js`, replace the `renderFrame`/`seek` region and the
 exported object. First, add these helpers and state near the top (after `let currentTime = 0;`):
@@ -434,12 +445,12 @@ Extend the exported object to include the new methods:
   };
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx playwright test tests/e2e/home.spec.js --grep "preview play toggles|preview shows video" --reporter=line`
 Expected: PASS (both).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/director-preview.js frontend/index.html frontend/styles.css tests/e2e/home.spec.js
@@ -458,7 +469,7 @@ git commit -m "feat: director preview playhead, transport, and scrub"
 - Consumes: Task 2 module (clock + seek).
 - Produces: audio playback driven by `timeline.audioClips`; an `audioEls` pool keyed by clip id/index; volume capped to `[0,1]`. New introspection `_audio()` returns `[{src, playing, volume}]` for tests.
 
-- [ ] **Step 1: Write the failing e2e test for audio sync**
+- [x] **Step 1: Write the failing e2e test for audio sync**
 
 Append to `tests/e2e/home.spec.js`:
 
@@ -502,7 +513,7 @@ test("director preview drives audio clips at their volume by playhead position",
 });
 ```
 
-- [ ] **Step 2: Implement the audio pool and sync in the module**
+- [x] **Step 2: Implement the audio pool and sync in the module**
 
 In `frontend/director-preview.js`, add an audio pool. After `let lastTs = 0;` add:
 
@@ -551,12 +562,12 @@ Extend the exported object with introspection:
     _audio: () => audioEls.map((item) => ({ start: Number(item.clip.start) || 0, active: item.active, volume: item.el.volume })),
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
 Run: `npx playwright test tests/e2e/home.spec.js --grep "preview drives audio|preview play toggles|preview shows video" --reporter=line`
 Expected: PASS (all three).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/director-preview.js tests/e2e/home.spec.js
@@ -575,7 +586,7 @@ git commit -m "feat: director preview synced audio lanes at volume"
 - Consumes: `DirectorPreview.mount/setTimeline` (Tasks 1–3); existing `normalizedDirectorSegments`, `normalizedDirectorAudioSegments`, `normalizedDirectorVideoAudioSegments`, `directorTotalSeconds`, `currentSize`, `mediaUrl`.
 - Produces: the preview is fed from real Director state on every `renderDirectorEditor`.
 
-- [ ] **Step 1: Add a builder + mount helper in `app.js`**
+- [x] **Step 1: Add a builder + mount helper in `app.js`**
 
 In `frontend/app.js`, add near `renderDirectorEditor` (before line 1868):
 
@@ -633,11 +644,11 @@ function syncDirectorPreview() {
 }
 ```
 
-- [ ] **Step 2: Call the sync at the end of `renderDirectorEditor`**
+- [x] **Step 2: Call the sync at the end of `renderDirectorEditor`**
 
 In `frontend/app.js`, find the end of `renderDirectorEditor` (the function that begins at line 1868) and add `syncDirectorPreview();` as its last statement before the closing brace.
 
-- [ ] **Step 3: Write the failing e2e test for the wired preview**
+- [x] **Step 3: Write the failing e2e test for the wired preview**
 
 Append to `tests/e2e/home.spec.js`:
 
@@ -662,12 +673,12 @@ test("director editor feeds the preview from timeline state", async ({ page }) =
 });
 ```
 
-- [ ] **Step 4: Run the focused director preview tests**
+- [x] **Step 4: Run the focused director preview tests**
 
 Run: `npx playwright test tests/e2e/home.spec.js --grep "preview" --reporter=line`
 Expected: PASS (all preview tests).
 
-- [ ] **Step 5: Run the full director e2e subset + JS check**
+- [x] **Step 5: Run the full director e2e subset + JS check**
 
 Run:
 ```bash
@@ -676,7 +687,7 @@ npx playwright test tests/e2e/home.spec.js --grep "director|preview|video audio|
 ```
 Expected: PASS; no regressions in existing director tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/app.js tests/e2e/home.spec.js

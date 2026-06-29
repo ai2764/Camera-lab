@@ -1214,6 +1214,7 @@ test("director workspace starts without generated empty prompt segments", async 
   await expect(page.locator(".director-lane[data-lane='video-audio']")).not.toContainText("Detached video audio appears");
   await expect(page.locator(".director-lane[data-lane='dialogue']")).toContainText("Dialogue");
   await expect(page.locator("#addDirectorIcVideoBtn")).toBeVisible();
+  await expect(page.locator(".director-timeline-shell")).not.toContainText("Image and text timeline");
   await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
   await expect(page.locator("#directorSegmentInspector")).toContainText("Add a segment");
   await expect(page.locator("#directorTrack")).not.toContainText("empty prompt");
@@ -1223,6 +1224,58 @@ test("director workspace starts without generated empty prompt segments", async 
   await expect(page.locator("#directorGlobalPrompt")).toHaveValue(/continuous cinematic video/i);
 });
 
+test("director timeline labels sit beside compact stacked tracks", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  const metrics = await page.evaluate(() => {
+    const lanes = [...document.querySelectorAll(".director-lane")];
+    const label = document.querySelector(".director-lane[data-lane='main'] .director-track-label").getBoundingClientRect();
+    const track = document.querySelector("#directorTrack").getBoundingClientRect();
+    const storyboardParentLane = document.querySelector("#openStoryboardImportBtn").closest(".director-lane")?.dataset.lane || "";
+    const addParentLane = document.querySelector("#addDirectorSegmentBtn").closest(".director-lane")?.dataset.lane || "";
+    const gaps = lanes.slice(1).map((lane, index) => {
+      const prev = lanes[index].getBoundingClientRect();
+      const current = lane.getBoundingClientRect();
+      return Math.round(current.top - prev.bottom);
+    });
+    return {
+      labelRight: Math.round(label.right),
+      trackLeft: Math.round(track.left),
+      labelTop: Math.round(label.top),
+      trackTop: Math.round(track.top),
+      storyboardParentLane,
+      addParentLane,
+      gaps,
+    };
+  });
+  expect(metrics.labelRight).toBeLessThanOrEqual(metrics.trackLeft);
+  expect(Math.abs(metrics.labelTop - metrics.trackTop)).toBeLessThanOrEqual(2);
+  expect(metrics.storyboardParentLane).toBe("main");
+  expect(metrics.addParentLane).toBe("main");
+  expect(Math.max(...metrics.gaps)).toBeLessThanOrEqual(2);
+});
+
+test("director timeline scrolls horizontally without vertical scrollbar", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  const metrics = await page.locator(".director-timeline-shell").evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      overflowX: style.overflowX,
+      overflowY: style.overflowY,
+      verticalScrollRange: el.scrollHeight - el.clientHeight,
+    };
+  });
+
+  expect(metrics.overflowX).toBe("auto");
+  expect(metrics.overflowY).toBe("hidden");
+  expect(metrics.verticalScrollRange).toBeLessThanOrEqual(1);
+});
+
 test("director IC video lane uploads reference video into motion segments", async ({ page }) => {
   await page.route("**/api/upload-video", async (route) => {
     await route.fulfill({
@@ -1230,6 +1283,7 @@ test("director IC video lane uploads reference video into motion segments", asyn
       body: JSON.stringify({
         path: "tasks/camera_lab_uploads/videos/ic_reference.mp4",
         name: "ic_reference.mp4",
+        poster_path: "tasks/camera_lab_uploads/videos/ic_reference_first_frame.jpg",
       }),
     });
   });
@@ -1246,6 +1300,23 @@ test("director IC video lane uploads reference video into motion segments", asyn
   await uploadRequest;
 
   await expect(page.locator("#directorIcVideoTrack .director-ic-video-block")).toContainText("ic_reference.mp4");
+  const layout = await page.evaluate(() => {
+    const mainTrack = document.querySelector("#directorTrack").getBoundingClientRect();
+    const icTrack = document.querySelector("#directorIcVideoTrack").getBoundingClientRect();
+    const mainBlock = document.querySelector("#directorTrack .director-block")?.getBoundingClientRect();
+    const icBlock = document.querySelector("#directorIcVideoTrack .director-ic-video-block").getBoundingClientRect();
+    return {
+      mainTrackHeight: Math.round(mainTrack.height),
+      icTrackHeight: Math.round(icTrack.height),
+      icBlockTopOffset: Math.round(icBlock.top - icTrack.top),
+      icBlockBottomOffset: Math.round(icTrack.bottom - icBlock.bottom),
+      mainBlockTopOffset: mainBlock ? Math.round(mainBlock.top - mainTrack.top) : 18,
+      mainBlockBottomOffset: mainBlock ? Math.round(mainTrack.bottom - mainBlock.bottom) : 18,
+    };
+  });
+  expect(layout.icTrackHeight).toBe(layout.mainTrackHeight);
+  expect(layout.icBlockTopOffset).toBe(layout.mainBlockTopOffset);
+  expect(layout.icBlockBottomOffset).toBe(layout.mainBlockBottomOffset);
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.motion_segments).toEqual([
     expect.objectContaining({
@@ -1254,6 +1325,177 @@ test("director IC video lane uploads reference video into motion segments", asyn
     }),
   ]);
   expect(payload.timeline_segments.some((segment) => segment.video_path?.includes("ic_reference.mp4"))).toBe(false);
+});
+
+test("director IC video segments can be dragged on their timeline", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_for_ic_drag",
+      start: 0,
+      duration: 4,
+      prompt: "Main guide.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorIcVideoSegments = [{
+      id: "ic_drag",
+      start: 0,
+      duration: 1,
+      trimStart: 0,
+      videoPath: "tasks/camera_lab_uploads/videos/ic_drag.mp4",
+      videoName: "ic_drag.mp4",
+      videoPreviewUrl: "",
+      videoDuration: 1,
+    }];
+    state.directorSelectedId = "ic_drag";
+    state.directorSelectionType = "ic_video";
+    renderDirectorEditor();
+  });
+
+  await page.locator("#directorIcVideoTrack .director-ic-video-block").scrollIntoViewIfNeeded();
+  const trackBox = await page.locator("#directorIcVideoTrack").boundingBox();
+  const blockBox = await page.locator("#directorIcVideoTrack .director-ic-video-block").boundingBox();
+  expect(trackBox).not.toBeNull();
+  expect(blockBox).not.toBeNull();
+  const oneSecond = trackBox.width / 6;
+  const y = blockBox.y + blockBox.height / 2;
+
+  await page.mouse.move(blockBox.x + blockBox.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(blockBox.x + blockBox.width / 2 + oneSecond * 2, y, { steps: 8 });
+  await page.mouse.up();
+
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.motion_segments[0]).toEqual(expect.objectContaining({
+    id: "ic_drag",
+    start: 2,
+    duration: 1,
+    video_path: expect.stringContaining("ic_drag.mp4"),
+  }));
+});
+
+test("director audio segments display continuous waveform surfaces", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_waveform",
+      start: 0,
+      duration: 4,
+      prompt: "Waveform test.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorAudioSegments = [{
+      id: "aud_waveform",
+      start: 0,
+      duration: 2,
+      trimStart: 0,
+      audioPath: "tts/library/current/line.wav",
+      audioName: "line.wav",
+      audioDuration: 2,
+    }];
+    state.directorVideoAudioSegments = [{
+      id: "video_aud_waveform",
+      start: 1,
+      duration: 2,
+      trimStart: 0,
+      audioPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      audioName: "guide.mp4",
+      audioDuration: 2,
+      source: "video",
+    }];
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorAudioTrack .director-waveform-canvas")).toHaveAttribute("data-audio-src", /line\.wav/);
+  await expect(page.locator("#directorVideoAudioTrack .director-waveform-canvas")).toHaveAttribute("data-audio-src", /guide\.mp4/);
+  await expect(page.locator(".director-waveform-surface")).toHaveCount(0);
+  await expect(page.locator(".director-waveform-bar")).toHaveCount(0);
+});
+
+test("director video segments use poster backgrounds without thumbnail strips", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_frames",
+      start: 0,
+      duration: 4,
+      prompt: "Frame strip test.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      videoPath: "tasks/camera_lab_uploads/videos/main.mp4",
+      videoName: "main.mp4",
+      videoPreviewUrl: "/media/tasks/camera_lab_uploads/videos/main.mp4",
+      videoPosterUrl: "/media/tasks/camera_lab_uploads/videos/main_first_frame.png",
+      strength: 0.65,
+    }];
+    state.directorIcVideoSegments = [{
+      id: "ic_frames",
+      start: 0,
+      duration: 2,
+      trimStart: 0,
+      videoPath: "tasks/camera_lab_uploads/videos/ic.mp4",
+      videoName: "ic.mp4",
+      videoPreviewUrl: "/media/tasks/camera_lab_uploads/videos/ic.mp4",
+      videoPosterUrl: "/media/tasks/camera_lab_uploads/videos/ic_first_frame.png",
+      videoDuration: 2,
+    }];
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator(".director-frame-strip")).toHaveCount(0);
+  await expect(page.locator(".director-frame-strip-frame")).toHaveCount(0);
+  await expect(page.locator("#directorTrack .director-block-image")).toHaveAttribute("src", /main_first_frame\.png/);
+  await expect(page.locator("#directorIcVideoTrack .director-block-image")).toHaveAttribute("src", /ic_first_frame\.png/);
+  await expect(page.locator("#directorTrack .director-block-image")).toHaveCSS("object-fit", "cover");
+  await expect(page.locator(".director-frame-strip[data-video-src]")).toHaveCount(0);
+  await expect(page.locator(".director-frame-strip[data-hydrated]")).toHaveCount(0);
+  await expect(page.locator(".director-block-video")).toHaveCount(0);
+});
+
+test("director video segments keep a first-frame fallback when no poster was generated", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_no_poster",
+      start: 0,
+      duration: 3,
+      prompt: "No poster fallback.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      videoPath: "tasks/camera_lab_uploads/videos/no_poster.mp4",
+      videoName: "no_poster.mp4",
+      videoPreviewUrl: "/media/tasks/camera_lab_uploads/videos/no_poster.mp4",
+      videoPosterUrl: "",
+      strength: 0.65,
+    }];
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorTrack .director-video-poster-canvas")).toHaveAttribute("data-video-src", /no_poster\.mp4/);
+  await expect(page.locator("#directorTrack .director-video-poster-canvas")).toHaveAttribute("data-video-poster-status", /^(loading|ready|fallback)$/);
+  await expect(page.locator("#directorTrack .director-video-poster-fallback")).toHaveCount(0);
+  await expect(page.locator("#directorTrack .director-block-video")).toHaveCount(0);
+  await expect(page.locator("#directorTrack img.director-block-image")).toHaveCount(0);
 });
 
 test("director IC-LoRA dropdown populates from config and feeds the payload", async ({ page }) => {
@@ -1280,6 +1522,76 @@ test("director IC-LoRA dropdown populates from config and feeds the payload", as
 
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.ic_lora_name).toBe("ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors");
+});
+
+test("director Ingredients LoRA builds a typed global reference sheet", async ({ page }) => {
+  const uploadedBodies = [];
+  await page.route("**/api/upload-image", async (route) => {
+    const body = route.request().postDataJSON();
+    uploadedBodies.push(body);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: body.name.includes("ingredients") ? "tasks/camera_lab_uploads/images/ingredients_sheet.png" : `tasks/camera_lab_uploads/images/${body.name}`,
+        name: body.name,
+      }),
+    });
+  });
+  await page.route("**/api/run", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        batch_id: "dry",
+        status: "queued",
+        runs: [{ run_id: "01_director", status: "queued", workflow_id: "ltx_director_2" }],
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.config.director = {
+      ic_loras: ["None", "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"],
+    };
+    fillDirectorIcLoras();
+  });
+
+  await page.locator("#directorIcLora").selectOption("ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors");
+  await page.locator("#directorGlobalReferenceStrength").fill("1");
+  await page.locator("#globalRefInput_0").setInputFiles({
+    name: "person_a.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("person-a"),
+  });
+  await page.locator("#globalRefType_0").selectOption("character");
+  await page.locator("#globalRefSubject_0").selectOption("person_a");
+  await page.locator("#globalAddRefBtn").click();
+  await page.locator("#globalRefInput_1").setInputFiles({
+    name: "prop_camera.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("prop-camera"),
+  });
+  await page.locator("#globalRefType_1").selectOption("prop");
+  await page.locator("#globalRefSubject_1").selectOption("shared");
+
+  const runRequest = page.waitForRequest("**/api/run");
+  await page.locator("#runBtn").click();
+  const payload = JSON.parse((await runRequest).postData());
+
+  expect(uploadedBodies.some((body) => body.name === "director_ingredients_reference_sheet.png")).toBe(true);
+  await expect(page.locator("#directorIngredientsSheetStatus")).toContainText("ready");
+  expect(payload.reference_images).toEqual([
+    expect.stringContaining("person_a.png"),
+    expect.stringContaining("prop_camera.png"),
+  ]);
+  expect(payload.timeline_segments[0]).toEqual(expect.objectContaining({
+    id: "ingredients_reference_sheet",
+    type: "image",
+    image_path: expect.stringContaining("ingredients_sheet.png"),
+    strength: 1,
+  }));
+  expect(payload.ic_lora_name).toContain("ingredients");
 });
 
 test("director video audio clip can be deleted from the timeline", async ({ page }) => {
@@ -1354,18 +1666,307 @@ test("director segment remove controls delete from timeline and inspector", asyn
   await page.locator("#directorWorkspaceTab").click();
   await page.locator("#addDirectorSegmentBtn").click();
 
+  await expect(page.locator("#directorSegmentModal")).not.toHaveClass(/open/);
+  await page.locator("#directorTrack .director-block").click();
+  await expect(page.locator("#directorSegmentModal")).not.toHaveClass(/open/);
+  await expect(page.locator("#directorTrack .director-block")).toHaveClass(/selected/);
+  await page.evaluate(() => openDirectorSegmentModal("image", state.directorSelectedId));
   await expect(page.locator("#removeDirectorSegmentBtn")).toBeVisible();
   await expect(page.locator("#removeDirectorSegmentIconBtn")).toHaveCount(0);
   await expect(page.locator("#directorTrack .director-block-remove")).toHaveCount(1);
 
+  await page.locator("#closeDirectorSegmentModalBtn").click();
+  await expect(page.locator("#directorSegmentModal")).not.toHaveClass(/open/);
   await page.locator("#directorTrack .director-block-remove").click();
   await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
   await expect(page.locator("#directorSegmentInspector")).toContainText("Add a segment");
 
   await page.locator("#addDirectorSegmentBtn").click();
   await expect(page.locator("#directorTrack .director-block-remove")).toHaveCount(1);
+  await page.evaluate(() => openDirectorSegmentModal("image", state.directorSegments[0].id));
   await page.locator("#removeDirectorSegmentBtn").click();
   await expect(page.locator("#directorTrack .director-block")).toHaveCount(0);
+});
+
+test("clicking a director segment selects it without opening the modal", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.locator("#addDirectorSegmentBtn").click();
+
+  await expect(page.locator("#directorSegmentModal")).not.toHaveClass(/open/);
+  await page.locator("#directorTrack .director-block").click();
+  await expect(page.locator("#directorSegmentModal")).not.toHaveClass(/open/);
+  await expect(page.locator("#directorTrack .director-block")).toHaveClass(/selected/);
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
+});
+
+test("director playhead scissors splits the selected video timeline item", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_cut",
+      start: 0,
+      duration: 4,
+      trimStart: 0,
+      prompt: "Cut this video segment.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      videoPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      videoName: "guide.mp4",
+      videoPreviewUrl: "/media/tasks/camera_lab_uploads/videos/guide.mp4",
+      strength: 0.65,
+    }];
+    state.directorSelectedId = "seg_cut";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+    DirectorPreview.seek(1.5);
+  });
+
+  await expect(page.locator("#directorCutAtPlayheadBtn")).toBeVisible();
+  await expect(page.locator("#directorCutAtPlayheadBtn")).toBeEnabled();
+  await page.locator("#directorCutAtPlayheadBtn").click();
+
+  const segments = await page.evaluate(() => state.directorSegments.map((item) => ({
+    start: item.start,
+    duration: item.duration,
+    prompt: item.prompt,
+    videoPath: item.videoPath,
+  })));
+  expect(segments).toEqual([
+    expect.objectContaining({ start: 0, duration: 1.5, videoPath: expect.stringContaining("guide.mp4") }),
+    expect.objectContaining({ start: 1.5, duration: 2.5, videoPath: expect.stringContaining("guide.mp4") }),
+  ]);
+  await expect(page.locator("#directorTrack .director-block")).toHaveCount(2);
+});
+
+test("director playhead scissors is disabled for image timeline items", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_image_no_cut",
+      start: 0,
+      duration: 4,
+      prompt: "Do not cut this image segment.",
+      reference: "",
+      imagePath: "tasks/camera_lab_uploads/images/guide.png",
+      imageName: "guide.png",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorSelectedId = "seg_image_no_cut";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+    DirectorPreview.seek(1.5);
+  });
+
+  await expect(page.locator("#directorCutAtPlayheadBtn")).toBeDisabled();
+  const cutButtonStyle = await page.locator("#directorCutAtPlayheadBtn").evaluate((button) => {
+    const style = getComputedStyle(button);
+    return {
+      color: style.color,
+      cursor: style.cursor,
+    };
+  });
+  expect(cutButtonStyle.color).toContain("rgba");
+  expect(cutButtonStyle.cursor).toBe("not-allowed");
+  await page.evaluate(() => document.getElementById("directorCutAtPlayheadBtn").click());
+
+  expect(await page.evaluate(() => state.directorSegments.length)).toBe(1);
+  await expect(page.locator("#directorTrack .director-block")).toHaveCount(1);
+});
+
+test("director playhead scissors preserves trim offsets when splitting audio and IC video", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_anchor", start: 0, duration: 6, prompt: "anchor", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_cut", start: 1, duration: 4, trimStart: 0.5, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 6, volume: 0.8 }];
+    state.directorVideoAudioSegments = [{ id: "video_aud_cut", start: 1, duration: 4, trimStart: 0.25, audioPath: "fixtures/video.wav", audioName: "video.wav", audioDuration: 6, source: "video" }];
+    state.directorIcVideoSegments = [{ id: "ic_cut", start: 1, duration: 4, trimStart: 0.75, videoPath: "fixtures/ic.mp4", videoName: "ic.mp4", videoDuration: 6 }];
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    state.directorSelectedId = "aud_cut";
+    state.directorSelectionType = "audio";
+    DirectorPreview.seek(2.5);
+    renderDirectorEditor();
+  });
+  await page.locator("#directorCutAtPlayheadBtn").click();
+  expect(await page.evaluate(() => state.directorAudioSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
+    { start: 1, duration: 1.5, trimStart: 0.5 },
+    { start: 2.5, duration: 2.5, trimStart: 2 },
+  ]);
+  expect(await page.evaluate(() => collectPayload().audio_segments
+    .filter((segment) => segment.id && segment.id.startsWith("aud_cut"))
+    .map(({ start, duration, trim_start }) => ({ start, duration, trim_start })))).toEqual([
+    { start: 1, duration: 1.5, trim_start: 12 },
+    { start: 2.5, duration: 2.5, trim_start: 48 },
+  ]);
+
+  await page.evaluate(() => {
+    state.directorSelectedId = "video_aud_cut";
+    state.directorSelectionType = "video_audio";
+    DirectorPreview.seek(3);
+    renderDirectorEditor();
+  });
+  await page.locator("#directorCutAtPlayheadBtn").click();
+  expect(await page.evaluate(() => state.directorVideoAudioSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
+    { start: 1, duration: 2, trimStart: 0.25 },
+    { start: 3, duration: 2, trimStart: 2.25 },
+  ]);
+
+  await page.evaluate(() => {
+    state.directorSelectedId = "ic_cut";
+    state.directorSelectionType = "ic_video";
+    DirectorPreview.seek(4);
+    renderDirectorEditor();
+  });
+  await page.locator("#directorCutAtPlayheadBtn").click();
+  expect(await page.evaluate(() => state.directorIcVideoSegments.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })))).toEqual([
+    { start: 1, duration: 3, trimStart: 0.75 },
+    { start: 4, duration: 1, trimStart: 3.75 },
+  ]);
+});
+
+test("director playhead scissors preserves source time when splitting a main video segment", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_video_cut",
+      start: 0,
+      duration: 4,
+      trimStart: 0.5,
+      prompt: "video cut",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      videoPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      videoName: "guide.mp4",
+      videoPreviewUrl: "/media/tasks/camera_lab_uploads/videos/guide.mp4",
+      videoPosterUrl: "/media/tasks/camera_lab_uploads/videos/guide_first_frame.jpg",
+      strength: 0.65,
+    }];
+    state.directorSelectedId = "seg_video_cut";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+    DirectorPreview.seek(1.5);
+  });
+
+  await page.locator("#directorCutAtPlayheadBtn").click();
+
+  const segments = await page.evaluate(() => state.directorSegments.map(({ start, duration, trimStart, videoPath }) => ({ start, duration, trimStart, videoPath })));
+  expect(segments).toEqual([
+    { start: 0, duration: 1.5, trimStart: 0.5, videoPath: "tasks/camera_lab_uploads/videos/guide.mp4" },
+    { start: 1.5, duration: 2.5, trimStart: 2, videoPath: "tasks/camera_lab_uploads/videos/guide.mp4" },
+  ]);
+
+  const previewClips = await page.evaluate(() => DirectorPreview._state().timeline.clips.map(({ start, duration, trimStart }) => ({ start, duration, trimStart })));
+  expect(previewClips).toEqual([
+    { start: 0, duration: 1.5, trimStart: 0.5 },
+    { start: 1.5, duration: 2.5, trimStart: 2 },
+  ]);
+
+  const payload = await page.evaluate(() => collectPayload());
+  expect(payload.timeline_segments.map((segment) => segment.trim_start)).toEqual([12, 48]);
+  await expect(page.locator("#directorTrack .director-block-image")).toHaveCount(2);
+  await expect(page.locator("#directorTrack .director-block-image").nth(0)).toHaveAttribute("src", /guide_first_frame\.jpg/);
+  await expect(page.locator("#directorTrack .director-block-image").nth(1)).toHaveAttribute("src", /guide_first_frame\.jpg/);
+});
+
+test("director timeline edit buttons open the segment modal", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_edit", start: 0, duration: 2, prompt: "edit main", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_edit", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 2 }];
+    state.directorVideoAudioSegments = [{ id: "video_aud_edit", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/video.wav", audioName: "video.wav", audioDuration: 2, source: "video" }];
+    state.directorIcVideoSegments = [{ id: "ic_edit", start: 0, duration: 2, trimStart: 0, videoPath: "fixtures/ic.mp4", videoName: "ic.mp4", videoDuration: 2 }];
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorTrack .director-block-edit")).toHaveText("Edit");
+  await page.locator("#directorTrack .director-block-edit").click();
+  await expect(page.locator("#directorSegmentModal")).toHaveClass(/open/);
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
+  await page.locator("#closeDirectorSegmentModalBtn").click();
+
+  await page.locator("#directorAudioTrack .director-block-edit").click();
+  await expect(page.locator("#directorSegmentModal")).toHaveClass(/open/);
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected audio");
+  await page.locator("#closeDirectorSegmentModalBtn").click();
+
+  await page.locator("#directorVideoAudioTrack .director-block-edit").click();
+  await expect(page.locator("#directorSegmentModal")).toHaveClass(/open/);
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
+  await page.locator("#closeDirectorSegmentModalBtn").click();
+
+  await page.locator("#directorIcVideoTrack .director-block-edit").click();
+  await expect(page.locator("#directorSegmentModal")).toHaveClass(/open/);
+  await expect(page.locator("#directorSegmentInspector")).toContainText("Selected IC video");
+});
+
+test("director audio delete buttons use x labels", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_audio_x", start: 0, duration: 2, prompt: "audio x", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_x", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 2 }];
+    state.directorVideoAudioSegments = [{ id: "video_aud_x", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/video.wav", audioName: "video.wav", audioDuration: 2, source: "video" }];
+    renderDirectorEditor();
+  });
+
+  await expect(page.locator("#directorAudioTrack .director-audio-clear")).toHaveText("x");
+  await expect(page.locator("#directorVideoAudioTrack .director-audio-clear")).toHaveText("x");
+  await expect(page.locator("#directorAudioTrack .director-audio-clear svg")).toHaveCount(0);
+  await expect(page.locator("#directorVideoAudioTrack .director-audio-clear svg")).toHaveCount(0);
+});
+
+test("director timeline does not render the lower segment duration list", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await expect(page.locator("#directorSegments")).toHaveCount(0);
+  await expect(page.locator(".director-segment-chip")).toHaveCount(0);
+});
+
+test("director audio and voice timeline blocks match main segment height", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{ id: "seg_height", start: 0, duration: 2, prompt: "height", reference: "", imagePath: "", imageName: "", imagePreviewUrl: "", strength: 0.65 }];
+    state.directorAudioSegments = [{ id: "aud_height", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/line.wav", audioName: "line.wav", audioDuration: 2 }];
+    state.directorVideoAudioSegments = [{ id: "video_aud_height", start: 0, duration: 2, trimStart: 0, audioPath: "fixtures/video.wav", audioName: "video.wav", audioDuration: 2, source: "video" }];
+    renderDirectorEditor();
+  });
+
+  const heights = await page.evaluate(() => ({
+    mainTrack: Math.round(document.querySelector("#directorTrack").getBoundingClientRect().height),
+    videoAudioTrack: Math.round(document.querySelector("#directorVideoAudioTrack").getBoundingClientRect().height),
+    dialogueTrack: Math.round(document.querySelector("#directorAudioTrack").getBoundingClientRect().height),
+    mainBlock: Math.round(document.querySelector("#directorTrack .director-block").getBoundingClientRect().height),
+    videoAudioBlock: Math.round(document.querySelector("#directorVideoAudioTrack .director-video-audio-block").getBoundingClientRect().height),
+    dialogueBlock: Math.round(document.querySelector("#directorAudioTrack .director-audio-block").getBoundingClientRect().height),
+  }));
+  expect(heights.videoAudioTrack).toBe(heights.mainTrack);
+  expect(heights.dialogueTrack).toBe(heights.mainTrack);
+  expect(heights.videoAudioBlock).toBe(heights.mainBlock);
+  expect(heights.dialogueBlock).toBe(heights.mainBlock);
 });
 
 test("director uses only timeline audio segments", async ({ page }) => {
@@ -1462,7 +2063,6 @@ test("director timeline audio modal rounds clip duration up and labels the timel
   await expect(page.locator("#directorSegmentInspector")).toContainText("Duration");
   await expect(page.locator("#directorSegmentInspector")).toContainText("2.5s");
   await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toContainText("Audio 2.13s -> Clip 2.5s");
-  await expect(page.locator("#directorSegments .director-segment-chip").nth(1)).toContainText("S2 1.00s-2.00s");
 
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.segments[0].duration).toBe(1);
@@ -1588,6 +2188,190 @@ test("director timeline audio blocks can be dragged but keep fixed duration", as
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.audio_segments[0].start).toBe(3);
   expect(payload.audio_segments[0].duration).toBe(1);
+});
+
+test("director timeline segment drag snaps to 0.1 seconds", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [
+      {
+        id: "seg_drag_tenth",
+        start: 0,
+        duration: 1,
+        prompt: "drag with tenth second precision",
+        reference: "",
+        imagePath: "",
+        imageName: "",
+        imagePreviewUrl: "",
+        strength: 0.65,
+      },
+      {
+        id: "seg_drag_anchor",
+        start: 5,
+        duration: 1,
+        prompt: "anchor",
+        reference: "",
+        imagePath: "",
+        imageName: "",
+        imagePreviewUrl: "",
+        strength: 0.65,
+      },
+    ];
+    state.directorSelectedId = "seg_drag_tenth";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    state.directorDrag = {
+      id: "seg_drag_tenth",
+      type: "image",
+      edge: "",
+      rect: { width: 600 },
+      total: 6,
+      startX: 0,
+      originalStart: 0,
+      originalDuration: 1,
+      moved: false,
+    };
+    onDirectorDrag({ clientX: 130 });
+    stopDirectorDrag();
+  });
+
+  const payload = await page.evaluate(() => collectPayload());
+  const moved = payload.timeline_segments.find((segment) => segment.id === "seg_drag_tenth");
+  expect(moved.start).toBe(1.3);
+});
+
+test("director timeline resize handles snap to 0.1 seconds and show thick edge guides", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_resize_tenth",
+      start: 0,
+      duration: 4,
+      prompt: "resize with tenth second precision",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    state.directorSelectedId = "seg_resize_tenth";
+    state.directorSelectionType = "image";
+    renderDirectorEditor();
+  });
+
+  await page.evaluate(() => {
+    state.directorDrag = {
+      id: "seg_resize_tenth",
+      type: "image",
+      edge: "right",
+      rect: { width: 600 },
+      total: 6,
+      startX: 0,
+      originalStart: 0,
+      originalDuration: 1,
+      moved: false,
+    };
+    onDirectorDrag({ clientX: 130 });
+    stopDirectorDrag();
+  });
+  expect(await page.evaluate(() => state.directorSegments[0].duration)).toBe(2.3);
+
+  await page.evaluate(() => {
+    const segment = state.directorSegments[0];
+    segment.start = 0;
+    segment.duration = 4;
+    state.directorDrag = {
+      id: "seg_resize_tenth",
+      type: "image",
+      edge: "left",
+      rect: { width: 600 },
+      total: 6,
+      startX: 0,
+      originalStart: 0,
+      originalDuration: 4,
+      moved: false,
+    };
+    onDirectorDrag({ clientX: 130 });
+    stopDirectorDrag();
+  });
+
+  expect(await page.evaluate(() => ({
+    start: state.directorSegments[0].start,
+    duration: state.directorSegments[0].duration,
+  }))).toEqual({ start: 1.3, duration: 2.7 });
+
+  const handleGuide = await page.locator("#directorTrack .resize-handle.left").evaluate((el) => {
+    const style = getComputedStyle(el, "::before");
+    return {
+      width: parseFloat(style.width),
+      opacity: Number(style.opacity),
+    };
+  });
+  expect(handleGuide.width).toBeGreaterThanOrEqual(5);
+  expect(handleGuide.opacity).toBeGreaterThan(0.5);
+});
+
+test("director video audio drag does not move the preview playhead", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_video_audio_drag",
+      start: 0,
+      duration: 4,
+      prompt: "A guide video with audio.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      videoPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      videoName: "guide.mp4",
+      videoPreviewUrl: "",
+      audioExtracted: true,
+      strength: 0.65,
+    }];
+    state.directorVideoAudioSegments = [{
+      id: "video_audio_drag",
+      start: 0,
+      duration: 1,
+      trimStart: 0,
+      audioPath: "tasks/camera_lab_uploads/videos/guide.mp4",
+      audioName: "guide.mp4",
+      audioDuration: 1,
+      source: "video",
+    }];
+    state.directorAudioSegments = [];
+    state.directorSelectedId = "video_audio_drag";
+    state.directorSelectionType = "video_audio";
+    renderDirectorEditor();
+    DirectorPreview.seek(0);
+  });
+
+  await page.locator("#directorVideoAudioTrack .director-video-audio-block").scrollIntoViewIfNeeded();
+  const trackBox = await page.locator("#directorVideoAudioTrack").boundingBox();
+  const block = page.locator("#directorVideoAudioTrack .director-video-audio-block");
+  const blockBox = await block.boundingBox();
+  expect(trackBox).not.toBeNull();
+  expect(blockBox).not.toBeNull();
+  const oneSecond = trackBox.width / 6;
+  const y = blockBox.y + blockBox.height / 2;
+
+  await page.mouse.move(blockBox.x + blockBox.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(blockBox.x + blockBox.width / 2 + oneSecond * 2, y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator("#directorVideoAudioStart")).toHaveValue("2");
+  const currentTime = await page.evaluate(() => DirectorPreview._state().currentTime);
+  expect(currentTime).toBe(0);
 });
 
 test("director timeline audio blocks have preview buttons", async ({ page }) => {
@@ -1749,6 +2533,90 @@ test("use timeline restores audio timing from saved frame ranges", async ({ page
   expect(payload.audio_segments[0].trim_start).toBe(12);
 });
 
+test("use timeline restores media into main, video-audio, dialogue, and IC tracks", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  const payload = await page.evaluate(() => {
+    useRunTimeline({
+      batch_id: "dry",
+      run_id: "01_director",
+      workflow_id: "ltx_director_2",
+      seed: "123",
+      director_timeline: {
+        segments: [
+          {
+            id: "seg_reload_video",
+            type: "video",
+            prompt: "restored video guide",
+            duration: 2,
+            frames: 48,
+            start_frame: 0,
+            guide_frame: 0,
+            video_path: "tasks/camera_lab_uploads/videos/reload_guide.mp4",
+            image_path: "",
+            strength: 0.75,
+          },
+        ],
+        audio_segments: [
+          {
+            id: "video_audio_reload",
+            audio_path: "tasks/camera_lab_uploads/videos/reload_guide.mp4",
+            start: 0,
+            length: 48,
+            trimStart: 6,
+            volume: 0.7,
+          },
+          {
+            id: "aud_dialogue_reload",
+            audio_path: "tts/library/current/reload_line.wav",
+            start: 24,
+            length: 24,
+            trimStart: 0,
+            volume: 0.8,
+          },
+        ],
+        motion_segments: [
+          {
+            id: "ic_reload",
+            video_path: "tasks/camera_lab_uploads/videos/reload_ic.mp4",
+            start: 0,
+            length: 24,
+          },
+        ],
+      },
+    });
+    return collectPayload();
+  });
+
+  await expect(page.locator("#directorTrack .director-block")).toContainText("restored video guide");
+  await expect(page.locator("#directorTrack .director-block-ref")).toContainText("timeline video");
+  await expect(page.locator("#directorVideoAudioTrack .director-video-audio-block")).toContainText("reload_guide.mp4");
+  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toContainText("reload_line.wav");
+  await expect(page.locator("#directorIcVideoTrack .director-ic-video-block")).toContainText("reload_ic.mp4");
+  await expect(page.locator("#directorAudioTrack .director-audio-block.has-audio")).toHaveCount(1);
+
+  expect(payload.timeline_segments[0]).toEqual(expect.objectContaining({
+    type: "video",
+    video_path: expect.stringContaining("reload_guide.mp4"),
+  }));
+  expect(payload.audio_segments).toEqual([
+    expect.objectContaining({
+      source: "video",
+      audio_path: expect.stringContaining("reload_guide.mp4"),
+      trim_start: 6,
+      volume: 0.7,
+    }),
+    expect.objectContaining({
+      audio_path: expect.stringContaining("reload_line.wav"),
+      start: 1,
+      volume: 0.8,
+    }),
+  ]);
+  expect(payload.motion_segments[0].video_path).toContain("reload_ic.mp4");
+});
+
 test("use timeline allows replacing a restored segment image guide", async ({ page }) => {
   await page.route("**/api/upload-image", async (route) => {
     await route.fulfill({
@@ -1806,6 +2674,7 @@ test("use timeline allows replacing a restored segment with a video guide", asyn
       body: JSON.stringify({
         path: "tasks/camera_lab_uploads/videos/new_guide.mp4",
         name: "new_guide.mp4",
+        poster_path: "tasks/camera_lab_uploads/videos/new_guide_first_frame.jpg",
       }),
     });
   });
@@ -1844,18 +2713,23 @@ test("use timeline allows replacing a restored segment with a video guide", asyn
 
   await expect(page.locator("#directorSegmentImageStatus")).toContainText("new_guide.mp4");
   await expect(page.locator(".director-block.selected .director-block-ref")).toContainText("timeline video");
+  await expect(page.locator(".director-block.selected .director-block-image")).toHaveAttribute("src", /new_guide_first_frame\.jpg/);
   const videoAudioBlock = page.locator("#directorVideoAudioTrack .director-video-audio-block");
   await expect(videoAudioBlock).toContainText("new_guide.mp4");
   await videoAudioBlock.click();
   await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
-  await page.locator("#directorSegments .director-segment-chip").first().click();
+  await page.evaluate(() => closeDirectorSegmentModal());
+  await page.locator("#directorTrack .director-block").first().click();
   await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
-  await videoAudioBlock.click();
+  await page.evaluate(() => closeDirectorSegmentModal());
+  await page.locator("#directorVideoAudioTrack .director-block-edit").click();
   await expect(page.locator("#directorSegmentInspector")).toContainText("Selected video audio");
   await page.locator("#directorVideoAudioStart").fill("0.5");
   await page.locator("#directorVideoAudioTrimStart").fill("0.25");
-  await page.locator("#directorSegments .director-segment-chip").first().click();
+  await page.evaluate(() => closeDirectorSegmentModal());
+  await page.locator("#directorTrack .director-block").first().click();
   await expect(page.locator("#directorSegmentInspector")).toContainText("Selected segment");
+  await page.evaluate(() => closeDirectorSegmentModal());
   await videoAudioBlock.click();
   const payload = await page.evaluate(() => collectPayload());
   expect(payload.timeline_segments[0].type).toBe("video");
@@ -2409,6 +3283,83 @@ test("director preview shows video, image, and text frames by seek position", as
   await expect(page.locator("#directorPreviewOverlay")).toHaveText("a quiet street");
 });
 
+test("director preview stage follows portrait frame aspect ratio", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 2,
+      width: 720,
+      height: 1280,
+      clips: [{ start: 0, duration: 2, kind: "text", src: "", prompt: "portrait frame" }],
+      audioClips: [],
+    });
+  });
+
+  const ratio = await page.locator(".director-preview-stage").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    return box.width / box.height;
+  });
+  expect(ratio).toBeGreaterThan(0.52);
+  expect(ratio).toBeLessThan(0.62);
+});
+
+test("director preview is a primary control without reserved blank space", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 2,
+      width: 1280,
+      height: 720,
+      clips: [{ start: 0, duration: 2, kind: "text", src: "", prompt: "wide frame" }],
+      audioClips: [],
+    });
+  });
+
+  const metrics = await page.evaluate(() => {
+    const preview = document.getElementById("directorPreview").getBoundingClientRect();
+    const stage = document.querySelector(".director-preview-stage").getBoundingClientRect();
+    return {
+      stageWidth: stage.width,
+      reservedBlank: preview.height - stage.height,
+    };
+  });
+  expect(metrics.stageWidth).toBeGreaterThan(620);
+  expect(metrics.reservedBlank).toBeLessThan(90);
+});
+
+test("director workspace avoids page-level horizontal overflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("director preview play toggles state and advances the playhead", async ({ page }) => {
   await page.goto("/");
   await page.locator("#directorWorkspaceTab").click();
@@ -2430,14 +3381,129 @@ test("director preview play toggles state and advances the playhead", async ({ p
     DirectorPreview.seek(0);
   });
 
-  const leftAt = () => page.evaluate(() => document.getElementById("directorPlayhead").style.left);
+  const playheadPct = () => page.evaluate(() =>
+    Number(document.getElementById("directorPlayhead").style.getPropertyValue("--director-playhead-pct"))
+  );
   await page.evaluate(() => DirectorPreview.seek(3));
-  expect(await leftAt()).toBe("50%");
+  expect(await playheadPct()).toBeCloseTo(0.5, 2);
 
   await page.evaluate(() => DirectorPreview.play());
   expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(true);
   await page.evaluate(() => DirectorPreview.pause());
   expect(await page.evaluate(() => DirectorPreview.isPlaying())).toBe(false);
+});
+
+test("director preview playhead uses only the scissors control above the line", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#directorWorkspaceTab").click();
+  const marker = await page.locator("#directorPlayhead").evaluate((el) => {
+    const before = getComputedStyle(el, "::before");
+    const after = getComputedStyle(el, "::after");
+    return {
+      lineWidth: before.width,
+      frameContent: after.content,
+    };
+  });
+  expect(parseFloat(marker.lineWidth)).toBeGreaterThanOrEqual(2);
+  expect(marker.frameContent).toBe("none");
+  await expect(page.locator("#directorCutAtPlayheadBtn")).toHaveCount(1);
+  await expect(page.locator("#directorCutAtPlayheadBtn svg")).toHaveCount(1);
+});
+
+test("director preview playhead can be dragged across the timeline", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator(".director-timeline-shell")).toBeVisible();
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+      playheadEl: document.getElementById("directorPlayhead"),
+      timelineEl: document.querySelector(".director-timeline-shell"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 6, width: 1280, height: 720, audioClips: [],
+      clips: [{ start: 0, duration: 6, kind: "text", src: "", prompt: "drag target" }],
+    });
+    DirectorPreview.seek(0);
+  });
+
+  await page.evaluate(() => {
+    const shell = document.querySelector(".director-timeline-shell");
+    const track = document.getElementById("directorTrack");
+    const rect = track.getBoundingClientRect();
+    const eventInit = (ratio) => ({
+      clientX: rect.left + rect.width * ratio,
+      pointerId: 1,
+      bubbles: true,
+    });
+    shell.dispatchEvent(new PointerEvent("pointerdown", eventInit(0.25)));
+    shell.dispatchEvent(new PointerEvent("pointermove", eventInit(0.75)));
+    shell.dispatchEvent(new PointerEvent("pointerup", eventInit(0.75)));
+  });
+
+  const playheadPct = await page.evaluate(() =>
+    Number(document.getElementById("directorPlayhead").style.getPropertyValue("--director-playhead-pct"))
+  );
+  expect(playheadPct).toBeCloseTo(0.75, 2);
+  const playheadCursor = await page.evaluate(() => getComputedStyle(document.getElementById("directorPlayhead")).cursor);
+  const playheadWidth = await page.locator("#directorPlayhead").evaluate((el) => el.getBoundingClientRect().width);
+  expect(playheadCursor).toBe("ew-resize");
+  expect(playheadWidth).toBeGreaterThanOrEqual(12);
+  const visualDelta = await page.evaluate(() => {
+    const track = document.getElementById("directorTrack").getBoundingClientRect();
+    const playhead = document.getElementById("directorPlayhead").getBoundingClientRect();
+    const expectedX = track.left + track.width * 0.75;
+    const actualX = playhead.left + playhead.width / 2;
+    return Math.abs(actualX - expectedX);
+  });
+  expect(visualDelta).toBeLessThan(2);
+  const currentTime = await page.evaluate(() => DirectorPreview._state().currentTime);
+  expect(currentTime).toBeGreaterThan(4.45);
+  expect(currentTime).toBeLessThan(4.55);
+});
+
+test("dragging the director playhead does not select timeline text", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await page.evaluate(() => {
+    state.directorSegments = [{
+      id: "seg_no_select",
+      start: 0,
+      duration: 6,
+      prompt: "Text should not highlight while the red playhead is dragged.",
+      reference: "",
+      imagePath: "",
+      imageName: "",
+      imagePreviewUrl: "",
+      strength: 0.65,
+    }];
+    renderDirectorEditor();
+  });
+
+  const shellSelect = await page.locator(".director-timeline-shell").evaluate((el) => getComputedStyle(el).userSelect);
+  expect(shellSelect).toBe("none");
+
+  const selectedText = await page.evaluate(() => {
+    const shell = document.querySelector(".director-timeline-shell");
+    const rect = shell.getBoundingClientRect();
+    const eventInit = (ratio) => ({
+      clientX: rect.left + rect.width * ratio,
+      pointerId: 3,
+      bubbles: true,
+    });
+    shell.dispatchEvent(new PointerEvent("pointerdown", eventInit(0.1)));
+    shell.dispatchEvent(new PointerEvent("pointermove", eventInit(0.85)));
+    shell.dispatchEvent(new PointerEvent("pointerup", eventInit(0.85)));
+    return window.getSelection().toString();
+  });
+  expect(selectedText).toBe("");
 });
 
 test("director preview drives audio clips at their volume by playhead position", async ({ page }) => {

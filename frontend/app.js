@@ -150,6 +150,10 @@ const state = {
   referencePaths: [""],
   referenceNames: [""],
   referencePreviewUrls: [""],
+  referenceMeta: [{ type: "character", subject: "person_a" }],
+  ingredientsSheetPath: "",
+  ingredientsSheetName: "",
+  ingredientsSheetPreviewUrl: "",
   directorSegments: [],
   directorVideoAudioSegments: [],
   directorIcVideoSegments: [],
@@ -961,6 +965,8 @@ function collectPayload() {
     const motionSegments = collectDirectorMotionSegments();
     const audioSegments = collectDirectorAudioSegments();
     const duration = directorOutputDurationSeconds();
+    const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
+    const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
     return {
       workflow_id: workflow.id,
       camera_move: "director_ref",
@@ -975,8 +981,8 @@ function collectPayload() {
       prompt,
       global_prompt: $("directorGlobalPrompt").value.trim(),
       global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
-      segments,
-      timeline_segments: segments,
+      segments: timelineSegments,
+      timeline_segments: timelineSegments,
       motion_segments: motionSegments,
       audio_segments: audioSegments,
       ic_lora_name: $("directorIcLora")?.value || "None",
@@ -1059,6 +1065,27 @@ function collectReferenceImages() {
   return state.referencePaths.filter((path) => String(path || "").trim());
 }
 
+function isIngredientsIcLora(name) {
+  return /ingredients/i.test(String(name || ""));
+}
+
+function ingredientsSheetSegment(duration) {
+  if (!state.ingredientsSheetPath) return null;
+  const length = Math.max(0.5, Number(duration) || directorOutputDurationSeconds());
+  return {
+    id: "ingredients_reference_sheet",
+    type: "image",
+    prompt: $("directorGlobalPrompt")?.value.trim() || "",
+    duration: length,
+    reference: "",
+    image_path: state.ingredientsSheetPath,
+    video_path: "",
+    start: 0,
+    guide_frame: 0,
+    strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength")?.value) || 1)),
+  };
+}
+
 function collectDirectorSegments() {
   return normalizedDirectorSegments()
     .filter((segment) => segment.prompt.trim() || segment.imagePath || segment.videoPath)
@@ -1072,6 +1099,7 @@ function collectDirectorSegments() {
       video_path: segment.videoPath || "",
       start: Math.max(0, Number(segment.start) || 0),
       guide_frame: Math.max(0, Math.round(((Number(segment.start) || 0) * 24) + (Number(segment.guideOffsetFrames) || 0))),
+      trim_start: segment.videoPath ? Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)) : 0,
       strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
     }));
 }
@@ -1131,6 +1159,8 @@ function addDirectorSegment(values = {}) {
     videoPath: values.videoPath || "",
     videoName: values.videoName || "",
     videoPreviewUrl: values.videoPreviewUrl || "",
+    videoPosterUrl: values.videoPosterUrl || "",
+    trimStart: Math.max(0, Number(values.trimStart) || 0),
     audioPath: values.audioPath || "",
     audioName: values.audioName || "",
     audioDuration: Number(values.audioDuration) || 0,
@@ -1369,6 +1399,7 @@ function normalizedDirectorSegments() {
       ...segment,
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
       strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
     }))
     .sort((a, b) => a.start - b.start);
@@ -1449,6 +1480,12 @@ function selectDirectorSegment(id) {
   renderDirectorEditor();
 }
 
+function selectDirectorTimelineItem(type = "image", id = "") {
+  state.directorSelectedId = id;
+  state.directorSelectionType = type;
+  renderDirectorEditor();
+}
+
 function removeDirectorSegment(id) {
   state.directorSegments = state.directorSegments.filter((item) => item.id !== id);
   if (!state.directorSegments.some((item) => item.id === state.directorSelectedId)) {
@@ -1477,7 +1514,73 @@ function removeDirectorVideoAudioSegment(id) {
 
 function removeDirectorIcVideoSegment(id) {
   state.directorIcVideoSegments = state.directorIcVideoSegments.filter((item) => item.id !== id);
+  if (state.directorSelectionType === "ic_video" && !state.directorIcVideoSegments.some((item) => item.id === state.directorSelectedId)) {
+    state.directorSelectionType = "image";
+    state.directorSelectedId = state.directorSegments[0]?.id || "";
+  }
   renderDirectorEditor();
+}
+
+function directorSelectedCollection() {
+  if (state.directorSelectionType === "audio") return state.directorAudioSegments;
+  if (state.directorSelectionType === "video_audio") return state.directorVideoAudioSegments;
+  if (state.directorSelectionType === "ic_video") return state.directorIcVideoSegments;
+  return state.directorSegments;
+}
+
+function directorPreciseTime(value) {
+  const numeric = Number(value) || 0;
+  return Math.round(numeric * 1000) / 1000;
+}
+
+function splitSelectedDirectorSegmentAtPlayhead() {
+  if (!selectedDirectorSegmentCanSplit()) return false;
+  const collection = directorSelectedCollection();
+  const index = collection.findIndex((item) => item.id === state.directorSelectedId);
+  if (index < 0) return false;
+  const segment = collection[index];
+  const cutAt = Number(window.DirectorPreview?._state?.().currentTime) || 0;
+  const start = Number(segment.start) || 0;
+  const duration = Number(segment.duration) || 0;
+  const end = start + duration;
+  if (cutAt <= start + 0.01 || cutAt >= end - 0.01) return false;
+  const leftDuration = directorPreciseTime(cutAt - start);
+  const rightDuration = directorPreciseTime(end - cutAt);
+  if (leftDuration <= 0 || rightDuration <= 0) return false;
+  const right = {
+    ...segment,
+    id: `${segment.id}_split_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    start: directorPreciseTime(cutAt),
+    duration: rightDuration,
+  };
+  const shouldAdvanceTrim = ["audio", "video_audio", "ic_video"].includes(state.directorSelectionType)
+    || (state.directorSelectionType === "image" && Boolean(segment.videoPath));
+  if (shouldAdvanceTrim) {
+    right.trimStart = directorPreciseTime((Number(segment.trimStart) || 0) + leftDuration);
+  }
+  segment.duration = leftDuration;
+  collection.splice(index + 1, 0, right);
+  state.directorSelectedId = right.id;
+  renderDirectorEditor();
+  $("runHint").textContent = "Selected timeline clip split at playhead";
+  return true;
+}
+
+function selectedDirectorSegmentCanSplit() {
+  const collection = directorSelectedCollection();
+  const segment = collection.find((item) => item.id === state.directorSelectedId);
+  if (!segment) return false;
+  if (["audio", "video_audio", "ic_video"].includes(state.directorSelectionType)) return true;
+  return Boolean(segment.videoPath);
+}
+
+function syncDirectorCutButtonState() {
+  const button = $("directorCutAtPlayheadBtn");
+  if (!button) return;
+  const canSplit = selectedDirectorSegmentCanSplit();
+  button.disabled = !canSplit;
+  button.setAttribute("aria-disabled", String(!canSplit));
+  button.title = canSplit ? "Split selected clip at playhead" : "Image timeline items cannot be split";
 }
 
 function addDirectorIcVideoSegment(values = {}) {
@@ -1510,10 +1613,11 @@ function createDirectorBlock(segment, index, total) {
   block.style.width = `${(segment.duration / total) * 100}%`;
   const imagePreview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
   const videoPreview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
+  const videoPoster = segment.videoPosterUrl || "";
   const mediaLabel = segment.videoPath ? "timeline video" : (segment.imagePath ? "timeline image" : "text only");
   block.innerHTML = `
-    ${videoPreview ? `<video class="director-block-video" src="${escapeHtml(videoPreview)}" muted playsinline preload="metadata" aria-label="timeline video guide"></video>` : ""}
-    ${!videoPreview && imagePreview ? `<img class="director-block-image" src="${escapeHtml(imagePreview)}" alt="timeline image guide">` : ""}
+    ${videoPoster ? `<img class="director-block-image" src="${escapeHtml(videoPoster)}" alt="timeline video first frame">` : (videoPreview ? directorVideoPosterCanvasHtml(videoPreview, segment.trimStart || 0, "timeline video first frame") : (imagePreview ? `<img class="director-block-image" src="${escapeHtml(imagePreview)}" alt="timeline image guide">` : ""))}
+    <button class="director-block-edit" type="button" aria-label="Edit segment S${index + 1}" title="Edit segment">Edit</button>
     <button class="director-block-remove" type="button" aria-label="Remove segment S${index + 1}">x</button>
     <span class="director-block-index">S${index + 1}</span>
     <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
@@ -1521,7 +1625,15 @@ function createDirectorBlock(segment, index, total) {
     <i class="resize-handle left" data-edge="left"></i>
     <i class="resize-handle right" data-edge="right"></i>
   `;
-  block.addEventListener("click", () => selectDirectorSegment(segment.id));
+  block.addEventListener("click", () => selectDirectorTimelineItem("image", segment.id));
+  const editButton = block.querySelector(".director-block-edit");
+  editButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("image", segment.id);
+  });
+  editButton.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
   const removeButton = block.querySelector(".director-block-remove");
   removeButton.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1560,6 +1672,8 @@ function directorAudioDuration(segment) {
 }
 
 function fixedDirectorAudioDuration(segment) {
+  const segmentDuration = Number(segment.duration);
+  if (Number.isFinite(segmentDuration) && segmentDuration > 0) return Math.max(0.5, segmentDuration);
   const audioDuration = directorAudioDuration(segment);
   const rounded = roundUpHalf(audioDuration);
   return rounded || Math.max(0.5, Number(segment.duration) || 0.5);
@@ -1643,6 +1757,222 @@ function addDirectorVideoAudioClip(audio = {}, start = 0) {
   renderDirectorEditor();
 }
 
+const directorWaveformCache = new Map();
+const directorVideoPosterCache = new Map();
+
+function directorVideoPosterCanvasHtml(videoSrc, trimStart = 0, label = "video first frame") {
+  return `<canvas class="director-block-image director-video-poster-canvas" data-video-src="${escapeHtml(videoSrc || "")}" data-trim-start="${escapeHtml(trimStart || 0)}" data-video-poster-status="pending" aria-label="${escapeHtml(label)}"></canvas>`;
+}
+
+function directorWaveformHtml(audioSrc) {
+  return `
+    <div class="director-waveform" aria-hidden="true">
+      <canvas class="director-waveform-canvas" data-audio-src="${escapeHtml(audioSrc || "")}"></canvas>
+    </div>
+  `;
+}
+
+function drawDirectorWaveform(canvas, peaks = []) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || 180));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || 64));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const center = height / 2;
+  ctx.strokeStyle = "rgba(240,235,225,.14)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, center);
+  ctx.lineTo(width, center);
+  ctx.stroke();
+  const usable = peaks.length ? peaks : Array.from({ length: 96 }, (_, index) => {
+    const amp = 0.18 + Math.abs(Math.sin(index * 0.31)) * 0.22;
+    return [-amp, amp];
+  });
+  ctx.fillStyle = "rgba(143,199,192,.32)";
+  ctx.strokeStyle = "rgba(215,180,106,.78)";
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  usable.forEach(([min, max], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + min * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  [...usable].reverse().forEach(([min, max], reverseIndex) => {
+    const index = usable.length - 1 - reverseIndex;
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + max * center * 0.9;
+    ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  usable.forEach(([min], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + min * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.beginPath();
+  usable.forEach(([, max], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + max * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function waveformPeaksFromAudioBuffer(buffer, count = 128) {
+  const data = buffer.getChannelData(0);
+  const bucketSize = Math.max(1, Math.floor(data.length / count));
+  return Array.from({ length: count }, (_, index) => {
+    const start = index * bucketSize;
+    const end = Math.min(data.length, start + bucketSize);
+    let min = 0;
+    let max = 0;
+    for (let i = start; i < end; i += 1) {
+      const value = data[i] || 0;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    return [Math.max(-1, min), Math.min(1, max)];
+  });
+}
+
+async function hydrateDirectorWaveforms() {
+  const canvases = Array.from(document.querySelectorAll(".director-waveform-canvas:not([data-hydrated])"));
+  if (!canvases.length) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  for (const canvas of canvases) {
+    canvas.dataset.hydrated = "pending";
+    const src = canvas.dataset.audioSrc || "";
+    if (!src || !AudioContextClass) {
+      drawDirectorWaveform(canvas);
+      canvas.dataset.hydrated = "fallback";
+      continue;
+    }
+    try {
+      if (!directorWaveformCache.has(src)) {
+        const response = await fetch(src);
+        const bytes = await response.arrayBuffer();
+        const ctx = new AudioContextClass();
+        const buffer = await ctx.decodeAudioData(bytes.slice(0));
+        try { await ctx.close(); } catch (e) {}
+        directorWaveformCache.set(src, waveformPeaksFromAudioBuffer(buffer));
+      }
+      drawDirectorWaveform(canvas, directorWaveformCache.get(src));
+      canvas.dataset.hydrated = "true";
+    } catch (e) {
+      drawDirectorWaveform(canvas);
+      canvas.dataset.hydrated = "fallback";
+    }
+  }
+}
+
+function drawDirectorVideoPosterFallback(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || 240));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || 120));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#1a1a16");
+  gradient.addColorStop(1, "#090907");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(215,180,106,.24)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x < width; x += Math.max(18, width / 8)) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + width * 0.15, height);
+    ctx.stroke();
+  }
+}
+
+function captureDirectorVideoPoster(canvas, video, cacheKey) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || video.videoWidth || 240));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || video.videoHeight || 120));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(video, 0, 0, width, height);
+  try {
+    directorVideoPosterCache.set(cacheKey, canvas.toDataURL("image/jpeg", 0.82));
+  } catch (e) {}
+  canvas.dataset.videoPosterStatus = "ready";
+}
+
+function hydrateDirectorVideoPosters() {
+  const canvases = Array.from(document.querySelectorAll(".director-video-poster-canvas[data-video-poster-status='pending']"));
+  for (const canvas of canvases) {
+    const src = canvas.dataset.videoSrc || "";
+    const trimStart = Math.max(0, Number(canvas.dataset.trimStart) || 0);
+    const cacheKey = `${src}#${trimStart.toFixed(3)}`;
+    if (!src) {
+      drawDirectorVideoPosterFallback(canvas);
+      canvas.dataset.videoPosterStatus = "fallback";
+      continue;
+    }
+    const cached = directorVideoPosterCache.get(cacheKey);
+    if (cached) {
+      const image = new Image();
+      image.onload = () => {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || image.width));
+        const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || image.height));
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.drawImage(image, 0, 0, width, height);
+        canvas.dataset.videoPosterStatus = "ready";
+      };
+      image.src = cached;
+      continue;
+    }
+    canvas.dataset.videoPosterStatus = "loading";
+    drawDirectorVideoPosterFallback(canvas);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    const fail = () => {
+      drawDirectorVideoPosterFallback(canvas);
+      canvas.dataset.videoPosterStatus = "fallback";
+    };
+    video.addEventListener("loadeddata", () => {
+      const targetTime = Math.min(Math.max(0.001, trimStart), Math.max(0.001, (video.duration || trimStart + 0.001) - 0.001));
+      const draw = () => captureDirectorVideoPoster(canvas, video, cacheKey);
+      if (Math.abs((video.currentTime || 0) - targetTime) < 0.02) {
+        draw();
+      } else {
+        video.addEventListener("seeked", draw, { once: true });
+        try { video.currentTime = targetTime; } catch (e) { draw(); }
+      }
+    }, { once: true });
+    video.addEventListener("error", fail, { once: true });
+    video.src = src;
+    try { video.load(); } catch (e) { fail(); }
+  }
+}
+
 function defaultDirectorAudioStart() {
   const end = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   return roundHalf(end);
@@ -1682,6 +2012,21 @@ function openDirectorAudioModal(target = "dialogue") {
 function closeDirectorAudioModal() {
   $("directorAudioModal").classList.remove("open");
   $("directorAudioModal").setAttribute("aria-hidden", "true");
+}
+
+function openDirectorSegmentModal(selectionType = "image", id = "") {
+  if (id) state.directorSelectedId = id;
+  state.directorSelectionType = selectionType;
+  renderDirectorEditor();
+  const modal = $("directorSegmentModal");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeDirectorSegmentModal() {
+  const modal = $("directorSegmentModal");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
 }
 
 async function addDirectorAudioFromModal() {
@@ -1737,19 +2082,20 @@ function createDirectorAudioBlock(segment, index, total) {
   block.style.width = `${(segment.duration / total) * 100}%`;
   const label = hasAudio ? directorAudioLabel(segment) : "Add audio";
   const timing = hasAudio ? directorAudioTimingLabel(segment) : "";
+  const waveformSrc = hasAudio ? directorAudioUrl(segment) : "";
   block.innerHTML = `
+    ${hasAudio ? directorWaveformHtml(waveformSrc) : ""}
+    ${hasAudio ? `<button class="director-block-edit" type="button" aria-label="Edit audio clip S${index + 1}" title="Edit audio clip">Edit</button>` : ""}
     <span>S${index + 1}</span>
     <div class="director-audio-copy">
       <strong>${escapeHtml(label)}</strong>
       ${timing ? `<em>${escapeHtml(timing)}</em>` : ""}
     </div>
     ${hasAudio ? `<span class="director-audio-actions"></span>` : ""}
-    ${hasAudio ? `<button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete audio clip S${index + 1}">${ACTION_ICONS.delete}</button>` : ""}
+    ${hasAudio ? `<button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete audio clip S${index + 1}">x</button>` : ""}
   `;
   const select = () => {
-    state.directorSelectedId = segment.id;
-    state.directorSelectionType = "audio";
-    renderDirectorEditor();
+    selectDirectorTimelineItem("audio", segment.id);
   };
   block.addEventListener("click", select);
   block.addEventListener("keydown", (event) => {
@@ -1766,6 +2112,14 @@ function createDirectorAudioBlock(segment, index, total) {
     clearButton.addEventListener("click", (event) => {
       event.stopPropagation();
       removeDirectorAudioSegment(segment.id);
+    });
+  }
+  const editButton = block.querySelector(".director-block-edit");
+  if (editButton) {
+    editButton.addEventListener("mousedown", (event) => event.stopPropagation());
+    editButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDirectorSegmentModal("audio", segment.id);
     });
   }
   const actions = block.querySelector(".director-audio-actions");
@@ -1814,27 +2168,36 @@ function createDirectorVideoAudioBlock(segment, index, total) {
   block.setAttribute("aria-label", `Video audio ${index + 1}`);
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
+  const waveformSrc = segment.audioPath ? mediaUrl(segment.audioPath) : "";
   block.innerHTML = `
+    ${directorWaveformHtml(waveformSrc)}
+    <button class="director-block-edit" type="button" aria-label="Edit video audio ${index + 1}" title="Edit video audio">Edit</button>
     <span>V${index + 1}</span>
     <div class="director-audio-copy">
       <strong>${escapeHtml(segment.audioName || "Video audio")}</strong>
       <em>Extracted audio</em>
     </div>
-    <button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete video audio ${index + 1}">${ACTION_ICONS.delete}</button>
+    <button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete video audio ${index + 1}">x</button>
   `;
   const select = () => {
-    state.directorSelectedId = segment.id;
-    state.directorSelectionType = "video_audio";
-    renderDirectorEditor();
+    selectDirectorTimelineItem("video_audio", segment.id);
   };
   const clearButton = block.querySelector(".director-audio-clear");
   if (clearButton) {
+    clearButton.addEventListener("mousedown", (event) => event.stopPropagation());
     clearButton.addEventListener("click", (event) => {
       event.stopPropagation();
       removeDirectorVideoAudioSegment(segment.id);
     });
   }
+  const editButton = block.querySelector(".director-block-edit");
+  editButton.addEventListener("mousedown", (event) => event.stopPropagation());
+  editButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("video_audio", segment.id);
+  });
   block.addEventListener("click", select);
+  block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id, "video_audio"));
   block.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -1847,21 +2210,38 @@ function createDirectorVideoAudioBlock(segment, index, total) {
 function createDirectorIcVideoBlock(segment, index, total) {
   const block = document.createElement("div");
   block.className = "director-ic-video-block";
+  block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "ic_video");
   block.dataset.id = segment.id;
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
+  const poster = segment.videoPosterUrl || "";
   const preview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
   block.innerHTML = `
-    ${preview ? `<video class="director-block-video" src="${escapeHtml(preview)}" muted playsinline preload="metadata" aria-label="IC video guide"></video>` : ""}
+    ${poster ? `<img class="director-block-image" src="${escapeHtml(poster)}" alt="IC video first frame">` : (preview ? directorVideoPosterCanvasHtml(preview, segment.trimStart || 0, "IC video first frame") : "")}
+    <button class="director-block-edit" type="button" aria-label="Edit IC video ${index + 1}" title="Edit IC video">Edit</button>
     <button class="director-block-remove" type="button" aria-label="Remove IC video ${index + 1}">x</button>
     <span class="director-block-index">IC${index + 1}</span>
     <span class="director-block-prompt">${escapeHtml(segment.videoName || fileNameFromPath(segment.videoPath) || "IC video")}</span>
     <span class="director-block-ref">motionSegments</span>
   `;
+  block.querySelector(".director-block-edit").addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("ic_video", segment.id);
+  });
+  block.querySelector(".director-block-edit").addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
   block.querySelector(".director-block-remove").addEventListener("click", (event) => {
     event.stopPropagation();
     removeDirectorIcVideoSegment(segment.id);
   });
+  block.querySelector(".director-block-remove").addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  block.addEventListener("click", () => {
+    selectDirectorTimelineItem("ic_video", segment.id);
+  });
+  block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id, "ic_video"));
   return block;
 }
 
@@ -1877,7 +2257,7 @@ function directorPreviewClips() {
       kind,
       src,
       prompt: segment.prompt || "",
-      trimStart: 0,
+      trimStart: segment.videoPath ? Math.max(0, Number(segment.trimStart) || 0) : 0,
     };
   });
 }
@@ -1923,8 +2303,7 @@ function renderDirectorEditor() {
   const videoAudioTrack = $("directorVideoAudioTrack");
   const icVideoTrack = $("directorIcVideoTrack");
   const ruler = $("directorRuler");
-  const list = $("directorSegments");
-  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler) return;
   syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
@@ -1966,35 +2345,11 @@ function renderDirectorEditor() {
   track.ondragover = null;
   track.ondrop = null;
 
-  list.innerHTML = "";
-  segments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-    chip.textContent = `S${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "image";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
-  audioSegments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip director-audio-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "audio");
-    chip.textContent = `A${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "audio";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
   renderDirectorInspector();
   syncDirectorPreview();
+  syncDirectorCutButtonState();
+  hydrateDirectorVideoPosters();
+  hydrateDirectorWaveforms();
 }
 
 function renderDirectorInspector() {
@@ -2006,6 +2361,10 @@ function renderDirectorInspector() {
   }
   if (state.directorSelectionType === "audio") {
     renderDirectorAudioInspector(inspector);
+    return;
+  }
+  if (state.directorSelectionType === "ic_video") {
+    renderDirectorIcVideoInspector(inspector);
     return;
   }
   const segment = state.directorSegments.find((item) => item.id === state.directorSelectedId) || state.directorSegments[0];
@@ -2092,6 +2451,55 @@ function renderDirectorInspector() {
     $("runHint").textContent = `Timeline media upload failed: ${err.message}`;
   }));
   $("removeDirectorSegmentBtn").addEventListener("click", () => removeDirectorSegment(segment.id));
+}
+
+function renderDirectorIcVideoInspector(inspector) {
+  const segment = state.directorIcVideoSegments.find((item) => item.id === state.directorSelectedId) || state.directorIcVideoSegments[0];
+  if (!segment) {
+    state.directorSelectionType = "image";
+    renderDirectorInspector();
+    return;
+  }
+  state.directorSelectedId = segment.id;
+  inspector.innerHTML = `
+    <div class="director-inspector-head">
+      <span>Selected IC video</span>
+      <button id="removeDirectorIcVideoBtn" type="button">Remove</button>
+    </div>
+    <div class="director-audio-readonly">
+      <b>${escapeHtml(segment.videoName || fileNameFromPath(segment.videoPath) || "IC video")}</b>
+      <span>${formatSeconds(segment.start)} - ${formatSeconds(segment.start + segment.duration)}</span>
+    </div>
+    <div class="director-segment-grid">
+      <label>
+        Start
+        <input id="directorIcVideoStart" type="number" min="0" step="0.5">
+      </label>
+      <label>
+        Duration
+        <input id="directorIcVideoDuration" type="number" min="0.5" step="0.5">
+      </label>
+      <label>
+        Trim start
+        <input id="directorIcVideoTrimStart" type="number" min="0" step="0.25">
+      </label>
+    </div>
+  `;
+  $("directorIcVideoStart").value = segment.start;
+  $("directorIcVideoDuration").value = segment.duration;
+  $("directorIcVideoTrimStart").value = segment.trimStart || 0;
+  $("directorIcVideoStart").addEventListener("input", (event) => {
+    segment.start = Math.max(0, Number(event.target.value) || 0);
+    renderDirectorTimelineOnly();
+  });
+  $("directorIcVideoDuration").addEventListener("input", (event) => {
+    segment.duration = Math.max(0.5, Number(event.target.value) || 0.5);
+    renderDirectorTimelineOnly();
+  });
+  $("directorIcVideoTrimStart").addEventListener("input", (event) => {
+    segment.trimStart = Math.max(0, Number(event.target.value) || 0);
+  });
+  $("removeDirectorIcVideoBtn").addEventListener("click", () => removeDirectorIcVideoSegment(segment.id));
 }
 
 function renderDirectorAudioInspector(inspector) {
@@ -2238,8 +2646,7 @@ function renderDirectorTimelineOnly() {
   const videoAudioTrack = $("directorVideoAudioTrack");
   const icVideoTrack = $("directorIcVideoTrack");
   const ruler = $("directorRuler");
-  const list = $("directorSegments");
-  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !ruler) return;
   syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
@@ -2279,54 +2686,37 @@ function renderDirectorTimelineOnly() {
   }
   track.ondragover = null;
   track.ondrop = null;
-  list.innerHTML = "";
-  segments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-    chip.textContent = `S${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "image";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
-  audioSegments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip director-audio-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "audio");
-    chip.textContent = `A${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "audio";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
+  syncDirectorCutButtonState();
+  hydrateDirectorVideoPosters();
+  hydrateDirectorWaveforms();
 }
 
 function startDirectorDrag(event, id, type = "image") {
   if (event.button !== 0) return;
   const isAudio = type === "audio";
-  const segment = (isAudio ? state.directorAudioSegments : state.directorSegments).find((item) => item.id === id);
+  const isVideoAudio = type === "video_audio";
+  const isIcVideo = type === "ic_video";
+  const segments = isIcVideo
+    ? state.directorIcVideoSegments
+    : (isVideoAudio ? state.directorVideoAudioSegments : (isAudio ? state.directorAudioSegments : state.directorSegments));
+  const segment = segments.find((item) => item.id === id);
   if (!segment) return;
   event.preventDefault();
   state.directorSelectedId = id;
-  state.directorSelectionType = isAudio ? "audio" : "image";
-  const trackRect = $(isAudio ? "directorAudioTrack" : "directorTrack").getBoundingClientRect();
-  const edge = isAudio ? "" : directorEdgeFromEvent(event, event.currentTarget);
+  state.directorSelectionType = isIcVideo ? "ic_video" : (isVideoAudio ? "video_audio" : (isAudio ? "audio" : "image"));
+  const trackId = isIcVideo ? "directorIcVideoTrack" : (isVideoAudio ? "directorVideoAudioTrack" : (isAudio ? "directorAudioTrack" : "directorTrack"));
+  const trackRect = $(trackId).getBoundingClientRect();
+  const edge = (isAudio || isVideoAudio || isIcVideo) ? "" : directorEdgeFromEvent(event, event.currentTarget);
   state.directorDrag = {
     id,
-    type: isAudio ? "audio" : "image",
+    type: isIcVideo ? "ic_video" : (isVideoAudio ? "video_audio" : (isAudio ? "audio" : "image")),
     edge,
     rect: trackRect,
     total: directorTotalSeconds(),
     startX: event.clientX,
     originalStart: segment.start,
     originalDuration: segment.duration,
+    moved: false,
   };
   document.body.classList.add("director-dragging");
   document.body.style.cursor = edge ? "ew-resize" : "grabbing";
@@ -2350,19 +2740,24 @@ function onDirectorDrag(event) {
   const drag = state.directorDrag;
   if (!drag) return;
   const isAudio = drag.type === "audio";
-  const segments = isAudio ? state.directorAudioSegments : state.directorSegments;
+  const isVideoAudio = drag.type === "video_audio";
+  const isIcVideo = drag.type === "ic_video";
+  const segments = isIcVideo
+    ? state.directorIcVideoSegments
+    : (isVideoAudio ? state.directorVideoAudioSegments : (isAudio ? state.directorAudioSegments : state.directorSegments));
   const segment = segments.find((item) => item.id === drag.id);
   if (!segment) return;
   const deltaSeconds = ((event.clientX - drag.startX) / Math.max(1, drag.rect.width)) * drag.total;
-  if (!isAudio && drag.edge === "left") {
+  if (Math.abs(event.clientX - drag.startX) > 3) drag.moved = true;
+  if (drag.type === "image" && drag.edge === "left") {
     const nextStart = Math.max(0, drag.originalStart + deltaSeconds);
     const end = drag.originalStart + drag.originalDuration;
-    segment.start = roundHalf(Math.min(nextStart, end - 0.5));
-    segment.duration = roundHalf(end - segment.start);
-  } else if (!isAudio && drag.edge === "right") {
-    segment.duration = roundHalf(Math.max(0.5, drag.originalDuration + deltaSeconds));
+    segment.start = roundTenth(Math.min(nextStart, end - 0.5));
+    segment.duration = roundTenth(end - segment.start);
+  } else if (drag.type === "image" && drag.edge === "right") {
+    segment.duration = roundTenth(Math.max(0.5, drag.originalDuration + deltaSeconds));
   } else {
-    segment.start = roundHalf(Math.max(0, drag.originalStart + deltaSeconds));
+    segment.start = roundTenth(Math.max(0, drag.originalStart + deltaSeconds));
   }
   if (isAudio) segment.duration = fixedDirectorAudioDuration(segment);
   if (isAudio) keepDirectorAudioSegmentsSeparated(segment.id);
@@ -2375,11 +2770,16 @@ function stopDirectorDrag() {
   document.body.classList.remove("director-dragging");
   document.body.style.cursor = "";
   window.removeEventListener("mousemove", onDirectorDrag);
-  if (drag) renderDirectorEditor();
+  if (!drag) return;
+  renderDirectorEditor();
 }
 
 function roundHalf(value) {
   return Math.round(value * 2) / 2;
+}
+
+function roundTenth(value) {
+  return Math.round(value * 10) / 10;
 }
 
 function roundUpHalf(value) {
@@ -2410,6 +2810,13 @@ function ensureReferenceSlot() {
     state.referenceNames = [""];
     state.referencePreviewUrls = [""];
   }
+  if (!Array.isArray(state.referenceMeta)) state.referenceMeta = [];
+  while (state.referenceMeta.length < state.referencePaths.length) {
+    state.referenceMeta.push({ type: "character", subject: state.referenceMeta.length ? "shared" : "person_a" });
+  }
+  if (state.referenceMeta.length > state.referencePaths.length) {
+    state.referenceMeta = state.referenceMeta.slice(0, state.referencePaths.length);
+  }
 }
 
 function addReferenceSlot() {
@@ -2417,6 +2824,7 @@ function addReferenceSlot() {
   state.referencePaths.push("");
   state.referenceNames.push("");
   state.referencePreviewUrls.push("");
+  state.referenceMeta.push({ type: "prop", subject: "shared" });
   renderReferenceSlots();
 }
 
@@ -2426,13 +2834,47 @@ function clearReferenceSlot(index) {
     state.referencePaths = [""];
     state.referenceNames = [""];
     state.referencePreviewUrls = [""];
+    state.referenceMeta = [{ type: "character", subject: "person_a" }];
   } else {
     state.referencePaths.splice(index, 1);
     state.referenceNames.splice(index, 1);
     state.referencePreviewUrls.splice(index, 1);
+    state.referenceMeta.splice(index, 1);
   }
+  clearIngredientsSheet();
   renderReferenceSlots();
   $("runHint").textContent = "Global reference removed";
+}
+
+const REFERENCE_TYPES = [
+  ["character", "Character"],
+  ["face", "Face / detail"],
+  ["outfit", "Outfit"],
+  ["prop", "Prop"],
+  ["environment", "Environment"],
+  ["style", "Style / mood"],
+];
+
+const REFERENCE_SUBJECTS = [
+  ["person_a", "Person A"],
+  ["person_b", "Person B"],
+  ["person_c", "Person C"],
+  ["shared", "Shared"],
+  ["none", "None"],
+];
+
+function referenceSelectOptions(options, value) {
+  return options
+    .map(([key, label]) => `<option value="${key}"${key === value ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function clearIngredientsSheet() {
+  state.ingredientsSheetPath = "";
+  state.ingredientsSheetName = "";
+  state.ingredientsSheetPreviewUrl = "";
+  const status = $("directorIngredientsSheetStatus");
+  if (status) status.textContent = "Builds automatically for Ingredients";
 }
 
 function renderReferenceSlots() {
@@ -2453,6 +2895,16 @@ function renderReferenceSlots() {
         </label>
         <span id="globalRefStatus_${index}" class="hint">${escapeHtml(state.referenceNames[index] || "No image uploaded")}</span>
       </div>
+      <div class="reference-meta-controls">
+        <label>
+          Type
+          <select id="globalRefType_${index}">${referenceSelectOptions(REFERENCE_TYPES, state.referenceMeta[index]?.type || "character")}</select>
+        </label>
+        <label>
+          Subject
+          <select id="globalRefSubject_${index}">${referenceSelectOptions(REFERENCE_SUBJECTS, state.referenceMeta[index]?.subject || "shared")}</select>
+        </label>
+      </div>
       <button id="globalRefRemove_${index}" class="reference-remove icon-button" type="button" title="Remove reference">x</button>
     `;
     wrap.appendChild(item);
@@ -2465,6 +2917,14 @@ function renderReferenceSlots() {
         renderReferenceSlots();
         $("runHint").textContent = `Global reference upload failed: ${err.message}`;
       });
+    });
+    $(`globalRefType_${index}`).addEventListener("change", (event) => {
+      state.referenceMeta[index] = { ...(state.referenceMeta[index] || {}), type: event.target.value };
+      clearIngredientsSheet();
+    });
+    $(`globalRefSubject_${index}`).addEventListener("change", (event) => {
+      state.referenceMeta[index] = { ...(state.referenceMeta[index] || {}), subject: event.target.value };
+      clearIngredientsSheet();
     });
     $(`globalRefRemove_${index}`).addEventListener("click", () => clearReferenceSlot(index));
   });
@@ -2485,8 +2945,151 @@ async function uploadReferenceImage(file, index) {
   state.referencePaths[index] = uploaded.path;
   state.referenceNames[index] = uploaded.name;
   state.referencePreviewUrls[index] = mediaUrl(uploaded.path);
+  clearIngredientsSheet();
   renderReferenceSlots();
   $("runHint").textContent = "Global reference uploaded";
+}
+
+function referenceItemsForIngredients() {
+  ensureReferenceSlot();
+  return state.referencePaths
+    .map((path, index) => ({
+      path,
+      previewUrl: state.referencePreviewUrls[index] || (path ? mediaUrl(path) : ""),
+      type: state.referenceMeta[index]?.type || "character",
+      subject: state.referenceMeta[index]?.subject || "shared",
+    }))
+    .filter((item) => item.path && item.previewUrl);
+}
+
+function loadSheetImage(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+}
+
+function containRect(srcW, srcH, dst) {
+  const scale = Math.min(dst.w / Math.max(1, srcW), dst.h / Math.max(1, srcH));
+  const w = srcW * scale;
+  const h = srcH * scale;
+  return {
+    x: dst.x + (dst.w - w) / 2,
+    y: dst.y + (dst.h - h) / 2,
+    w,
+    h,
+  };
+}
+
+function drawReferenceTile(ctx, image, rect, index) {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = "rgba(255,255,255,.16)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+  if (!image) {
+    ctx.fillStyle = `hsl(${(index * 67) % 360} 18% 28%)`;
+    ctx.fillRect(rect.x + 12, rect.y + 12, rect.w - 24, rect.h - 24);
+    return;
+  }
+  const inset = 12;
+  const fit = containRect(image.naturalWidth || image.width, image.naturalHeight || image.height, {
+    x: rect.x + inset,
+    y: rect.y + inset,
+    w: Math.max(1, rect.w - inset * 2),
+    h: Math.max(1, rect.h - inset * 2),
+  });
+  ctx.drawImage(image, fit.x, fit.y, fit.w, fit.h);
+}
+
+function gridRects(count, bounds, gap) {
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const cellW = (bounds.w - gap * (cols - 1)) / cols;
+  const cellH = (bounds.h - gap * (rows - 1)) / rows;
+  return Array.from({ length: count }, (_, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    return {
+      x: bounds.x + col * (cellW + gap),
+      y: bounds.y + row * (cellH + gap),
+      w: cellW,
+      h: cellH,
+    };
+  });
+}
+
+async function buildIngredientsSheetDataUrl() {
+  const items = referenceItemsForIngredients();
+  if (!items.length) return "";
+  const size = currentSize();
+  const width = Math.max(512, Number(size.width) || 768);
+  const height = Math.max(320, Number(size.height) || 448);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#050505";
+  ctx.fillRect(0, 0, width, height);
+  const images = await Promise.all(items.map((item) => loadSheetImage(item.previewUrl)));
+  const gap = Math.max(10, Math.round(Math.min(width, height) * 0.025));
+  const pad = gap;
+  const subjectKeys = ["person_a", "person_b", "person_c"].filter((subject) => items.some((item) => item.subject === subject));
+  if (subjectKeys.length > 1) {
+    const shared = items.map((item, index) => ({ item, image: images[index], index })).filter(({ item }) => item.subject === "shared" || item.subject === "none");
+    const subjectH = shared.length ? Math.round((height - pad * 2 - gap) * 0.7) : height - pad * 2;
+    const subjectW = (width - pad * 2 - gap * (subjectKeys.length - 1)) / subjectKeys.length;
+    subjectKeys.forEach((subject, subjectIndex) => {
+      const group = items
+        .map((item, index) => ({ item, image: images[index], index }))
+        .filter(({ item }) => item.subject === subject);
+      const rects = gridRects(group.length, {
+        x: pad + subjectIndex * (subjectW + gap),
+        y: pad,
+        w: subjectW,
+        h: subjectH,
+      }, gap);
+      group.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+    });
+    if (shared.length) {
+      const rects = gridRects(shared.length, {
+        x: pad,
+        y: pad + subjectH + gap,
+        w: width - pad * 2,
+        h: height - pad * 2 - subjectH - gap,
+      }, gap);
+      shared.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+    }
+  } else {
+    const entries = items.map((item, index) => ({ item, image: images[index], index }));
+    const rects = gridRects(entries.length, { x: pad, y: pad, w: width - pad * 2, h: height - pad * 2 }, gap);
+    entries.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+  }
+  return canvas.toDataURL("image/png");
+}
+
+async function prepareDirectorIngredientsSheetForRun() {
+  const workflow = state.workspace === "director" ? currentDirectorWorkflow() : null;
+  if (!workflow || !isDirectorWorkflow(workflow) || !isIngredientsIcLora($("directorIcLora")?.value)) {
+    return;
+  }
+  const refs = referenceItemsForIngredients();
+  if (!refs.length) return;
+  $("runHint").textContent = "Building Ingredients reference sheet...";
+  const data = await buildIngredientsSheetDataUrl();
+  if (!data) return;
+  const uploaded = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ name: "director_ingredients_reference_sheet.png", data }),
+  });
+  state.ingredientsSheetPath = uploaded.path;
+  state.ingredientsSheetName = uploaded.name;
+  state.ingredientsSheetPreviewUrl = mediaUrl(uploaded.path);
+  const status = $("directorIngredientsSheetStatus");
+  if (status) status.textContent = "Ingredients sheet ready";
 }
 
 async function uploadDirectorSegmentImage(segmentId, file) {
@@ -2505,6 +3108,7 @@ async function uploadDirectorSegmentImage(segmentId, file) {
     videoPath: "",
     videoName: "",
     videoPreviewUrl: "",
+    videoPosterUrl: "",
   });
   $("runHint").textContent = "Image guide added to selected timeline segment";
 }
@@ -2538,6 +3142,7 @@ async function uploadDirectorSegmentVideo(segmentId, file) {
     videoPath: uploaded.path,
     videoName: uploaded.name,
     videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
     // Reset so this freshly uploaded video extracts its audio once (also covers
     // replacing a video on a segment that was already extracted).
     audioExtracted: false,
@@ -2563,6 +3168,7 @@ async function uploadDirectorIcVideo(file) {
     videoPath: uploaded.path,
     videoName: uploaded.name,
     videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
   });
   $("runHint").textContent = "IC video guide added";
 }
@@ -2644,6 +3250,7 @@ function renderDirectorSegments(card, run) {
 }
 
 function mediaUrl(path) {
+  if (!path) return "";
   return `/media?path=${encodeURIComponent(path)}`;
 }
 
@@ -3797,6 +4404,37 @@ function savedFrameSeconds(value, fallback = 0) {
   return Number.isFinite(frame) ? frame / 24 : fallback;
 }
 
+function isVideoMediaPath(path) {
+  return /\.(mp4|webm|mkv|avi|mov|m4v|flv|wmv)$/i.test(String(path || ""));
+}
+
+function isDirectorVideoAudioTimelineSegment(segment = {}) {
+  const source = String(segment.source || "").toLowerCase();
+  const id = String(segment.id || "");
+  const audioPath = segment.audio_path || segment.file || "";
+  return source === "video" || id.startsWith("video_audio") || isVideoMediaPath(audioPath);
+}
+
+function restoredDirectorAudioSegment(segment, index, prefix) {
+  const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 1);
+  const start = Number.isFinite(Number(segment.start_frame))
+    ? savedFrameSeconds(segment.start_frame)
+    : Number.isFinite(Number(segment.start))
+      ? savedFrameSeconds(segment.start)
+      : 0;
+  const audioPath = segment.audio_path || segment.file || "";
+  return {
+    id: segment.id || `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+    start,
+    duration,
+    audioPath,
+    audioName: segment.fileName || fileNameFromPath(audioPath),
+    audioDuration: Number(segment.audio_duration || segment.audioDuration || 0) || duration,
+    trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
+    volume: Math.max(0, Number(segment.volume ?? 1)),
+  };
+}
+
 function useRunTimeline(run) {
   const timeline = run.director_timeline || null;
   if (!timeline || !Array.isArray(timeline.segments) || !timeline.segments.length) {
@@ -3812,6 +4450,15 @@ function useRunTimeline(run) {
   state.referencePaths = refs.length ? refs : [""];
   state.referenceNames = state.referencePaths.map(fileNameFromPath);
   state.referencePreviewUrls = state.referencePaths.map((path) => (path ? mediaUrl(path) : ""));
+  state.referenceMeta = state.referencePaths.map((_, index) => ({ type: index === 0 ? "character" : "prop", subject: index === 0 ? "person_a" : "shared" }));
+  clearIngredientsSheet();
+  const rawAudioSegments = timeline.audio_segments || timeline.audioSegments || [];
+  const restoredVideoAudioPaths = new Set(
+    rawAudioSegments
+      .filter(isDirectorVideoAudioTimelineSegment)
+      .map((segment) => segment.audio_path || segment.file || "")
+      .filter(Boolean)
+  );
   state.directorSegments = timeline.segments.map((segment, index) => {
     const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || segment.frames || 0) / 24 || 4);
     const start = Number.isFinite(Number(segment.start_frame))
@@ -3825,6 +4472,7 @@ function useRunTimeline(run) {
     const guideOffsetFrames = guideFrame - Math.round(start * 24);
     const imagePath = segment.image_path || "";
     const videoPath = segment.video_path || "";
+    const videoPosterPath = segment.poster_path || segment.video_poster_path || segment.videoPosterPath || "";
     return {
       id: segment.id || `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
       start,
@@ -3838,30 +4486,17 @@ function useRunTimeline(run) {
       videoPath,
       videoName: fileNameFromPath(videoPath),
       videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
-      // Restored video audio already comes back via audio_segments; mark as
-      // extracted so the sync pass does not create a duplicate clip.
-      audioExtracted: Boolean(videoPath),
+      videoPosterUrl: videoPosterPath ? mediaUrl(videoPosterPath) : "",
+      audioExtracted: Boolean(videoPath && restoredVideoAudioPaths.has(videoPath)),
       strength: segment.strength ?? (index === 0 ? 1 : 0.85),
     };
   });
-  state.directorAudioSegments = (timeline.audio_segments || timeline.audioSegments || []).map((segment, index) => {
-    const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 1);
-    const start = Number.isFinite(Number(segment.start_frame))
-      ? savedFrameSeconds(segment.start_frame)
-      : Number.isFinite(Number(segment.start))
-        ? savedFrameSeconds(segment.start)
-        : 0;
-    const audioPath = segment.audio_path || segment.file || "";
-    return {
-      id: segment.id || `aud_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-      start,
-      duration,
-      audioPath,
-      audioName: segment.fileName || fileNameFromPath(audioPath),
-      audioDuration: Number(segment.audio_duration || segment.audioDuration || 0) || duration,
-      trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
-    };
-  });
+  state.directorVideoAudioSegments = rawAudioSegments
+    .filter(isDirectorVideoAudioTimelineSegment)
+    .map((segment, index) => restoredDirectorAudioSegment(segment, index, "video_audio"));
+  state.directorAudioSegments = rawAudioSegments
+    .filter((segment) => !isDirectorVideoAudioTimelineSegment(segment))
+    .map((segment, index) => restoredDirectorAudioSegment(segment, index, "aud"));
   state.directorIcVideoSegments = (timeline.motion_segments || timeline.motionSegments || []).map((segment, index) => {
     const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 2);
     const start = Number.isFinite(Number(segment.start_frame))
@@ -3870,6 +4505,7 @@ function useRunTimeline(run) {
         ? savedFrameSeconds(segment.start)
         : 0;
     const videoPath = segment.video_path || segment.videoFile || segment.file || "";
+    const videoPosterPath = segment.poster_path || segment.video_poster_path || segment.videoPosterPath || "";
     return {
       id: segment.id || `ic_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
       start,
@@ -3878,6 +4514,7 @@ function useRunTimeline(run) {
       videoPath,
       videoName: segment.fileName || fileNameFromPath(videoPath),
       videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
+      videoPosterUrl: videoPosterPath ? mediaUrl(videoPosterPath) : "",
     };
   });
   for (const segment of timeline.segments) {
@@ -4083,6 +4720,9 @@ async function startBatch() {
   try {
     if (isInpaintWorkflow(state.workspace === "edit" ? currentEditWorkflow() : currentWorkflow())) {
       await prepareInpaintMaskForRun();
+    }
+    if (state.workspace === "director") {
+      await prepareDirectorIngredientsSheetForRun();
     }
     const batch = await api("/api/run", {
       method: "POST",
@@ -4948,6 +5588,7 @@ const ACTION_ICONS = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7-11-7z"></path></svg>',
   stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"></path></svg>',
   edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17.3V20h2.7L18.8 8.9l-2.7-2.7L5 17.3zm13.9-10.5 1.3-1.3c.4-.4.4-1 0-1.4l-.3-.3c-.4-.4-1-.4-1.4 0l-1.3 1.3 2.7 2.7z"></path></svg>',
+  scissors: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 9.8 19 4.5l.9 1.8-8.2 4.2 8.2 4.2-.9 1.8-10.4-5.3A3.5 3.5 0 1 1 8.6 9.8zM5.5 10A1.5 1.5 0 1 0 5.5 7a1.5 1.5 0 0 0 0 3zm0 7A1.5 1.5 0 1 0 5.5 14a1.5 1.5 0 0 0 0 3zM8.6 14.2l3.1-1.6 1.9 1-5 2.6a3.5 3.5 0 1 1 0-2z"></path></svg>',
   delete: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8l1 2h4v2H3V6h4l1-2zm-1 6h10l-.8 10H7.8L7 10zm3 2v6h2v-6h-2zm4 0v6h2v-6h-2z"></path></svg>',
   save: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm3 2v5h8V5H8zm0 10v4h8v-4H8z"></path></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6 6.4 5z"></path></svg>',
@@ -5871,9 +6512,18 @@ $("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt()
   $("motionStatus").textContent = err.message;
 }));
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
+$("directorCutAtPlayheadBtn").innerHTML = ACTION_ICONS.scissors;
+$("directorCutAtPlayheadBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  splitSelectedDirectorSegmentAtPlayhead();
+});
 $("addDirectorAudioBtn").addEventListener("click", () => openDirectorAudioModal("dialogue"));
 $("addDirectorVideoAudioBtn").addEventListener("click", () => openDirectorAudioModal("video_audio"));
 $("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);
+$("closeDirectorSegmentModalBtn").addEventListener("click", closeDirectorSegmentModal);
+$("directorSegmentModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-director-segment-modal]")) closeDirectorSegmentModal();
+});
 $("closeStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("cancelStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("storyboardImportModal").addEventListener("click", (event) => {

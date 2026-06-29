@@ -658,7 +658,10 @@ def director_ic_loras() -> list[str]:
     unavailable so the Director IC-LoRA dropdown always has a safe default."""
     try:
         node = object_info().get("LTXDirectorGuide", {})
-        entry = (node.get("input", {}).get("required", {}) or {}).get("ic_lora_name")
+        inputs = node.get("input", {}) or {}
+        required = inputs.get("required", {}) or {}
+        optional = inputs.get("optional", {}) or {}
+        entry = required.get("ic_lora_name") or optional.get("ic_lora_name")
     except Exception:
         entry = None
     options: list[str] = []
@@ -1086,6 +1089,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         if not prompt:
             prompt = "visual guide"
         strength = max(0.0, min(10.0, float(raw.get("strength") or 0.0)))
+        trim_start = raw.get("trimStart", raw.get("trim_start", 0))
         sequential_start = sum(s["frames"] for s in segments)
         guide_frame = int(raw.get("guide_frame") if raw.get("guide_frame") is not None else (start_frame if start_frame is not None else sequential_start))
         segments.append(
@@ -1102,6 +1106,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "guide_frame": max(0, guide_frame),
                 "strength": strength,
                 "start_frame": max(0, int(start_frame if start_frame is not None else sequential_start)),
+                "trimStart": max(0, int(trim_start or 0)),
             }
         )
     if not segments:
@@ -1163,14 +1168,18 @@ def director_audio_segments_from_payload(payload: dict[str, Any], fps: int = 24)
         trim_start = raw.get("trimStart", raw.get("trim_start", 0))
         raw_volume = raw.get("volume", 1.0)
         volume = 1.0 if raw_volume is None else max(0.0, min(4.0, float(raw_volume)))
-        segments.append({
+        segment = {
             "id": str(raw.get("id") or f"camera-lab-audio-{index}"),
             "audio_path": audio_path,
             "start": max(0, int(start_frame)),
             "length": max(1, int(length_frames)),
             "trimStart": max(0, int(trim_start or 0)),
             "volume": volume,
-        })
+        }
+        source = str(raw.get("source") or "").strip()
+        if source == "video":
+            segment["source"] = source
+        segments.append(segment)
     return segments
 
 
@@ -1331,6 +1340,8 @@ def director_reference_timeline_segments(
             if isinstance(media, dict):
                 item["type"] = "video" if media.get("type") == "video" else "image"
                 item["imageFile"] = media.get("name") or ""
+                if item["type"] == "video":
+                    item["trimStart"] = int(segment.get("trimStart") or 0)
             else:
                 item["type"] = "image"
                 item["imageFile"] = media
@@ -2561,6 +2572,24 @@ def extract_last_frame(video: Path, image: Path) -> None:
             "-y",
             "-sseof",
             "-0.08",
+            "-i",
+            str(video),
+            "-frames:v",
+            "1",
+            str(image),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def extract_first_frame(video: Path, image: Path) -> None:
+    image.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
             "-i",
             str(video),
             "-frames:v",
@@ -4823,7 +4852,15 @@ class Handler(BaseHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
-        self.send_json({"path": str(path), "name": name})
+        poster = path.with_name(f"{path.stem}_first_frame.jpg")
+        try:
+            extract_first_frame(path, poster)
+        except Exception:
+            poster = None
+        response = {"path": str(path), "name": name}
+        if poster and poster.exists():
+            response["poster_path"] = str(poster)
+        self.send_json(response)
 
     def handle_upload_video(self) -> None:
         content_type = self.headers.get("Content-Type", "")

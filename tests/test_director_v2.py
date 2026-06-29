@@ -173,6 +173,34 @@ def test_director_ic_loras_handles_missing_object_info(monkeypatch):
     assert server.director_ic_loras() == ["None"]
 
 
+def test_director_ic_loras_reads_optional_input_combo(monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "object_info",
+        lambda: {
+            "LTXDirectorGuide": {
+                "input": {
+                    "required": {},
+                    "optional": {
+                        "ic_lora_name": [
+                            [
+                                "None",
+                                "ltxv\\ltx2\\ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+                                "Wan21_CausVid_14B_T2V_lora_rank32.safetensors",
+                            ]
+                        ]
+                    },
+                }
+            }
+        },
+    )
+
+    assert server.director_ic_loras() == [
+        "None",
+        "ltxv\\ltx2\\ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+    ]
+
+
 def test_director_audio_segments_carry_volume():
     segs = server.director_audio_segments_from_payload(
         {
@@ -186,6 +214,31 @@ def test_director_audio_segments_carry_volume():
     assert segs[0]["volume"] == 0.4
     assert segs[1]["volume"] == 1.0  # default when omitted
     assert segs[2]["volume"] == 0.0  # explicit mute is preserved
+
+
+def test_director_audio_segments_preserve_source_for_video_audio_restore():
+    segs = server.director_audio_segments_from_payload(
+        {
+            "audio_segments": [
+                {
+                    "id": "video_audio_seg_1",
+                    "source": "video",
+                    "audio_path": "tasks/camera_lab_uploads/videos/guide.mp4",
+                    "start": 0,
+                    "duration": 1.0,
+                },
+                {
+                    "id": "aud_dialogue_1",
+                    "audio_path": "tts/library/current/line.wav",
+                    "start": 1,
+                    "duration": 1.0,
+                },
+            ]
+        }
+    )
+
+    assert segs[0]["source"] == "video"
+    assert "source" not in segs[1]
 
 
 def test_stage_director_audio_copies_at_unity_gain(tmp_path):
@@ -281,6 +334,7 @@ def test_v2_builder_maps_main_track_video_guides(monkeypatch, sample_run):
             "length": 48,
             "prompt": "follow the blocking and camera motion",
             "imageFile": "guide_clip.mp4",
+            "trimStart": 0,
             "strength": 0.8,
         }
     ]

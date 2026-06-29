@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=video-clipper-2">
+  <link rel="stylesheet" href="/static/styles.css?v=director-preview-fixed-16x9-1">
 </head>
 <body>
   <header class="topbar">
@@ -285,6 +285,7 @@
                 <button id="globalAddRefBtn" class="reference-add" type="button">+</button>
               </div>
               <div id="globalRefSlots" class="reference-slot-list"></div>
+              <div id="directorIngredientsSheetStatus" class="ingredients-sheet-status">Builds automatically for Ingredients</div>
             </section>
             <section class="director-global-settings">
               <label>
@@ -342,19 +343,18 @@
                 </div>
               </div>
               <div class="director-timeline-shell">
-                <div class="director-timeline-head">
-                  <span>Image and text timeline</span>
-                  <div class="timeline-tools">
-                    <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
-                    <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
-                  </div>
-                </div>
                 <div class="director-ruler" id="directorRuler"></div>
-                <div class="director-playhead" id="directorPlayhead" style="left:0%"></div>
+                <div class="director-playhead" id="directorPlayhead">
+                  <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
+                </div>
                 <section class="director-lane" data-lane="main">
                   <div class="director-track-label">
                     <span>Main</span>
                     <small>Image keyframes now, video clips next</small>
+                    <div class="timeline-tools director-main-tools">
+                      <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
+                      <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+                    </div>
                   </div>
                   <div class="director-track" id="directorTrack"></div>
                 </section>
@@ -386,23 +386,29 @@
                     <button id="addDirectorIcVideoBtn" class="timeline-add director-ic-video-add" type="button" title="Add IC video" aria-label="Add IC video">+</button>
                     <input id="directorIcVideoInput" type="file" accept="video/*" hidden>
                   </div>
-                  <div class="director-placeholder-track" id="directorIcVideoTrack">
+                  <div class="director-track director-ic-video-track" id="directorIcVideoTrack">
                     <span>IC reference clips land here in the IC-LoRA block</span>
                   </div>
                 </section>
-              </div>
-              <div class="director-edit-row">
-                <div id="directorSegmentInspector" class="director-inspector"></div>
-                <div class="director-shot-list">
-                  <div class="eyebrow">Timeline</div>
-                  <div id="directorSegments" class="director-segments"></div>
-                </div>
               </div>
             </section>
           </div>
         </section>
       </section>
       <div id="directorRunSlot" class="director-run-slot"></div>
+      <div id="directorSegmentModal" class="director-modal" aria-hidden="true">
+        <div class="director-modal-backdrop" data-close-director-segment-modal></div>
+        <section class="director-modal-panel director-segment-modal-panel" role="dialog" aria-modal="true" aria-labelledby="directorSegmentModalTitle">
+          <div class="director-modal-head">
+            <div>
+              <div class="eyebrow">Timeline edit</div>
+              <h2 id="directorSegmentModalTitle">Selected segment</h2>
+            </div>
+            <button id="closeDirectorSegmentModalBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+          </div>
+          <div id="directorSegmentInspector" class="director-inspector"></div>
+        </section>
+      </div>
       <div id="storyboardImportModal" class="director-modal" aria-hidden="true">
         <div class="director-modal-backdrop" data-close-storyboard-modal></div>
         <section class="director-modal-panel" role="dialog" aria-modal="true" aria-labelledby="storyboardImportTitle">
@@ -990,7 +996,7 @@
     </section>
   </div>
 
-  <script src="/static/director-preview.js?v=preview-player-1"></script>
+  <script src="/static/director-preview.js?v=preview-player-fixed-16x9-1"></script>
   <script src="/static/app.js?v=late-preview-poll-1"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>

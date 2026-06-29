@@ -18,6 +18,7 @@
   let rafId = 0;
   let lastTs = 0;
   let audioEls = []; // [{ clip, el, active }]
+  let draggingPointerId = null;
 
   function rebuildAudio() {
     for (const item of audioEls) { try { item.el.pause(); } catch (e) {} }
@@ -50,8 +51,8 @@
 
   function positionPlayhead() {
     if (!els.playheadEl) return;
-    const pct = timeline.duration > 0 ? Math.max(0, Math.min(1, currentTime / timeline.duration)) * 100 : 0;
-    els.playheadEl.style.left = `${pct}%`;
+    const pct = timeline.duration > 0 ? Math.max(0, Math.min(1, currentTime / timeline.duration)) : 0;
+    els.playheadEl.style.setProperty("--director-playhead-pct", pct);
   }
 
   function tick(ts) {
@@ -96,15 +97,22 @@
   function seekFromPointer(clientX) {
     if (!els.timelineEl || timeline.duration <= 0) return;
     const rect = els.timelineEl.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const labelWidth = parseFloat(getComputedStyle(els.timelineEl).getPropertyValue("--director-timeline-label-width")) || 0;
+    const trackLeft = rect.left + labelWidth;
+    const trackWidth = Math.max(1, rect.width - labelWidth);
+    const ratio = Math.max(0, Math.min(1, (clientX - trackLeft) / trackWidth));
     seek(ratio * timeline.duration);
+  }
+
+  function isTimelineControlTarget(target) {
+    return Boolean(target && target.closest(
+      ".director-block, .director-audio-block, .director-video-audio-block, .director-ic-video-block, .director-audio-clear, button, input, select, textarea"
+    ));
   }
 
   function mount(nextEls) {
     Object.assign(els, nextEls || {});
-    if (els.playerEl && timeline.width && timeline.height) {
-      els.playerEl.style.aspectRatio = `${timeline.width} / ${timeline.height}`;
-    }
+    if (els.playerEl) els.playerEl.style.removeProperty("--director-preview-aspect-ratio");
     if (els.playButtonEl && !els.playButtonEl._wired) {
       els.playButtonEl._wired = true;
       els.playButtonEl.addEventListener("click", toggle);
@@ -112,8 +120,36 @@
     if (els.timelineEl && !els.timelineEl._wiredSeek) {
       els.timelineEl._wiredSeek = true;
       els.timelineEl.addEventListener("pointerdown", (event) => {
-        if (event.target.closest(".director-block, .director-audio-clear, button, input, select, textarea")) return;
+        if (isTimelineControlTarget(event.target)) return;
+        try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
+        event.preventDefault();
+        draggingPointerId = event.pointerId;
+        try { els.timelineEl.setPointerCapture(event.pointerId); } catch (e) {}
         seekFromPointer(event.clientX);
+      });
+      els.timelineEl.addEventListener("pointermove", (event) => {
+        if (draggingPointerId === event.pointerId) {
+          seekFromPointer(event.clientX);
+          return;
+        }
+        if (!els.playheadEl) return;
+        const rect = els.playheadEl.getBoundingClientRect();
+        const nearPlayhead = event.clientX >= rect.left - 3 && event.clientX <= rect.right + 3;
+        els.timelineEl.style.cursor = nearPlayhead ? "ew-resize" : "";
+      });
+      els.timelineEl.addEventListener("pointerleave", () => {
+        if (!draggingPointerId) els.timelineEl.style.cursor = "";
+      });
+      els.timelineEl.addEventListener("pointerup", (event) => {
+        if (draggingPointerId !== event.pointerId) return;
+        draggingPointerId = null;
+        els.timelineEl.style.cursor = "";
+        try { els.timelineEl.releasePointerCapture(event.pointerId); } catch (e) {}
+      });
+      els.timelineEl.addEventListener("pointercancel", (event) => {
+        if (draggingPointerId !== event.pointerId) return;
+        draggingPointerId = null;
+        els.timelineEl.style.cursor = "";
       });
     }
   }
@@ -126,7 +162,7 @@
       width: Number(next && next.width) || 16,
       height: Number(next && next.height) || 9,
     };
-    if (els.playerEl) els.playerEl.style.aspectRatio = `${timeline.width} / ${timeline.height}`;
+    if (els.playerEl) els.playerEl.style.removeProperty("--director-preview-aspect-ratio");
     currentTime = Math.min(currentTime, timeline.duration);
     rebuildAudio();
     renderFrame(currentTime);
