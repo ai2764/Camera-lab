@@ -1171,7 +1171,8 @@ class DirectorReferenceTests(unittest.TestCase):
 
         timeline = server.director_timeline_from_payload(payload, fps=24)
 
-        self.assertEqual(timeline["local_prompts"], "visual guide")
+        self.assertEqual(timeline["local_prompts"], "")
+        self.assertEqual(timeline["segment_lengths"], "36")
         self.assertEqual(timeline["segments"][0]["image_path"], "fixtures/keyframe.png")
         self.assertEqual(timeline["segments"][0]["start_frame"], 0)
         guide_segments = server.director_reference_timeline_segments(timeline, {}, {1: "keyframe.png"})

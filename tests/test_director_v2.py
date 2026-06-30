@@ -125,6 +125,114 @@ def test_v2_builder_wires_ic_lora_into_guide_nodes(monkeypatch, sample_run):
     )
 
 
+def test_v2_builder_wires_ic_lora_strength_into_guide_nodes(monkeypatch, sample_run):
+    _stub_builder_graph(monkeypatch)
+    monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
+    run = {
+        **sample_run,
+        "ic_lora_name": "ltxv/ltx2/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors",
+        "ic_lora_strength": 1.35,
+    }
+
+    api = server.build_ltx_director_v2_api(run)
+
+    guides = [n for n in api.values() if n["class_type"] == "LTXDirectorGuide"]
+    assert len(guides) == 2
+    assert all(g["inputs"]["ic_lora_strength"] == 1.35 for g in guides)
+
+
+def test_v2_builder_matches_director_timing_and_video_guide_strength(monkeypatch, sample_run):
+    _stub_builder_graph(monkeypatch)
+    monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
+    monkeypatch.setattr(
+        server,
+        "copy_director_timeline_media",
+        lambda _run, _timeline, _width, _height: {1: {"type": "video", "name": "guide.mp4"}},
+    )
+    run = {
+        **sample_run,
+        "timeline_segments": [
+            {
+                "id": "video_guide",
+                "type": "video",
+                "prompt": "",
+                "duration": 2.0,
+                "start": 0,
+                "video_path": "tasks/camera_lab_uploads/videos/guide.mp4",
+                "strength": 1.0,
+            },
+            {
+                "id": "text_prompt",
+                "type": "text",
+                "prompt": "a huge explosion occurs on the street",
+                "duration": 3.0,
+                "start": 2.0,
+                "strength": 0.0,
+            },
+        ],
+    }
+
+    api = server.build_ltx_director_v2_api(run)
+
+    director = _director_node(api)
+    assert director["inputs"]["start_second"] == 0
+    assert director["inputs"]["end_second"] == 5.0
+    assert director["inputs"]["start_frame"] == 0
+    assert director["inputs"]["end_frame"] == 120
+    assert director["inputs"]["duration_frames"] == 120
+    assert director["inputs"]["guide_strength"] == "1.0"
+
+
+def test_director_run_preserves_ic_lora_name_for_worker(monkeypatch, tmp_path):
+    payload = {
+        "workflow_id": "ltx_director_2",
+        "camera_move": "director_ref",
+        "duration": 2,
+        "width": 768,
+        "height": 512,
+        "prompt": "wide shot",
+        "global_prompt": "consistent edit",
+        "timeline_segments": [
+            {
+                "id": "s1",
+                "type": "text",
+                "prompt": "wide shot",
+                "duration": 2,
+                "start": 0,
+                "strength": 0,
+            }
+        ],
+        "motion_segments": [],
+        "audio_segments": [],
+        "reference_images": {},
+        "ic_lora_name": "ltxv/ltx2/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors",
+        "ic_lora_strength": 1.35,
+    }
+    sent = {}
+
+    class FakeThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    handler = object.__new__(server.Handler)
+    monkeypatch.setattr(handler, "read_json", lambda: payload)
+    monkeypatch.setattr(handler, "send_json", lambda data: sent.setdefault("data", data))
+    monkeypatch.setattr(server, "workflow_status", lambda _workflow: {"available": True, "reason": ""})
+    monkeypatch.setattr(server, "RUN_ROOT", tmp_path)
+    monkeypatch.setattr(server, "BATCHES", {})
+    monkeypatch.setattr(server, "write_batch", lambda _batch: None)
+    monkeypatch.setattr(server.threading, "Thread", FakeThread)
+
+    handler.handle_run()
+
+    run = sent["data"]["runs"][0]
+    assert run["ic_lora_name"] == "ltxv/ltx2/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors"
+    assert run["ic_lora_strength"] == 1.35
+
+
 def test_v2_builder_defaults_ic_lora_to_none(monkeypatch, sample_run):
     _stub_builder_graph(monkeypatch)
     monkeypatch.setattr(server, "object_info", lambda: {"LTXDirector": {"input": {"required": {}}}})
@@ -147,6 +255,7 @@ def test_director_ic_loras_filters_to_ic_lora_weights(monkeypatch):
                             [
                                 "None",
                                 "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+                                "ltxv/ltx2/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors",
                                 "some_other_lora.safetensors",
                             ],
                             {},
@@ -161,6 +270,7 @@ def test_director_ic_loras_filters_to_ic_lora_weights(monkeypatch):
 
     assert loras[0] == "None"
     assert "ltxv/ltx2/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors" in loras
+    assert "ltxv/ltx2/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors" in loras
     assert "some_other_lora.safetensors" not in loras
 
 
@@ -457,7 +567,9 @@ def test_director_timeline_from_payload_preserves_video_guides():
     assert timeline["segments"][0]["type"] == "video"
     assert timeline["segments"][0]["video_path"] == "tasks/camera_lab_uploads/videos/guide_clip.mp4"
     assert timeline["segments"][0]["image_path"] == ""
-    assert timeline["segments"][0]["prompt"] == "visual guide"
+    assert timeline["segments"][0]["prompt"] == ""
+    assert timeline["local_prompts"] == ""
+    assert timeline["segment_lengths"] == "60"
 
 
 def test_director_prompt_summary_allows_media_only_guides():
@@ -475,6 +587,82 @@ def test_director_prompt_summary_allows_media_only_guides():
     )
 
     assert summary == "visual guide"
+
+
+def test_director_prompt_summary_hides_visual_guide_placeholder_when_real_prompt_exists():
+    summary = server.build_director_prompt_summary(
+        {
+            "global_prompt": "",
+            "timeline_segments": [
+                {
+                    "id": "video_guide",
+                    "prompt": "visual guide",
+                    "video_path": "tasks/camera_lab_uploads/videos/guide_clip.mp4",
+                },
+                {
+                    "id": "text_guide",
+                    "type": "text",
+                    "prompt": "a huge explosion occurs on the street",
+                },
+            ],
+        }
+    )
+
+    assert summary == "a huge explosion occurs on the street"
+
+
+def test_director_timeline_strips_legacy_visual_guide_placeholder_from_media_segments():
+    timeline = server.director_timeline_from_payload(
+        {
+            "timeline_segments": [
+                {
+                    "id": "video_guide",
+                    "type": "video",
+                    "prompt": "visual guide",
+                    "duration": 2.0,
+                    "start": 0,
+                    "video_path": "tasks/camera_lab_uploads/videos/guide_clip.mp4",
+                    "strength": 0.65,
+                },
+                {
+                    "id": "text_prompt",
+                    "type": "text",
+                    "prompt": "a huge explosion occurs on the street",
+                    "duration": 4.0,
+                    "start": 2.0,
+                    "strength": 1,
+                },
+            ],
+        },
+        fps=24,
+    )
+
+    assert timeline["segments"][0]["prompt"] == ""
+    assert timeline["segments"][0]["strength"] == 1.0
+    assert timeline["local_prompts"] == " | a huge explosion occurs on the street"
+    assert timeline["segment_lengths"] == "48,96"
+
+
+def test_director_prompt_summary_ignores_default_global_when_segments_have_real_prompt():
+    summary = server.build_director_prompt_summary(
+        {
+            "global_prompt": server.DIRECTOR_DEFAULT_GLOBAL_PROMPT,
+            "timeline_segments": [
+                {
+                    "id": "video_guide",
+                    "prompt": "",
+                    "video_path": "tasks/camera_lab_uploads/videos/guide_clip.mp4",
+                },
+                {
+                    "id": "text_guide",
+                    "type": "text",
+                    "prompt": "a huge explosion occurs on the street",
+                },
+            ],
+        }
+    )
+
+    assert summary == "a huge explosion occurs on the street"
 
 
 def test_director_prompt_summary_allows_ic_video_only_guides():

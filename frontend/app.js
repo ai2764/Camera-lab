@@ -166,6 +166,10 @@ const state = {
   directorRetakePrompt: "",
   directorRetakeStrength: 1,
   directorRetakeDrag: null,
+  directorRetakeAutoStitch: true,
+  directorRetakePendingStitch: null,
+  directorRetakeStitches: {},
+  editRetakeContext: null,
   directorAudioModalTarget: "dialogue",
   directorSelectedId: "",
   directorSelectionType: "image",
@@ -532,6 +536,7 @@ function useResultVideoForEdit(run, workflowId, slotKey, kind = "bernini") {
 
 function useResultVideoForRetake(run) {
   if (!run?.video) return;
+  state.directorRetakePendingStitch = null;
   state.directorRetakeVideo = {
     videoPath: run.video,
     videoName: fileNameFromPath(run.video),
@@ -749,7 +754,9 @@ function resetPrompt() {
   if (isDirectorWorkflow(workflow)) {
     $("promptTag").textContent = "DIRECTOR";
     $("promptText").value = "";
-    $("negativePrompt").value = state.config?.default_negative || $("negativePrompt").value || "";
+    const negative = state.config?.default_negative || $("negativePrompt").value || "";
+    $("negativePrompt").value = negative;
+    setInputValueIfPresent("directorNegativePrompt", negative);
     ensureDirectorGlobalPromptDefault({ force: true });
     renderDirectorEditor();
     return;
@@ -982,7 +989,8 @@ function updateWorkflowFields() {
     return;
   }
   $("cameraMoveWrap").style.display = isDirector || isBernini || isInpaint ? "none" : "block";
-  $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
+  const directorReferenceWrap = $("directorReferenceWrap");
+  if (directorReferenceWrap) directorReferenceWrap.style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
   $("directorInlineResults").style.display = showDirectorWorkspace ? "block" : "none";
   $("sourceImageWrap").style.display = showSourceImage ? "block" : "none";
@@ -1016,6 +1024,24 @@ function runButtonIdleText() {
   return "Queue Run";
 }
 
+function directorSeedValue() {
+  return $("directorGlobalSeedInput")?.value.trim() || "";
+}
+
+function directorNegativePromptValue() {
+  return $("directorNegativePrompt")?.value.trim() || $("negativePrompt").value.trim();
+}
+
+function directorIcLoraStrengthValue() {
+  const raw = Number($("directorIcLoraStrength")?.value);
+  return Math.max(0, Math.min(2, Number.isFinite(raw) ? raw : 1));
+}
+
+function directorGuideStrengthValue(value, fallback = 1) {
+  const raw = Number(value);
+  return Math.max(0, Math.min(1, Number.isFinite(raw) ? raw : fallback));
+}
+
 function updateRunButtonLabel({ force = false } = {}) {
   const button = $("runBtn");
   if (!button || (!force && button.textContent === "Queueing...")) return;
@@ -1045,16 +1071,17 @@ function collectPayload() {
         duration,
         width: size.width,
         height: size.height,
-        seed: $("seedInput").value.trim(),
-        negative_prompt: $("negativePrompt").value.trim(),
+        seed: directorSeedValue(),
+        negative_prompt: directorNegativePromptValue(),
         prompt,
         global_prompt: $("directorGlobalPrompt").value.trim(),
-        global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
+        global_reference_strength: 0,
         segments: [],
         timeline_segments: [],
         motion_segments: [],
         audio_segments: [],
         ic_lora_name: $("directorIcLora")?.value || "None",
+        ic_lora_strength: directorIcLoraStrengthValue(),
         reference_images: collectReferenceImages(),
         audio_path: "",
         retake_mode: true,
@@ -1086,16 +1113,17 @@ function collectPayload() {
       duration,
       width: size.width,
       height: size.height,
-      seed: $("seedInput").value.trim(),
-      negative_prompt: $("negativePrompt").value.trim(),
+      seed: directorSeedValue(),
+      negative_prompt: directorNegativePromptValue(),
       prompt,
       global_prompt: $("directorGlobalPrompt").value.trim(),
-      global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
+      global_reference_strength: 0,
       segments: timelineSegments,
       timeline_segments: timelineSegments,
       motion_segments: motionSegments,
       audio_segments: audioSegments,
       ic_lora_name: $("directorIcLora")?.value || "None",
+      ic_lora_strength: directorIcLoraStrengthValue(),
       reference_images: collectReferenceImages(),
       audio_path: "",
     };
@@ -1125,6 +1153,10 @@ function collectPayload() {
       prompt,
       audio_path: "",
     };
+    const retakeContext = retakeContextForPayload(state.editRetakeContext);
+    if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.berniniSourceVideoPath)) {
+      payload.retake_context = retakeContext;
+    }
     if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
       payload.duration = Number($("durationInput").value);
     }
@@ -1132,7 +1164,7 @@ function collectPayload() {
   }
 
   if (isInpaintWorkflow(workflow)) {
-    return {
+    const payload = {
       workflow_id: workflow.id,
       camera_move: workflow.mode,
       source_path: "",
@@ -1149,8 +1181,9 @@ function collectPayload() {
       prompt,
       audio_path: "",
     };
-    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
-      payload.duration = Number($("durationInput").value);
+    const retakeContext = retakeContextForPayload(state.editRetakeContext);
+    if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.inpaintSourceVideoPath)) {
+      payload.retake_context = retakeContext;
     }
     return payload;
   }
@@ -1192,7 +1225,7 @@ function ingredientsSheetSegment(duration) {
     video_path: "",
     start: 0,
     guide_frame: 0,
-    strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength")?.value) || 1)),
+    strength: 1,
   };
 }
 
@@ -1216,7 +1249,7 @@ function collectDirectorSegments() {
           start,
           guide_frame: Math.max(0, item.start + Math.round(Number(item.extra?.guideOffsetFrames) || 0)),
           trim_start: item.kind === "video" ? item.trimStart : 0,
-          strength: Math.max(0, Math.min(1, Number(item.strength) || 0.65)),
+          strength: directorGuideStrengthValue(item.strength),
         };
       });
   }
@@ -1233,7 +1266,7 @@ function collectDirectorSegments() {
       start: Math.max(0, Number(segment.start) || 0),
       guide_frame: Math.max(0, Math.round(((Number(segment.start) || 0) * 24) + (Number(segment.guideOffsetFrames) || 0))),
       trim_start: segment.videoPath ? Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)) : 0,
-      strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
+      strength: directorGuideStrengthValue(segment.strength),
     }));
 }
 
@@ -1325,7 +1358,7 @@ function addDirectorSegment(values = {}) {
     audioPath: values.audioPath || "",
     audioName: values.audioName || "",
     audioDuration: Number(values.audioDuration) || 0,
-    strength: values.strength ?? 0.65,
+    strength: values.strength ?? 1,
   };
   state.directorSegments.push(segment);
   state.directorSelectedId = segment.id;
@@ -1561,7 +1594,7 @@ function normalizedDirectorSegments() {
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       trimStart: Math.max(0, Number(segment.trimStart) || 0),
-      strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
+      strength: directorGuideStrengthValue(segment.strength),
     }))
     .sort((a, b) => a.start - b.start);
 }
@@ -2635,6 +2668,8 @@ function renderDirectorRetakePanel() {
   const strength = $("directorRetakeStrength");
   if (prompt && document.activeElement !== prompt) prompt.value = state.directorRetakePrompt || "";
   if (strength && document.activeElement !== strength) strength.value = state.directorRetakeStrength ?? 1;
+  if ($("directorRetakeAutoStitch")) $("directorRetakeAutoStitch").checked = Boolean(state.directorRetakeAutoStitch);
+  renderDirectorRetakeSelectionPreview();
   renderDirectorRetakeEditModes();
   const video = normalizedDirectorRetakeVideo();
   const status = $("directorRetakeStatus");
@@ -2646,6 +2681,27 @@ function renderDirectorRetakePanel() {
       ? `${video.videoName || fileNameFromPath(video.videoPath)} | Retake ${formatSeconds(start)} - ${formatSeconds(end)}`
       : "Upload a base video, then use { and } at the playhead to set the retake range.";
   }
+}
+
+function renderDirectorRetakeSelectionPreview() {
+  const preview = $("directorRetakeSelectionPreview");
+  const label = $("directorRetakeSelectionLabel");
+  if (!preview || !label) return;
+  const video = normalizedDirectorRetakeVideo();
+  if (!video?.videoPath) {
+    preview.removeAttribute("src");
+    label.textContent = "No retake selection preview";
+    return;
+  }
+  const range = normalizedDirectorRetakeRange();
+  const end = Math.min(directorRetakeTotalSeconds(), range.start + range.length);
+  const src = video.videoPreviewUrl || mediaUrl(video.videoPath);
+  if (preview.getAttribute("src") !== src) preview.setAttribute("src", src);
+  preview.muted = true;
+  label.textContent = `${video.videoName || fileNameFromPath(video.videoPath)} | ${formatSeconds(range.start)} - ${formatSeconds(end)}`;
+  try {
+    if (Math.abs(preview.currentTime - range.start) > 0.1) preview.currentTime = range.start;
+  } catch (e) {}
 }
 
 function renderDirectorRetakeEditModes() {
@@ -2834,17 +2890,12 @@ function renderDirectorInspector() {
         Strength
         <input id="directorSegmentStrength" type="number" min="0" max="1" step="0.05">
       </label>
-      <label>
-        Seed
-        <input id="directorSeedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
-      </label>
     </div>
   `;
   $("directorSegmentPrompt").value = segment.prompt || "";
   $("directorSegmentStart").value = segment.start;
   $("directorSegmentDuration").value = segment.duration;
-  $("directorSegmentStrength").value = segment.strength ?? 0.65;
-  $("directorSeedInput").value = $("seedInput").value;
+  $("directorSegmentStrength").value = segment.strength ?? 1;
   $("directorSegmentImageStatus").textContent = segment.videoName || segment.imageName || (segment.videoPath ? "Timeline video guide" : (segment.imagePath ? "Timeline image guide" : "No media guide on this segment"));
   /*
   (state.castingLibrary || []).forEach((clip) => {
@@ -2874,9 +2925,6 @@ function renderDirectorInspector() {
   $("directorSegmentStart").addEventListener("input", (event) => updateDirectorSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
   $("directorSegmentDuration").addEventListener("input", (event) => updateDirectorSegment(segment.id, { duration: Number(event.target.value) || 0.5 }, false));
   $("directorSegmentStrength").addEventListener("input", (event) => updateDirectorSegment(segment.id, { strength: Number(event.target.value) || 0 }, false));
-  $("directorSeedInput").addEventListener("input", (event) => {
-    $("seedInput").value = event.target.value;
-  });
   $("directorSegmentImageInput").addEventListener("change", () => uploadDirectorSegmentGuide(segment.id, $("directorSegmentImageInput").files[0]).catch((err) => {
     $("directorSegmentImageStatus").textContent = err.message;
     $("runHint").textContent = `Timeline media upload failed: ${err.message}`;
@@ -3569,9 +3617,11 @@ async function uploadDirectorSegmentVideo(segmentId, file) {
   if (!file) return;
   $("directorSegmentImageStatus").textContent = "Uploading video guide...";
   const previewUrl = URL.createObjectURL(file);
+  const localDuration = await readVideoDuration(file);
   const form = new FormData();
   form.append("file", file);
   const uploaded = await uploadFile("/api/upload-video", form);
+  const duration = Number(localDuration) || Number(uploaded.duration) || 0;
   updateDirectorSegment(segmentId, {
     imagePath: "",
     imageName: "",
@@ -3580,6 +3630,7 @@ async function uploadDirectorSegmentVideo(segmentId, file) {
     videoName: uploaded.name,
     videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
     videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
+    ...(duration > 0 ? { duration } : {}),
     // Reset so this freshly uploaded video extracts its audio once (also covers
     // replacing a video on a segment that was already extracted).
     audioExtracted: false,
@@ -3596,12 +3647,13 @@ async function uploadDirectorIcVideo(file) {
   if (!isVideoFile(file)) throw new Error("Choose a video file for the IC video track");
   $("runHint").textContent = "Uploading IC video guide...";
   const previewUrl = URL.createObjectURL(file);
-  const duration = await readVideoDuration(file);
+  const localDuration = await readVideoDuration(file);
   const form = new FormData();
   form.append("file", file);
   const uploaded = await uploadFile("/api/upload-video", form);
+  const duration = Number(localDuration) || Number(uploaded.duration) || 2;
   addDirectorIcVideoSegment({
-    duration: duration || 2,
+    duration,
     videoPath: uploaded.path,
     videoName: uploaded.name,
     videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
@@ -3665,6 +3717,7 @@ function removeDirectorRetakeVideo() {
   state.directorRetakeVideo = null;
   state.directorRetakeStart = 0;
   state.directorRetakeLength = 1;
+  state.directorRetakePendingStitch = null;
   renderDirectorEditor();
 }
 
@@ -3795,6 +3848,34 @@ async function sendDirectorRetakeSelectionToEdit(target) {
     if ($("durationInput")) $("durationInput").value = String(roundTenth(clippedDuration));
     setVideoSlot(target.slotKey, clipped.path, clipped.name, { duration: clippedDuration, trimmed: true });
     if ($("promptText")) $("promptText").value = prompt;
+    state.directorRetakeAutoStitch = Boolean($("directorRetakeAutoStitch")?.checked);
+    const retakeContext = {
+      retake_id: newRetakeId(),
+      base_video_path: video.videoPath,
+      base_video_name: video.videoName || fileNameFromPath(video.videoPath),
+      base_video_duration: Number(video.duration) || directorRetakeTotalSeconds(),
+      clipped_path: clipped.path,
+      clipped_name: clipped.name,
+      start,
+      end,
+      prompt,
+      target_workflow: target.id,
+      target_kind: target.kind,
+      target_label: target.label,
+      auto_stitch: state.directorRetakeAutoStitch,
+      createdAt: Date.now(),
+      stitching: false,
+      baseVideoPath: video.videoPath,
+      targetId: target.id,
+      targetKind: target.kind,
+    };
+    state.editRetakeContext = retakeContext;
+    if (state.directorRetakeAutoStitch) {
+      state.directorRetakeStitches[retakeContext.retake_id] = retakeContext;
+      state.directorRetakePendingStitch = retakeContext;
+    } else {
+      state.directorRetakePendingStitch = null;
+    }
     $("runHint").textContent = `Loaded retake selection into ${target.label} (${formatSeconds(start)} - ${formatSeconds(end)})`;
   } catch (err) {
     $("runHint").textContent = `Retake edit handoff failed: ${err.message}`;
@@ -3881,6 +3962,57 @@ function renderDirectorSegments(card, run) {
 function mediaUrl(path) {
   if (!path) return "";
   return `/media?path=${encodeURIComponent(path)}`;
+}
+
+function newRetakeId() {
+  return `retake-${Math.random().toString(36).slice(2, 6)}${Date.now().toString(36).slice(-3)}`;
+}
+
+function retakeContextForPayload(context) {
+  if (!context?.retake_id) return null;
+  return {
+    retake_id: context.retake_id,
+    base_video_path: context.base_video_path,
+    base_video_name: context.base_video_name || fileNameFromPath(context.base_video_path || ""),
+    base_video_duration: Number(context.base_video_duration) || 0,
+    clipped_path: context.clipped_path || "",
+    clipped_name: context.clipped_name || "",
+    start: Number(context.start) || 0,
+    end: Number(context.end) || 0,
+    prompt: context.prompt || "",
+    target_workflow: context.target_workflow || "",
+    target_label: context.target_label || "",
+    target_kind: context.target_kind || "",
+    auto_stitch: context.auto_stitch !== false,
+  };
+}
+
+function retakeContextMatchesVideo(context, videoPath) {
+  const retake = retakeContextForPayload(context);
+  return Boolean(retake?.retake_id && retake.clipped_path && retake.clipped_path === videoPath);
+}
+
+function pendingRetakeStitchRun(context, status = "queued") {
+  const retake = retakeContextForPayload(context);
+  if (!retake) return null;
+  return {
+    batch_id: `director_${retake.retake_id}`,
+    run_id: "pending_stitch",
+    workflow_id: "ltx_director_2",
+    workflow_mode: "director_ref",
+    workflow_label: "LTX Director Reference V2",
+    status,
+    prompt: `${retake.retake_id} waiting for ${retake.target_label || retake.target_workflow || "Edit"} result`,
+    duration: Number(retake.base_video_duration) || 0,
+    retake_stitch_pending: true,
+    retake_stitch: {
+      retake_id: retake.retake_id,
+      base_video: retake.base_video_path,
+      start: retake.start,
+      end: retake.end,
+      target_workflow: retake.target_workflow,
+    },
+  };
 }
 
 function renderBatch(batch) {
@@ -4026,6 +4158,51 @@ function mergeHistoryRuns(runs, newestFirst = false) {
   const incomingKeys = new Set(incoming.map((run) => runKey(run)));
   const rest = state.historyRuns.filter((run) => !incomingKeys.has(runKey(run)));
   state.historyRuns = newestFirst ? [...incoming, ...rest] : [...rest, ...incoming];
+  for (const run of incoming) maybeAutoStitchDirectorRetake(run);
+}
+
+async function maybeAutoStitchDirectorRetake(run) {
+  const runRetake = retakeContextForPayload(run?.retake_context);
+  const pending = runRetake?.retake_id
+    ? { ...(state.directorRetakeStitches[runRetake.retake_id] || {}), ...runRetake }
+    : state.directorRetakePendingStitch;
+  if (!pending || pending.stitching || pending.stitched || run?.retake_stitch || !run?.video) return;
+  if (pending.auto_stitch === false) return;
+  const workflows = new Set([run.workflow_id, run.workflow_mode].filter(Boolean).map(String));
+  const targetWorkflow = pending.target_workflow || pending.targetId;
+  if (targetWorkflow && !workflows.has(String(targetWorkflow))) return;
+  pending.stitching = true;
+  if (pending.retake_id) state.directorRetakeStitches[pending.retake_id] = pending;
+  const hint = $("runHint");
+  if (hint) hint.textContent = "Stitching retake edit back into Director output...";
+  try {
+    const result = await api("/api/stitch-retake-video", {
+      method: "POST",
+      body: JSON.stringify({
+        base_video_path: pending.base_video_path || pending.baseVideoPath,
+        edited_video_path: run.video,
+        start: pending.start,
+        end: pending.end,
+        prompt: pending.prompt,
+        retake_id: pending.retake_id || "",
+        edit_run_key: runKey(run),
+      }),
+    });
+    const stitchedRun = result?.run || result?.batch?.runs?.[0] || null;
+    if (!runRetake?.retake_id) state.directorRetakePendingStitch = null;
+    if (pending.retake_id) {
+      delete state.directorRetakeStitches[pending.retake_id];
+      state.historyRuns = state.historyRuns.filter((item) => runKey(item) !== `director_${pending.retake_id}:pending_stitch`);
+    }
+    if (stitchedRun) {
+      mergeHistoryRuns([stitchedRun], true);
+      renderScopedHistory();
+    }
+    if (hint) hint.textContent = "Retake edit stitched into Director output";
+  } catch (err) {
+    pending.stitching = false;
+    if (hint) hint.textContent = `Retake stitch failed: ${err.message}`;
+  }
 }
 
 function renderScopedHistory() {
@@ -4436,8 +4613,10 @@ function saveFrameExtract() {
 function runModeLabel(run) {
   const raw = String(run.workflow_mode || run.workflow_id || "").toLowerCase();
   const berniniWorkflowId = berniniRunWorkflowId(run);
-  if (berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return BERNINI_TASKS[berniniWorkflowId].tag;
-  if (isInpaintRun(run)) return "INPAINT";
+  if (run?.retake_stitch) return "retake";
+  const retakeSuffix = run?.retake_context ? "-retake" : "";
+  if (berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return `${BERNINI_TASKS[berniniWorkflowId].tag}${retakeSuffix}`;
+  if (isInpaintRun(run)) return `Inpaint${retakeSuffix}`;
   if (isMotionRun(run)) {
     const kind = motionRunKind(run);
     if (kind === "3d") return "3D";
@@ -4519,7 +4698,7 @@ function setInputValueIfPresent(id, value) {
 function useRunSeed(seed, run = null) {
   if (!seed) return;
   setInputValueIfPresent("seedInput", seed);
-  setInputValueIfPresent("directorSeedInput", seed);
+  setInputValueIfPresent("directorGlobalSeedInput", seed);
   if (run && isMotionRun(run)) {
     const kind = motionRunKind(run);
     if (kind === "text") setInputValueIfPresent("motionSeed", seed);
@@ -5072,8 +5251,8 @@ function useRunTimeline(run) {
   }
   setWorkspace("director");
   $("directorGlobalPrompt").value = timeline.global_prompt || run.global_prompt || "";
+  if (run.negative_prompt) setInputValueIfPresent("directorNegativePrompt", run.negative_prompt);
   state.directorGlobalPromptInitialized = true;
-  $("directorGlobalReferenceStrength").value = timeline.global_reference_strength ?? run.global_reference_strength ?? 0.35;
   if (run.seed) useRunSeed(run.seed);
   const refs = Array.isArray(run.reference_images) ? run.reference_images.filter(Boolean) : [];
   state.referencePaths = refs.length ? refs : [""];
@@ -5365,12 +5544,23 @@ async function startBatch() {
     if (state.workspace === "director") {
       await prepareDirectorIngredientsSheetForRun();
     }
+    const payload = collectPayload();
     const batch = await api("/api/run", {
       method: "POST",
-      body: JSON.stringify(collectPayload()),
+      body: JSON.stringify(payload),
     });
     state.batchPreviewWaits[batch.batch_id] = 0;
     renderBatch(batch);
+    if (payload.retake_context?.retake_id) {
+      const context = { ...state.editRetakeContext, ...payload.retake_context };
+      state.directorRetakeStitches[context.retake_id] = context;
+      const pendingRun = pendingRetakeStitchRun(context, "queued");
+      if (pendingRun) mergeHistoryRuns([pendingRun], true);
+      setWorkspace("director");
+      setDirectorMode("retake");
+      renderScopedHistory();
+      $("runHint").textContent = `${context.retake_id} queued in ${context.target_label || context.target_workflow}; waiting to stitch`;
+    }
     if (state.clockTimer) clearInterval(state.clockTimer);
     state.clockTimer = setInterval(updateElapsed, 1000);
     if (state.pollTimer) clearTimeout(state.pollTimer);
@@ -6946,6 +7136,7 @@ async function loadConfig() {
   }
   rememberCurrentWorkflow();
   $("negativePrompt").value = state.config.default_negative;
+  setInputValueIfPresent("directorNegativePrompt", state.config.default_negative);
   $("comfyStatus").textContent = state.config.comfy.ok ? "ComfyUI: online" : "ComfyUI: offline";
   $("comfyStatus").className = `status-pill ${state.config.comfy.ok ? "ok" : "bad"}`;
   $("comfyStatus").title = state.config.comfy.reason || state.config.comfy.url || "";
@@ -7050,6 +7241,10 @@ $("directorRetakePrompt").addEventListener("input", (event) => {
 });
 $("directorRetakeStrength").addEventListener("input", (event) => {
   state.directorRetakeStrength = Math.max(0, Math.min(1, Number(event.target.value) || 0));
+});
+$("directorRetakeAutoStitch")?.addEventListener("change", (event) => {
+  state.directorRetakeAutoStitch = Boolean(event.target.checked);
+  if (!state.directorRetakeAutoStitch) state.directorRetakePendingStitch = null;
 });
 $("motionGuide").addEventListener("loadedmetadata", () => {
   state.motionGuideDuration = $("motionGuide").duration || motionGuideDurationFallback();
@@ -7231,7 +7426,7 @@ $("applyStoryboardImportBtn").addEventListener("click", () => {
     $("runHint").textContent = `2x2 storyboard import failed: ${err.message}`;
   });
 });
-$("globalAddRefBtn").addEventListener("click", addReferenceSlot);
+$("globalAddRefBtn")?.addEventListener("click", addReferenceSlot);
 renderReferenceSlots();
 updateVideoClipperButtons();
 $("exampleVideo").addEventListener("loadedmetadata", () => {
