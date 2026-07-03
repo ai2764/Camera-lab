@@ -421,7 +421,7 @@ Expected: PASS except the pre-existing `tests/test_director_reference.py` `Conne
 
 - [ ] **Step 3: Manual generation smoke against ComfyUI**
 
-Start the camera-lab server with ComfyUI running (`COMFYUI_ROOT=C:\Users\AIBOX\dev\ComfyUI-scail`), open the Director workspace, add one text segment + a global prompt, and generate.
+Start the camera-lab server with ComfyUI running (`COMFYUI_ROOT=<path-to-your-ComfyUI>`), open the Director workspace, add one text segment + a global prompt, and generate.
 Expected: a video renders through the v2 workflow (distilled UNET, `LTXDirectorCropGuides`); audio is generated when no audio segments are set. Capture the run output path.
 
 If the run fails on graph validation, inspect the failing node against the bundled `ltx_director_2.json` and the live `object_info` (e.g. an input the live `LTXDirector`/`LTXDirectorGuide` requires that the builder did not set). Fix the builder, re-run Task 2 tests, and repeat.

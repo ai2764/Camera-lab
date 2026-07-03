@@ -8,6 +8,25 @@
 
 **Tech Stack:** Vanilla JS frontend, Python HTTP server, ffmpeg, Playwright e2e.
 
+## Current implementation status
+
+Implemented in the Director/Edit integration:
+
+- Director result cards expose **Retake**, which loads the video into the Director Retake tab.
+- Retake mode has one base video lane plus a draggable/resizable selected range.
+- Sending a selected range to Edit trims the selection first, then opens the chosen Bernini/Inpaint mode with retake context.
+- Each retake handoff gets a unique `retake_id`; repeated runs from the same selected range create separate pending results.
+- Retake-sourced Edit payloads carry selected duration, base video dimensions, preserve-audio defaults for Bernini, and lineage metadata.
+- Completed Edit runs with matching retake context can call `/api/stitch-retake-video` and produce a stitched full-length Director output.
+- Stitched runs are labeled as retake outputs. Bernini/Inpaint result cards show retake-aware tags such as `retake-V2V` or `retake-Inpaint`.
+- The frontend records failed stitch attempts so the same Edit output is not retried on every history refresh.
+- Result polling is guarded while output videos are playing, which avoids playback jumping between refreshed result cards.
+
+Important distinction:
+
+- This is a cross-model Edit-to-stitch path. It is useful for replacing a selected time range with Bernini/Inpaint output.
+- It is not the same as native LTX Director retake, where the original video is encoded into LTX latents and only the selected latent range is regenerated.
+
 ---
 
 ### Task 1: Backend Stitch API

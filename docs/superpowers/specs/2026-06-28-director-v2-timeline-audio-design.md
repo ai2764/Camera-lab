@@ -1,6 +1,6 @@
 # Director v2 Timeline + Audio — Design
 
-> Status: design (brainstormed 2026-06-28). Implementation plan to follow via writing-plans.
+> Status: design plus implementation notes. Director v2 generation, IC reference UI, audio lanes, preview, and retake/edit-stitch integration have since been implemented in the `director2` branch.
 > Branch: `director2`.
 
 ## Goal
@@ -31,6 +31,17 @@ toggles) stays unchanged; the browser does the mixing, the server patches the wo
 - **Motion-track preprocessing** (raw video → point-tracked spline overlays). IC-LoRA usage
   is BYO; camera-lab does not extract tracks.
 - **Overlay/post-mux audio mode**, **Casting/TTS binding**.
+
+Current retake note:
+
+- Camera Lab now exposes a Director Retake tab with one base video and a draggable/resizable
+  selected range.
+- The implemented short-term repair path sends the selected range to Edit modes such as Bernini
+  V2V/VI2V/RV2V/ADS2V or WAN VACE Inpaint, then stitches the edited range back into the original
+  video as a new Director output.
+- That path is cross-model edit-and-stitch. It is intentionally distinct from native LTX
+  Director retake, where the original video is encoded into LTX latents and only the selected
+  latent range is regenerated.
 
 ---
 

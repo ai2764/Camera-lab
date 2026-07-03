@@ -54,8 +54,8 @@ flowchart TB
 ## What It Does
 
 - **Camera Lab** queues image-to-video and multi-image workflow runs with reusable camera move presets, prompts, seeds, reference images, and result history.
-- **Director** assembles shot timelines, audio cues, reference images, and workflow settings for longer structured video runs.
-- **Edit** groups WAN2.2 Bernini video editing modes and WAN VACE Inpaint into one workspace. Bernini supports T2V, I2V, V2V, MV2V, VI2V, VRC2V, R2V, RV2V, and ADS2V modes; Inpaint lets you upload a source video, paint a replacement mask, and optionally provide a reference image.
+- **Director** assembles shot timelines, audio cues, IC reference clips, and LTX Director 2 settings for longer structured video runs. It also has a Retake lane for selecting part of an existing Director output and sending that range to Edit.
+- **Edit** groups WAN2.2 Bernini video editing modes and WAN VACE Inpaint into one workspace. Bernini supports T2V, I2V, V2V, MV2V, VI2V, VRC2V, R2V, RV2V, and ADS2V modes; Inpaint lets you upload a source video, paint a replacement mask, and optionally provide a reference image. Retake-sourced edit runs can be stitched back into the original Director output.
 - **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
 - **Motion** drives the SCAIL-2 video model to animate a reference character from a guide pose video. It has three tools: **Text to Motion** (HY-Motion turns a text prompt into a pose video), **SCAIL2** (renders a pose video onto a reference character), and **3D Motion** (poses a rigged 3D character in the browser, then feeds that as the guide).
 
@@ -98,17 +98,17 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  UI["[UI] Director tab<br/>timeline segments, audio cues, reference images"]
-  API["[API] build_ltx_director_reference_api"]
-  WF["[WF] ltx_director_reference_mvp.json"]
-  PATCH["[API] timeline patching<br/>global reference injection<br/>audio segment injection"]
-  MODEL["[MODEL] LTX 2.3 stack<br/>LTXDirector / LTXVAddGuideMulti<br/>Gemma encoder"]
-  OUT["[OUT] structured video run<br/>timeline metadata<br/>history card"]
+  UI["[UI] Director tab<br/>Generate / Retake modes<br/>timeline segments, audio cues, IC references"]
+  API["[API] build_ltx_director_v2_api"]
+  WF["[WF] ltx_director_2.json"]
+  PATCH["[API] timeline patching<br/>IC-LoRA wiring<br/>audio segment injection<br/>retake payload support"]
+  MODEL["[MODEL] LTX 2.3 Director stack<br/>LTXDirector / LTXDirectorGuide<br/>Gemma encoder"]
+  OUT["[OUT] structured video run<br/>timeline metadata<br/>retake output cards"]
 
   UI --> API --> WF --> PATCH --> MODEL --> OUT
 ```
 
-**High-level description:** Director is the structured timeline workspace for assembling longer videos from ordered segments, global references, local references, prompts, and audio cues. The UI builds a timeline payload, while the backend converts that payload into `LTXDirector` inputs, injects reference guides and audio data when needed, submits the patched Director workflow to ComfyUI, and stores the resulting video with timeline metadata for reuse.
+**High-level description:** Director is the structured timeline workspace for assembling longer videos from ordered main segments, IC reference clips, prompts, and audio cues. Generate mode builds a Director v2 timeline payload and the backend converts it into `LTXDirector` inputs. Retake mode loads one existing video, lets the user choose a time range, and can either queue native Director retake or send the selected range into Edit for Bernini/Inpaint processing and automatic stitching back into a full Director output.
 
 ### Edit Tab
 
@@ -117,9 +117,9 @@ flowchart LR
 ```mermaid
 flowchart TB
   UI["[UI] Edit tab<br/>mode bar + prompt + inputs"]
-  MENU["[UI] result card Edit menu<br/>send video output into edit inputs"]
+  MENU["[UI] result card Edit menu<br/>send video output into edit inputs<br/>send Director output to Retake"]
   CLIP["[UI] shared clip editor<br/>trim source/reference videos"]
-  API["[API] Bernini/Inpaint media validation<br/>workflow patching<br/>split/merge and preserve audio"]
+  API["[API] Bernini/Inpaint media validation<br/>workflow patching<br/>split/merge, preserve audio<br/>retake lineage"]
 
   subgraph Bernini["Bernini workflows"]
     BMODES["[UI] T2V, I2V, V2V, MV2V, VI2V,<br/>VRC2V, R2V, RV2V, ADS2V"]
@@ -135,7 +135,8 @@ flowchart TB
     IINPUT --> IWF --> IMODEL
   end
 
-  OUT["[OUT] edited video<br/>history scoped to selected edit mode"]
+  STITCH["[API] optional Director retake stitch<br/>base head + edited selection + base tail"]
+  OUT["[OUT] edited video<br/>history scoped to selected edit mode<br/>stitched Director output"]
 
   MENU --> UI
   CLIP --> UI
@@ -144,9 +145,10 @@ flowchart TB
   API --> Inpaint
   BMODEL --> OUT
   IMODEL --> OUT
+  OUT --> STITCH --> OUT
 ```
 
-**High-level description:** Edit is the post-generation editing workspace for changing existing images or videos through Bernini modes and masked VACE inpainting. The UI routes users into Bernini or Inpaint modes, gathers source media, reference media, masks, prompts, split settings, and trim data, then the backend stages those assets, patches the corresponding WAN workflow, optionally preserves audio or merges split RV2V segments, and saves edited results into scoped history cards.
+**High-level description:** Edit is the post-generation editing workspace for changing existing images or videos through Bernini modes and masked VACE inpainting. The UI routes users into Bernini or Inpaint modes, gathers source media, reference media, masks, prompts, split settings, trim data, and optional retake context, then the backend stages those assets, patches the corresponding WAN workflow, optionally preserves audio or merges split RV2V segments, and saves edited results into scoped history cards. When an edit run carries Director retake context, Camera Lab can stitch the edited selection back into the original video and show the stitched result in Director output.
 
 ### Motion Tab
 
@@ -416,6 +418,33 @@ Expected local Casting paths:
 
 If only the LLM is missing, script analysis is disabled but manual line editing still works. If only CosyVoice is missing, TTS generation is disabled but script analysis can still work. If both are missing, Camera Lab still starts and the Casting tab reports both missing dependency groups.
 
+## Director Workspace
+
+Director uses `LTX Director 2` as the app-facing workflow.
+
+Generate mode:
+
+- The main timeline accepts text/image segments and video clips.
+- Video clips are treated as visual guides and default to the uploaded video's duration.
+- The video-audio lane can hold extracted or uploaded audio, and the dialogue lane can hold separate dialogue audio.
+- The IC video lane holds reference clips for the selected IC-LoRA. If no IC-LoRA is selected, that lane is inert.
+- Global prompt, negative prompt, seed, preset size, scale, and custom frame size live beside the preview player.
+
+Retake mode:
+
+- A generated video can be sent to Retake from a result card's **Edit** menu.
+- The Retake timeline holds one base video and a draggable/resizable selection range.
+- The selected range can be sent to Edit modes such as V2V, MV2V, VI2V, VRC2V, RV2V, ADS2V, or Inpaint.
+- Retake-sourced edit runs carry a unique `retake_id`, the source range, the base video dimensions, and the selected duration.
+- When auto-stitch is enabled, Camera Lab stitches `base before selection + edited selection + base after selection` and adds the full stitched video back to Director output.
+- Native Director retake still uses the LTX Director retake payload (`retake_video`, `retake_start`, `retake_length`, `retake_prompt`, and `retake_strength`).
+
+Known behavior:
+
+- Director v2 global reference images are currently placeholder UI. They are not wired as active Director v2 image inputs yet.
+- IC-LoRA behavior depends on the installed LoRA. The generic IC video lane does not turn raw footage into motion control unless the selected IC-LoRA expects that kind of control input.
+- Result polling avoids refreshing while an output video is playing, so playback does not jump between result cards.
+
 ## Edit Workspace
 
 The Edit workspace is the shared UI for Bernini and Inpaint workflows.
@@ -434,8 +463,10 @@ Inpaint mode:
 - Requires a source video and a painted mask.
 - Reference image is optional.
 - The mask is drawn in the center canvas and uploaded before the workflow is queued.
+- The backend builds the WAN VACE control video by masking out the painted region, so the model receives the preserved source context and a clear replacement area.
+- For retake handoff, the selected range duration and source frame size are carried into Edit. Bernini preserve-audio defaults on for retake-sourced clips.
 
-Generated video result cards include an **Edit** menu when the output can be reused as an input. The menu can send a result video into compatible Bernini or Inpaint source slots. Video upload fields share the same clip editor modal so a trimmed clip can be reused consistently across Edit and Motion inputs.
+Generated video result cards include an **Edit** menu when the output can be reused as an input. The menu can send a result video into compatible Bernini or Inpaint source slots, or into Director Retake when the result is a video output. Video upload fields share the same clip editor modal so a trimmed clip can be reused consistently across Edit and Motion inputs.
 
 ## Browser E2E Tests
 
@@ -481,12 +512,13 @@ Files under `workflows/app/` are the workflow files shipped with Camera Lab. Run
 
 Current dropdown mapping:
 
-- `LTX 2.3 NAG I2V Extendcrop`: `workflows/app/ltx23_nag_i2v_extendcrop_general.json`
-- `LTX 2.3 FLF TTP Control (2 images)`: built in `server/camera_lab_server.py`
-- `LTX 2.3 FML (3 images, 2-stage TTP FLF)`: built in `server/camera_lab_server.py`
+- `LTX 2.3 I2V Subtitle Cleaner`: `workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json`
+- `LTX 2.3 FLF (2 images, audio)`: `workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json`
+- `LTX 2.3 FML (3 images, 2-stage, audio)`: built in `server/camera_lab_server.py`
 - `LTX 2.3 FML RuneXX Guider Local (3 images)`: `workflows/app/LTX-2.3_FML2V_RuneXX_guider.local.json`
 - `LTX 2.3 IA2V`: `workflows/app/ltx23_nag_ia2v_extendcrop_general.json`
-- `LTX Director Reference MVP`: `workflows/app/ltx_director_reference_mvp.json`
+- `LTX 2.3 FLF IA2V (2 images + audio)`: `workflows/app/ltx23_flf_ia2v_nag_extend.json`
+- `LTX Director 2`: `workflows/app/ltx_director_2.json`
 - `WAN2.2 Bernini T2V`: `workflows/app/wan22_bernini_t2v.ui.json`
 - `WAN2.2 Bernini T2I`: `workflows/app/wan22_bernini_t2i.ui.json`
 - `WAN2.2 Bernini I2V`: `workflows/app/wan22_bernini_i2v.ui.json`
@@ -501,13 +533,19 @@ Current dropdown mapping:
 - `WAN2.2 Bernini ADS2V`: `workflows/app/wan22_bernini_ads2v.ui.json`
 - `WAN VACE Inpaint`: `workflows/app/wan_vace_inpainting.ui.json`
 
-## Global Reference Injection Path (Director)
+## Director Reference Notes
 
-`LTX Director Global Reference MVP` uses a special server-side patch step to support global references from the UI.
+Director currently uses `LTX Director 2` from `workflows/app/ltx_director_2.json`. The older `ltx_director_reference_mvp.json` file is retained as a legacy/reference workflow, but it is not the primary Director UI target.
+
+### Global reference status
+
+Director v2 global reference images are placeholder UI in the current app. The active v2 path supports timeline segments, IC reference clips, audio segments, and retake payloads; native global reference image wiring is planned for a later integration pass.
+
+The notes below describe the legacy MVP compatibility path, which is useful when inspecting older runs or the legacy workflow.
 
 ### Default path used by Camera Lab
 
-When a run selects director mode, `build_ltx_director_reference_api(...)` will:
+For the legacy Director reference workflow, `build_ltx_director_reference_api(...)` will:
 
 1. Parse timeline payload from the request.
 2. Copy global reference files (e.g. `reference_images`) to the ComfyUI input folder.
@@ -543,13 +581,13 @@ If those fields are not present, Camera Lab falls back to a backward-compatible 
   - `strength` (`global_reference_strength` from run payload)
 - It rewires downstream guide-consuming sockets so the generated guide data is injected through the newly inserted node.
 
-This fallback behavior is intentional and allows current runs to work without custom-node upgrades.
+This fallback behavior is intentional and allows legacy runs to work without custom-node upgrades.
 
 ### Practical implication
 
-- If you only want “director with global refs”, you can use the provided Camera Lab flow and this dynamic injection will work on supported workflows.
+- If you only want director with legacy global refs, you can use the legacy Camera Lab flow and this dynamic injection will work on supported workflows.
 - If your custom `LTXDirector` has been updated upstream with native global-reference inputs, the behavior is cleaner and uses the native socket path automatically.
-- If your run appears to have no global reference effect, check:
+- If a legacy run appears to have no global reference effect, check:
   - `check_setup.py` status
   - workflow installed in `<COMFYUI_ROOT>/user/default/workflows/camera-lab`
   - whether your ComfyUI `LTXDirector` has been patched with native inputs
