@@ -6,188 +6,20 @@ function initialWorkspace() {
   return "camera";
 }
 
-const BERNINI_TASKS = {
-  bernini_t2v: {
-    tag: "T2V",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "A cat walking through a sunny garden, cinematic",
-  },
-  bernini_t2i: {
-    tag: "T2I",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "a portrait of a woman in a red dress, studio lighting",
-  },
-  bernini_i2v: {
-    tag: "I2V",
-    sourceImage: true,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "Animate this image with gentle camera push-in",
-  },
-  bernini_i2i: {
-    tag: "I2I",
-    sourceImage: true,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "change the shirt color to blue",
-  },
-  bernini_v2v: {
-    tag: "V2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "Restyle the video into a watercolor look",
-  },
-  bernini_mv2v: {
-    tag: "MV2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "change the lighting to warm golden hour",
-  },
-  bernini_vi2v: {
-    tag: "VI2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "propagate the edit consistently across the whole clip",
-  },
-  bernini_vrc2v: {
-    tag: "VRC2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "make the subject raise their right hand",
-  },
-  bernini_r2v: {
-    tag: "R2V",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "This subject dancing on a neon stage",
-  },
-  bernini_r2i: {
-    tag: "R2I",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "this subject standing in a snowy street",
-  },
-  bernini_rv2v: {
-    tag: "RV2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "Replace the girl in the video with a girl dressed in student attire",
-  },
-  bernini_ads2v: {
-    tag: "ADS2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: true,
-    prompt: "Insert the product naturally onto the table",
-  },
-};
+const {
+  BERNINI_TASKS,
+  BERNINI_DEFAULT_NEGATIVE,
+  INPAINT_WORKFLOW_MODE,
+  INPAINT_DEFAULT_PROMPT,
+  INPAINT_DEFAULT_NEGATIVE,
+  DIRECTOR_DEFAULT_GLOBAL_PROMPT,
+  DIRECTOR_TIMELINE_PIXELS_PER_SECOND,
+  getBerniniTask,
+  isBerniniImageMode,
+  createInitialState,
+} = window.CameraLabWorkspace;
 
-const BERNINI_IMAGE_MODES = new Set(["bernini_t2i", "bernini_i2i", "bernini_r2i"]);
-const EDIT_BERNINI_MODES = Object.keys(BERNINI_TASKS).filter((mode) => !BERNINI_IMAGE_MODES.has(mode));
-const BERNINI_DEFAULT_NEGATIVE = "bad video";
-const INPAINT_WORKFLOW_MODE = "wan_vace_inpaint";
-const INPAINT_DEFAULT_PROMPT = "Place the reference object naturally inside the painted area, matching lighting, scale, perspective, and motion.";
-const INPAINT_DEFAULT_NEGATIVE = "bad video";
-
-const state = {
-  config: null,
-  activeBatch: null,
-  pollTimer: null,
-  batchPreviewWaits: {},
-  motionPreviewWaits: {},
-  motionPendingCounter: 0,
-  historyTimer: null,
-  historyRuns: [],
-  clockTimer: null,
-  exampleAnimation: null,
-  exampleDiagram: "",
-  hiddenRunKeys: new Set(),
-  sourcePath: "",
-  middlePath: "",
-  endPath: "",
-  motionRefPath: "",
-  motionGuideVideoPath: "",
-  motionGuideDuration: 4,
-  motionBatch: null,
-  motionSubtab: "text",
-  motion3d: {
-    initialized: false,
-    playing: false,
-    time: 0,
-    duration: 3,
-    timeline: [],
-    animationFrame: 0,
-    lastTick: 0,
-    refPath: "",
-    guideUrl: "",
-    generating: false,
-  },
-  audioPath: "",
-  referencePaths: [""],
-  referenceNames: [""],
-  referencePreviewUrls: [""],
-  directorSegments: [],
-  directorAudioSegments: [],
-  directorSelectedId: "",
-  directorSelectionType: "image",
-  directorDrag: null,
-  workspace: initialWorkspace(),
-  cameraWorkflowId: "",
-  directorWorkflowId: "",
-  berniniWorkflowId: "bernini_t2v",
-  berniniSourceVideoPath: "",
-  berniniSourceVideoName: "",
-  berniniReferenceVideoPath: "",
-  berniniReferenceVideoName: "",
-  berniniReferenceImagePath: "",
-  berniniReferenceImageName: "",
-  inpaintWorkflowId: "wan_vace_inpaint",
-  inpaintSourceVideoPath: "",
-  inpaintSourceVideoName: "",
-  inpaintReferenceImagePath: "",
-  inpaintReferenceImageName: "",
-  inpaintMaskImagePath: "",
-  inpaintMaskPainted: false,
-  inpaintDrawing: false,
-  inpaintLastPoint: null,
-  castingLines: [],
-  castingLibrary: [],
-  castingEdit: null,
-  castingPreview: null,
-  videoClipper: {
-    slot: "",
-    path: "",
-    name: "",
-    duration: 0,
-    playing: false,
-    renderingFilmstrip: false,
-  },
-  videoPreviewRun: null,
-  frameExtractRun: null,
-};
+const state = createInitialState(initialWorkspace());
 
 const $ = (id) => document.getElementById(id);
 const workspaceModules = {
@@ -356,7 +188,7 @@ function fillSelect(el, items, labelKey = "label") {
 }
 
 function visibleWorkflowItems(items) {
-  return items.filter((item) => !(isBerniniWorkflow(item) && BERNINI_IMAGE_MODES.has(item.mode)));
+  return items.filter((item) => !(isBerniniWorkflow(item) && isBerniniImageMode(item.mode)));
 }
 
 function currentMove() {
@@ -387,9 +219,9 @@ function currentInpaintWorkflow() {
 
 function currentEditWorkflow() {
   const wf = currentWorkflow();
-  if (isInpaintWorkflow(wf) || (isBerniniWorkflow(wf) && !BERNINI_IMAGE_MODES.has(wf.mode))) return wf;
+  if (isInpaintWorkflow(wf) || (isBerniniWorkflow(wf) && !isBerniniImageMode(wf.mode))) return wf;
   const bernini = currentBerniniWorkflow();
-  if (isBerniniWorkflow(bernini) && !BERNINI_IMAGE_MODES.has(bernini.mode)) return bernini;
+  if (isBerniniWorkflow(bernini) && !isBerniniImageMode(bernini.mode)) return bernini;
   return currentInpaintWorkflow();
 }
 
@@ -399,7 +231,7 @@ function isDirectorWorkflow() {
 }
 
 function isBerniniWorkflow(workflow = currentWorkflow()) {
-  return workflow && Object.prototype.hasOwnProperty.call(BERNINI_TASKS, workflow.mode);
+  return Boolean(workflow && getBerniniTask(workflow.mode));
 }
 
 function isInpaintWorkflow(workflow = currentWorkflow()) {
@@ -416,7 +248,7 @@ function directorWorkflowOption() {
 function berniniWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode);
+    return isBerniniWorkflow(workflow) && !isBerniniImageMode(workflow.mode);
   });
 }
 
@@ -440,7 +272,7 @@ function workflowOptionById(id, mode) {
   if (!option) return null;
   const workflow = state.config?.workflows?.find((item) => item.id === option.value);
   if (mode === "camera" && (workflow?.mode === "director_ref" || isBerniniWorkflow(workflow) || isInpaintWorkflow(workflow))) return null;
-  else if (mode === "edit" && !(isInpaintWorkflow(workflow) || (isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode)))) return null;
+  else if (mode === "edit" && !(isInpaintWorkflow(workflow) || (isBerniniWorkflow(workflow) && !isBerniniImageMode(workflow.mode)))) return null;
   else if (mode === "bernini" && !isBerniniWorkflow(workflow)) return null;
   else if (mode === "inpaint" && !isInpaintWorkflow(workflow)) return null;
   else if (mode && !["camera", "edit", "bernini", "inpaint"].includes(mode) && workflow?.mode !== mode) return null;
@@ -493,6 +325,7 @@ function setWorkspace(workspace, { syncWorkflow = true } = {}) {
   rememberCurrentWorkflow();
   updateWorkflowFields();
   renderScopedHistory();
+  updateRunButtonLabel();
   if (workspace === "photography") {
     window.dispatchEvent(new CustomEvent("camera-lab:photography-visible"));
   }
@@ -500,7 +333,7 @@ function setWorkspace(workspace, { syncWorkflow = true } = {}) {
 
 function setBerniniWorkflow(id) {
   const workflow = state.config?.workflows?.find((item) => item.id === id);
-  if (!isBerniniWorkflow(workflow) || BERNINI_IMAGE_MODES.has(workflow.mode)) return;
+  if (!isBerniniWorkflow(workflow) || isBerniniImageMode(workflow.mode)) return;
   const option = workflowOptionById(id, "edit");
   state.berniniWorkflowId = id;
   if (option) $("workflowSelect").value = id;
@@ -556,19 +389,85 @@ function useResultVideoForEdit(run, workflowId, slotKey, kind = "bernini") {
   setVideoSlot(slotKey, run.video, fileNameFromPath(run.video));
   $("runHint").textContent = kind === "inpaint"
     ? "Loaded result video into Inpaint"
-    : `Loaded result video into ${BERNINI_TASKS[workflowId]?.tag || "Bernini"}`;
+    : `Loaded result video into ${getBerniniTask(workflowId)?.tag || "Bernini"}`;
+}
+
+function useResultVideoForRetake(run) {
+  if (!run?.video) return;
+  state.directorRetakePendingStitch = null;
+  state.directorRetakeVideo = {
+    videoPath: run.video,
+    videoName: fileNameFromPath(run.video),
+    videoPreviewUrl: mediaUrl(run.video),
+    videoPosterUrl: "",
+    duration: Math.max(0.5, Number(run.duration || run.director_timeline?.duration_seconds || 2) || 2),
+    width: Number(run.width || run.frame_width || run.output_width || run.director_timeline?.width) || 0,
+    height: Number(run.height || run.frame_height || run.output_height || run.director_timeline?.height) || 0,
+  };
+  state.directorRetakeStart = 0;
+  state.directorRetakeLength = Math.min(1, state.directorRetakeVideo.duration);
+  state.directorRetakePrompt = "";
+  state.directorMode = "retake";
+  setWorkspace("director");
+  setDirectorMode("retake");
+  $("runHint").textContent = "Loaded result video into Director Retake";
+}
+
+function retakeBaseVideoSize(video) {
+  const current = currentSize();
+  return {
+    width: align8(Number(video?.width) || current.width),
+    height: align8(Number(video?.height) || current.height),
+  };
+}
+
+function applyRetakeEditRunSettings(video, target, clipDuration) {
+  const editDuration = Math.max(0.1, Number(clipDuration) || Number(video?.duration) || directorRetakeTotalSeconds());
+  const size = retakeBaseVideoSize(video);
+  if ($("durationInput")) $("durationInput").value = String(roundTenth(editDuration));
+  if ($("customSizeInput")) $("customSizeInput").value = `${size.width}x${size.height}`;
+  if ($("sizeScale")) $("sizeScale").value = "100";
+  if ($("sizePreset")) {
+    const matching = [...$("sizePreset").options].find((option) => option.value === `${size.width}x${size.height}`);
+    if (matching) $("sizePreset").value = matching.value;
+  }
+  if (target?.kind === "bernini" && $("berniniPreserveAudio")) $("berniniPreserveAudio").checked = true;
+  updateSizeReadout();
+}
+
+function directorRetakeEditTargets() {
+  const available = new Set((state.config?.workflows || []).map((workflow) => workflow.id));
+  const targets = [];
+  for (const [workflowId, task] of Object.entries(BERNINI_TASKS)) {
+    if (!available.has(workflowId) || !task.sourceVideo) continue;
+    targets.push({
+      id: workflowId,
+      label: task.tag,
+      kind: "bernini",
+      slotKey: "berniniSource",
+    });
+  }
+  if (available.has(INPAINT_WORKFLOW_MODE)) {
+    targets.push({
+      id: INPAINT_WORKFLOW_MODE,
+      label: "Inpaint",
+      kind: "inpaint",
+      slotKey: "inpaintSource",
+    });
+  }
+  return targets;
 }
 
 function renderResultVideoEditMenu(run) {
   const targets = berniniResultVideoTargets();
-  if (!run?.video || !targets.length) return null;
+  if (!run?.video) return null;
   const wrap = document.createElement("div");
   wrap.className = "result-video-edit";
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "result-video-edit-button";
   trigger.textContent = "Edit";
-  trigger.setAttribute("aria-label", "Edit result video in Bernini");
+  trigger.setAttribute("aria-label", "Edit result video");
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".result-video-edit.open").forEach((node) => {
@@ -587,6 +486,15 @@ function renderResultVideoEditMenu(run) {
     openFrameExtract(run);
   });
   menu.appendChild(extractItem);
+  const retakeItem = document.createElement("button");
+  retakeItem.type = "button";
+  retakeItem.textContent = "Retake";
+  retakeItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    wrap.classList.remove("open");
+    useResultVideoForRetake(run);
+  });
+  menu.appendChild(retakeItem);
   targets.forEach((target) => {
     const item = document.createElement("button");
     item.type = "button";
@@ -695,6 +603,15 @@ function currentMotionPrompt() {
   return $("motionPrompt").value.trim();
 }
 
+function ensureDirectorGlobalPromptDefault({ force = false } = {}) {
+  const field = $("directorGlobalPrompt");
+  if (!field) return;
+  if (force || (!state.directorGlobalPromptInitialized && !field.value.trim())) {
+    field.value = DIRECTOR_DEFAULT_GLOBAL_PROMPT;
+  }
+  state.directorGlobalPromptInitialized = true;
+}
+
 function resetPrompt() {
   const move = currentMove();
   const workflow = state.workspace === "director"
@@ -704,7 +621,7 @@ function resetPrompt() {
         : currentWorkflow();
   if (!move || !workflow) return;
   if (isBerniniWorkflow(workflow)) {
-    const task = BERNINI_TASKS[workflow.mode];
+    const task = getBerniniTask(workflow.mode);
     $("promptTag").textContent = task.tag;
     $("promptText").value = task.prompt;
     $("negativePrompt").value = BERNINI_DEFAULT_NEGATIVE;
@@ -714,6 +631,16 @@ function resetPrompt() {
     $("promptTag").textContent = "INPAINT";
     $("promptText").value = INPAINT_DEFAULT_PROMPT;
     $("negativePrompt").value = INPAINT_DEFAULT_NEGATIVE;
+    return;
+  }
+  if (isDirectorWorkflow(workflow)) {
+    $("promptTag").textContent = "DIRECTOR";
+    $("promptText").value = "";
+    const negative = state.config?.default_negative || $("negativePrompt").value || "";
+    $("negativePrompt").value = negative;
+    setInputValueIfPresent("directorNegativePrompt", negative);
+    ensureDirectorGlobalPromptDefault({ force: true });
+    renderDirectorEditor();
     return;
   }
   $("promptTag").textContent = workflow.mode.toUpperCase();
@@ -879,7 +806,7 @@ function updateWorkflowFields() {
   const isDirector = wf.mode === "director_ref";
   const isBernini = isBerniniWorkflow(wf);
   const isInpaint = isInpaintWorkflow(wf);
-  const berniniTask = isBernini ? BERNINI_TASKS[wf.mode] : null;
+  const berniniTask = isBernini ? getBerniniTask(wf.mode) : null;
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
   const showEditWorkspace = state.workspace === "edit" && (isBernini || isInpaint);
   const showBerniniWorkspace = showEditWorkspace && isBernini;
@@ -888,7 +815,7 @@ function updateWorkflowFields() {
   const showCastingWorkspace = state.workspace === "casting";
   const showMotionWorkspace = state.workspace === "motion";
   const showSourceImage = isBernini ? !!berniniTask?.sourceImage : !isInpaint && wf.mode !== "t2v" && !isDirector;
-  const showDuration = !(isBernini && BERNINI_IMAGE_MODES.has(wf.mode));
+  const showDuration = !(isBernini && isBerniniImageMode(wf.mode));
   const showMiddleImage = !isBernini && !isInpaint && (wf.mode === "fml" || wf.mode === "fml_native");
   const showEndImage = !isBernini && !isInpaint && (wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v");
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
@@ -944,7 +871,8 @@ function updateWorkflowFields() {
     return;
   }
   $("cameraMoveWrap").style.display = isDirector || isBernini || isInpaint ? "none" : "block";
-  $("directorReferenceWrap").style.display = showDirectorWorkspace ? "grid" : "none";
+  const directorReferenceWrap = $("directorReferenceWrap");
+  if (directorReferenceWrap) directorReferenceWrap.style.display = showDirectorWorkspace ? "grid" : "none";
   $("directorTimelinePanel").style.display = showDirectorWorkspace ? "block" : "none";
   $("directorInlineResults").style.display = showDirectorWorkspace ? "block" : "none";
   $("sourceImageWrap").style.display = showSourceImage ? "block" : "none";
@@ -964,9 +892,42 @@ function updateWorkflowFields() {
   const runStrip = $("directorRunStrip");
   const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
-  $("promptTag").textContent = isBernini ? BERNINI_TASKS[wf.mode].tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
+  $("promptTag").textContent = isBernini ? getBerniniTask(wf.mode).tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : showBerniniWorkspace ? "Bernini Prompt" : showInpaintWorkspace ? "Inpaint Prompt" : "Prompt";
-  if (showDirectorWorkspace) renderDirectorEditor();
+  if (showDirectorWorkspace) {
+    ensureDirectorGlobalPromptDefault();
+    renderDirectorEditor();
+  }
+  updateRunButtonLabel();
+}
+
+function runButtonIdleText() {
+  if (state.workspace === "director" && state.directorMode === "retake") return "Queue Director Retake";
+  return "Queue Run";
+}
+
+function directorSeedValue() {
+  return $("directorGlobalSeedInput")?.value.trim() || "";
+}
+
+function directorNegativePromptValue() {
+  return $("directorNegativePrompt")?.value.trim() || $("negativePrompt").value.trim();
+}
+
+function directorIcLoraStrengthValue() {
+  const raw = Number($("directorIcLoraStrength")?.value);
+  return Math.max(0, Math.min(2, Number.isFinite(raw) ? raw : 1));
+}
+
+function directorGuideStrengthValue(value, fallback = 1) {
+  const raw = Number(value);
+  return Math.max(0, Math.min(1, Number.isFinite(raw) ? raw : fallback));
+}
+
+function updateRunButtonLabel({ force = false } = {}) {
+  const button = $("runBtn");
+  if (!button || (!force && button.textContent === "Queueing...")) return;
+  button.textContent = runButtonIdleText();
 }
 
 function collectPayload() {
@@ -979,9 +940,52 @@ function collectPayload() {
         : currentWorkflow();
 
   if (isDirectorWorkflow(workflow)) {
+    if (state.directorMode === "retake") {
+      const retakeVideo = normalizedDirectorRetakeVideo();
+      const duration = directorRetakeTotalSeconds();
+      const retakeRange = normalizedDirectorRetakeRange();
+      return {
+        workflow_id: workflow.id,
+        camera_move: "director_ref",
+        source_path: "",
+        middle_path: "",
+        end_path: "",
+        duration,
+        width: size.width,
+        height: size.height,
+        seed: directorSeedValue(),
+        negative_prompt: directorNegativePromptValue(),
+        prompt,
+        global_prompt: $("directorGlobalPrompt").value.trim(),
+        global_reference_strength: 0,
+        segments: [],
+        timeline_segments: [],
+        motion_segments: [],
+        audio_segments: [],
+        ic_lora_name: $("directorIcLora")?.value || "None",
+        ic_lora_strength: directorIcLoraStrengthValue(),
+        reference_images: collectReferenceImages(),
+        audio_path: "",
+        retake_mode: true,
+        retake_video: retakeVideo ? {
+          video_path: retakeVideo.videoPath,
+          file_name: retakeVideo.videoName || fileNameFromPath(retakeVideo.videoPath),
+          duration: retakeVideo.duration,
+        } : {},
+        retake_start: retakeRange.start,
+        retake_length: retakeRange.length,
+        retake_prompt: $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "",
+        retake_strength: Math.max(0, Math.min(1, Number($("directorRetakeStrength")?.value ?? state.directorRetakeStrength) || 1)),
+      };
+    }
     const segments = collectDirectorSegments();
+    const motionSegments = collectDirectorMotionSegments();
     const audioSegments = collectDirectorAudioSegments();
+    // Generation length = real content extent (longest track). directorTotalSeconds()
+    // adds a x1.3 ruler-only headroom and must NOT define the generated duration.
     const duration = directorOutputDurationSeconds();
+    const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
+    const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
     return {
       workflow_id: workflow.id,
       camera_move: "director_ref",
@@ -991,21 +995,24 @@ function collectPayload() {
       duration,
       width: size.width,
       height: size.height,
-      seed: $("seedInput").value.trim(),
-      negative_prompt: $("negativePrompt").value.trim(),
+      seed: directorSeedValue(),
+      negative_prompt: directorNegativePromptValue(),
       prompt,
       global_prompt: $("directorGlobalPrompt").value.trim(),
-      global_reference_strength: Math.max(0, Math.min(1, Number($("directorGlobalReferenceStrength").value) || 0)),
-      segments,
-      timeline_segments: segments,
+      global_reference_strength: 0,
+      segments: timelineSegments,
+      timeline_segments: timelineSegments,
+      motion_segments: motionSegments,
       audio_segments: audioSegments,
+      ic_lora_name: $("directorIcLora")?.value || "None",
+      ic_lora_strength: directorIcLoraStrengthValue(),
       reference_images: collectReferenceImages(),
       audio_path: "",
     };
   }
 
   if (isBerniniWorkflow(workflow)) {
-    const berniniTask = BERNINI_TASKS[workflow.mode];
+    const berniniTask = getBerniniTask(workflow.mode);
     const payload = {
       workflow_id: workflow.id,
       camera_move: workflow.mode,
@@ -1028,14 +1035,18 @@ function collectPayload() {
       prompt,
       audio_path: "",
     };
-    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
+    const retakeContext = retakeContextForPayload(state.editRetakeContext);
+    if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.berniniSourceVideoPath)) {
+      payload.retake_context = retakeContext;
+    }
+    if (!isBerniniImageMode(workflow.mode)) {
       payload.duration = Number($("durationInput").value);
     }
     return payload;
   }
 
   if (isInpaintWorkflow(workflow)) {
-    return {
+    const payload = {
       workflow_id: workflow.id,
       camera_move: workflow.mode,
       source_path: "",
@@ -1052,8 +1063,9 @@ function collectPayload() {
       prompt,
       audio_path: "",
     };
-    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
-      payload.duration = Number($("durationInput").value);
+    const retakeContext = retakeContextForPayload(state.editRetakeContext);
+    if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.inpaintSourceVideoPath)) {
+      payload.retake_context = retakeContext;
     }
     return payload;
   }
@@ -1078,28 +1090,128 @@ function collectReferenceImages() {
   return state.referencePaths.filter((path) => String(path || "").trim());
 }
 
+function isIngredientsIcLora(name) {
+  return /ingredients/i.test(String(name || ""));
+}
+
+function ingredientsSheetSegment(duration) {
+  if (!state.ingredientsSheetPath) return null;
+  const length = Math.max(0.5, Number(duration) || directorOutputDurationSeconds());
+  return {
+    id: "ingredients_reference_sheet",
+    type: "image",
+    prompt: $("directorGlobalPrompt")?.value.trim() || "",
+    duration: length,
+    reference: "",
+    image_path: state.ingredientsSheetPath,
+    video_path: "",
+    start: 0,
+    guide_frame: 0,
+    strength: 1,
+  };
+}
+
 function collectDirectorSegments() {
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "main")
+      .filter((item) => item.prompt.trim() || item.mediaPath)
+      .map((item) => {
+        const start = DirectorTimelineModel.toSeconds(item.start, model.fps);
+        const duration = Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps));
+        return {
+          id: item.id,
+          type: item.kind === "video" ? "video" : (item.kind === "image" ? "image" : "text"),
+          prompt: item.prompt.trim(),
+          duration,
+          reference: "",
+          image_path: item.kind === "image" ? item.mediaPath : "",
+          video_path: item.kind === "video" ? item.mediaPath : "",
+          start,
+          guide_frame: Math.max(0, item.start + Math.round(Number(item.extra?.guideOffsetFrames) || 0)),
+          trim_start: item.kind === "video" ? item.trimStart : 0,
+          strength: directorGuideStrengthValue(item.strength),
+        };
+      });
+  }
   return normalizedDirectorSegments()
-    .filter((segment) => segment.prompt.trim() || segment.imagePath)
+    .filter((segment) => segment.prompt.trim() || segment.imagePath || segment.videoPath)
     .map((segment) => ({
       id: segment.id,
-      type: segment.imagePath ? "image" : "text",
+      type: segment.videoPath ? "video" : (segment.imagePath ? "image" : "text"),
       prompt: segment.prompt.trim(),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       reference: "",
       image_path: segment.imagePath || "",
+      video_path: segment.videoPath || "",
       start: Math.max(0, Number(segment.start) || 0),
       guide_frame: Math.max(0, Math.round(((Number(segment.start) || 0) * 24) + (Number(segment.guideOffsetFrames) || 0))),
-      strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
+      trim_start: segment.videoPath ? Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)) : 0,
+      strength: directorGuideStrengthValue(segment.strength),
     }));
 }
 
 function collectDirectorAudioSegments() {
-  return normalizedDirectorAudioSegments()
+  syncDirectorVideoAudioSegments();
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => (item.track === "video_audio" || item.track === "dialogue") && item.mediaPath)
+      .map((item) => ({
+        id: item.id,
+        ...(item.track === "video_audio" ? { source: "video" } : {}),
+        audio_path: item.mediaPath,
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps)),
+        trim_start: item.trimStart,
+        volume: Math.max(0, Number(item.volume ?? 1)),
+      }))
+      .sort((a, b) => a.start - b.start);
+  }
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments()
+    .map((segment) => ({
+      id: segment.id,
+      source: "video",
+      audio_path: segment.audioPath,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
+    }));
+  const dialogueSegments = normalizedDirectorAudioSegments()
     .filter((segment) => segment.audioPath)
     .map((segment) => ({
       id: segment.id,
       audio_path: segment.audioPath,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
+    }));
+  return [...videoAudioSegments, ...dialogueSegments].sort((a, b) => a.start - b.start);
+}
+
+function collectDirectorMotionSegments() {
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "ic_video" && item.mediaPath)
+      .map((item) => ({
+        id: item.id,
+        type: "motion_video",
+        video_path: item.mediaPath,
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: Math.max(0.5, DirectorTimelineModel.toSeconds(item.length, model.fps)),
+        trim_start: item.trimStart,
+      }));
+  }
+  return normalizedDirectorIcVideoSegments()
+    .filter((segment) => segment.videoPath)
+    .map((segment) => ({
+      id: segment.id,
+      type: "motion_video",
+      video_path: segment.videoPath,
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
       trim_start: Math.max(0, Math.round((Number(segment.trimStart) || 0) * 24)),
@@ -1120,10 +1232,15 @@ function addDirectorSegment(values = {}) {
     imagePath: values.imagePath || "",
     imageName: values.imageName || "",
     imagePreviewUrl: values.imagePreviewUrl || "",
+    videoPath: values.videoPath || "",
+    videoName: values.videoName || "",
+    videoPreviewUrl: values.videoPreviewUrl || "",
+    videoPosterUrl: values.videoPosterUrl || "",
+    trimStart: Math.max(0, Number(values.trimStart) || 0),
     audioPath: values.audioPath || "",
     audioName: values.audioName || "",
     audioDuration: Number(values.audioDuration) || 0,
-    strength: values.strength ?? 0.65,
+    strength: values.strength ?? 1,
   };
   state.directorSegments.push(segment);
   state.directorSelectedId = segment.id;
@@ -1153,6 +1270,7 @@ function setDirectorSegmentsFromStoryboard(images, prompts = []) {
   });
   state.directorSegments = [...state.directorSegments, ...imported];
   state.directorAudioSegments = [];
+  state.directorIcVideoSegments = [];
   state.directorSelectionType = "image";
   state.directorSelectedId = imported[0]?.id || state.directorSelectedId;
   renderDirectorEditor();
@@ -1172,8 +1290,10 @@ function importShotPackToDirector(detail = {}) {
 
   setWorkspace("director");
   $("directorGlobalPrompt").value = prompt;
+  state.directorGlobalPromptInitialized = true;
   $("promptText").value = prompt;
   state.directorAudioSegments = [];
+  state.directorIcVideoSegments = [];
   state.directorSelectionType = "image";
   state.directorSegments = frames.map((frame, index) => {
     const label = String(frame.label || `shot ${index + 1}`).trim();
@@ -1355,7 +1475,8 @@ function normalizedDirectorSegments() {
       ...segment,
       start: Math.max(0, Number(segment.start) || 0),
       duration: Math.max(0.5, Number(segment.duration) || 0.5),
-      strength: Math.max(0, Math.min(1, Number(segment.strength) || 0.65)),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+      strength: directorGuideStrengthValue(segment.strength),
     }))
     .sort((a, b) => a.start - b.start);
 }
@@ -1372,10 +1493,161 @@ function normalizedDirectorAudioSegments() {
     .sort((a, b) => a.start - b.start);
 }
 
+function normalizedDirectorIcVideoSegments() {
+  return state.directorIcVideoSegments
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+    }))
+    .sort((a, b) => a.start - b.start);
+}
+
+function normalizedDirectorVideoAudioSegments() {
+  return state.directorVideoAudioSegments
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+      audioDuration: Math.max(0.5, Number(segment.audioDuration || segment.duration) || 0.5),
+    }))
+    .filter((segment) => segment.audioPath)
+    .sort((a, b) => a.start - b.start);
+}
+
+function directorTimelineFps() {
+  return 24;
+}
+
+function createDirectorTimelineModelFromState() {
+  if (!window.DirectorTimelineModel) return null;
+  return DirectorTimelineModel.fromAppState({
+    fps: directorTimelineFps(),
+    main: state.directorSegments,
+    videoAudio: state.directorVideoAudioSegments,
+    dialogue: state.directorAudioSegments,
+    icVideo: state.directorIcVideoSegments,
+  });
+}
+
+function applyDirectorTimelineModelToState(model) {
+  if (!model) return;
+  const next = model.toAppState();
+  state.directorSegments = next.main;
+  state.directorVideoAudioSegments = next.videoAudio;
+  state.directorAudioSegments = next.dialogue;
+  state.directorIcVideoSegments = next.icVideo;
+}
+
+function directorTrackForSelectionType(type = state.directorSelectionType) {
+  if (type === "audio") return "dialogue";
+  if (type === "video_audio") return "video_audio";
+  if (type === "ic_video") return "ic_video";
+  return "main";
+}
+
+function normalizedDirectorRetakeVideo() {
+  const video = state.directorRetakeVideo;
+  if (!video || !video.videoPath) return null;
+  return {
+    ...video,
+    duration: Math.max(0.5, Number(video.duration) || 0.5),
+    videoPreviewUrl: video.videoPreviewUrl || (video.videoPath ? mediaUrl(video.videoPath) : ""),
+    videoPosterUrl: video.videoPosterUrl || "",
+  };
+}
+
+function directorRetakeTotalSeconds() {
+  const video = normalizedDirectorRetakeVideo();
+  return Math.max(0.5, video?.duration || 0.5);
+}
+
+function normalizedDirectorRetakeRange() {
+  const total = directorRetakeTotalSeconds();
+  if (!window.DirectorTimelineModel) {
+    const start = roundTenth(Math.max(0, Math.min(total - 0.1, Number(state.directorRetakeStart) || 0)));
+    const length = roundTenth(Math.max(0.1, Math.min(Number(state.directorRetakeLength) || 0.1, total - start)));
+    return { start, length };
+  }
+  const fps = directorTimelineFps();
+  const range = DirectorTimelineModel.clampRange({
+    start: DirectorTimelineModel.toFrame(state.directorRetakeStart, fps),
+    length: Math.max(1, DirectorTimelineModel.toFrame(state.directorRetakeLength, fps)),
+    total: Math.max(1, DirectorTimelineModel.toFrame(total, fps)),
+    minLength: Math.max(1, DirectorTimelineModel.toFrame(0.1, fps)),
+  });
+  return {
+    start: DirectorTimelineModel.toSeconds(range.start, fps),
+    length: DirectorTimelineModel.toSeconds(range.length, fps),
+  };
+}
+
+function currentDirectorPlayheadSeconds() {
+  return Number(window.DirectorPreview?._state?.().currentTime) || 0;
+}
+
+function setDirectorRetakeRangeFromFrames(startFrame, lengthFrame, totalFrame) {
+  if (!window.DirectorTimelineModel) {
+    const fps = directorTimelineFps();
+    const total = Math.max(0.1, (Number(totalFrame) || fps) / fps);
+    const start = roundTenth(Math.max(0, Math.min(total - 0.1, (Number(startFrame) || 0) / fps)));
+    state.directorRetakeStart = start;
+    state.directorRetakeLength = roundTenth(Math.max(0.1, Math.min((Number(lengthFrame) || 1) / fps, total - start)));
+    return;
+  }
+  const fps = directorTimelineFps();
+  const range = DirectorTimelineModel.clampRange({
+    start: startFrame,
+    length: lengthFrame,
+    total: totalFrame,
+    minLength: Math.max(1, DirectorTimelineModel.toFrame(0.1, fps)),
+  });
+  state.directorRetakeStart = DirectorTimelineModel.toSeconds(range.start, fps);
+  state.directorRetakeLength = DirectorTimelineModel.toSeconds(range.length, fps);
+}
+
+function setDirectorRetakeRangeFromSeconds(start, length, total = directorRetakeTotalSeconds()) {
+  const fps = directorTimelineFps();
+  if (!window.DirectorTimelineModel) {
+    setDirectorRetakeRangeFromFrames(start, length, total);
+    return;
+  }
+  setDirectorRetakeRangeFromFrames(
+    DirectorTimelineModel.toFrame(start, fps),
+    Math.max(1, DirectorTimelineModel.toFrame(length, fps)),
+    Math.max(1, DirectorTimelineModel.toFrame(total, fps)),
+  );
+}
+
+function syncDirectorVideoAudioSegments() {
+  // Extract each main-track video's audio ONCE into an independent clip. After
+  // extraction it is a normal audio clip with no link to the video: deleting or
+  // moving the video does not touch it, the clip is never re-synced, and once a
+  // segment is extracted (audioExtracted flag) it is never re-extracted — so
+  // deleting the extracted clip does not bring it back.
+  for (const segment of state.directorSegments) {
+    if (!segment.videoPath || segment.audioExtracted) continue;
+    segment.audioExtracted = true;
+    state.directorVideoAudioSegments.push({
+      id: `video_audio_${segment.id}_${Math.random().toString(36).slice(2, 7)}`,
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: 0,
+      audioPath: segment.videoPath,
+      audioName: segment.videoName || fileNameFromPath(segment.videoPath),
+      audioDuration: Math.max(0.5, Number(segment.duration) || 0.5),
+    });
+  }
+}
+
 function directorOutputDurationSeconds() {
   const imageEnd = normalizedDirectorSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   const audioEnd = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
-  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd) * 2) / 2);
+  const videoAudioEnd = normalizedDirectorVideoAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  const icVideoEnd = normalizedDirectorIcVideoSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  return Math.max(0.5, Math.ceil(Math.max(imageEnd, audioEnd, videoAudioEnd, icVideoEnd) * 2) / 2);
 }
 
 function directorTotalSeconds() {
@@ -1383,9 +1655,23 @@ function directorTotalSeconds() {
   return Math.max(6, Math.ceil(end * 1.3 * 2) / 2);
 }
 
+function updateDirectorTimelineScale(total) {
+  const shell = document.querySelector(".director-timeline-shell");
+  if (!shell) return;
+  const duration = Math.max(6, Number(total) || 6);
+  const trackWidth = Math.max(520, Math.ceil(duration * DIRECTOR_TIMELINE_PIXELS_PER_SECOND));
+  shell.style.setProperty("--director-timeline-track-min", `${trackWidth}px`);
+}
+
 function selectDirectorSegment(id) {
   state.directorSelectedId = id;
   state.directorSelectionType = "image";
+  renderDirectorEditor();
+}
+
+function selectDirectorTimelineItem(type = "image", id = "") {
+  state.directorSelectedId = id;
+  state.directorSelectionType = type;
   renderDirectorEditor();
 }
 
@@ -1406,27 +1692,149 @@ function removeDirectorAudioSegment(id) {
   renderDirectorEditor();
 }
 
+function removeDirectorVideoAudioSegment(id) {
+  state.directorVideoAudioSegments = state.directorVideoAudioSegments.filter((item) => item.id !== id);
+  if (state.directorSelectionType === "video_audio" && !state.directorVideoAudioSegments.some((item) => item.id === state.directorSelectedId)) {
+    state.directorSelectionType = "image";
+    state.directorSelectedId = state.directorSegments[0]?.id || "";
+  }
+  renderDirectorEditor();
+}
+
+function removeDirectorIcVideoSegment(id) {
+  state.directorIcVideoSegments = state.directorIcVideoSegments.filter((item) => item.id !== id);
+  if (state.directorSelectionType === "ic_video" && !state.directorIcVideoSegments.some((item) => item.id === state.directorSelectedId)) {
+    state.directorSelectionType = "image";
+    state.directorSelectedId = state.directorSegments[0]?.id || "";
+  }
+  renderDirectorEditor();
+}
+
+function removeSelectedDirectorTimelineItem() {
+  if (!state.directorSelectedId) return false;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return false;
+  const removed = model.remove(directorTrackForSelectionType(), state.directorSelectedId);
+  if (!removed) return false;
+  applyDirectorTimelineModelToState(model);
+  state.directorSelectionType = "image";
+  state.directorSelectedId = state.directorSegments[0]?.id || "";
+  renderDirectorEditor();
+  return true;
+}
+
+function isDirectorTextEditingTarget(target) {
+  if (!target) return false;
+  if (target.closest("input, textarea, select, [contenteditable='true']")) return true;
+  return false;
+}
+
+function handleDirectorTimelineDeleteKey(event) {
+  if (event.key !== "Backspace" && event.key !== "Delete") return;
+  if (state.workspace !== "director" || state.directorMode === "retake") return;
+  if (isDirectorTextEditingTarget(event.target)) return;
+  if ($("directorSegmentModal")?.classList.contains("open")) return;
+  if (removeSelectedDirectorTimelineItem()) {
+    event.preventDefault();
+    $("runHint").textContent = "Selected timeline segment removed";
+  }
+}
+
+function directorSelectedCollection() {
+  if (state.directorSelectionType === "audio") return state.directorAudioSegments;
+  if (state.directorSelectionType === "video_audio") return state.directorVideoAudioSegments;
+  if (state.directorSelectionType === "ic_video") return state.directorIcVideoSegments;
+  return state.directorSegments;
+}
+
+function directorPreciseTime(value) {
+  const numeric = Number(value) || 0;
+  return Math.round(numeric * 1000) / 1000;
+}
+
+function splitSelectedDirectorSegmentAtPlayhead() {
+  if (!selectedDirectorSegmentCanSplit()) return false;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return false;
+  const cutFrame = DirectorTimelineModel.toFrame(Number(window.DirectorPreview?._state?.().currentTime) || 0, directorTimelineFps());
+  const track = directorTrackForSelectionType();
+  const newId = model.split(track, state.directorSelectedId, cutFrame);
+  if (!newId) return false;
+  applyDirectorTimelineModelToState(model);
+  state.directorSelectedId = newId;
+  renderDirectorEditor();
+  $("runHint").textContent = "Selected timeline clip split at playhead";
+  return true;
+}
+
+function selectedDirectorSegmentCanSplit() {
+  const collection = directorSelectedCollection();
+  const segment = collection.find((item) => item.id === state.directorSelectedId);
+  if (!segment) return false;
+  if (["audio", "video_audio", "ic_video"].includes(state.directorSelectionType)) return true;
+  return Boolean(segment.videoPath);
+}
+
+function syncDirectorCutButtonState() {
+  const button = $("directorCutAtPlayheadBtn");
+  if (!button) return;
+  const canSplit = selectedDirectorSegmentCanSplit();
+  button.disabled = !canSplit;
+  button.setAttribute("aria-disabled", String(!canSplit));
+  button.title = canSplit ? "Split selected clip at playhead" : "Image timeline items cannot be split";
+}
+
+function addDirectorIcVideoSegment(values = {}) {
+  const previous = normalizedDirectorIcVideoSegments();
+  const last = previous[previous.length - 1];
+  const duration = Math.max(0.5, Number(values.duration) || 2);
+  const start = values.start ?? (last ? last.start + last.duration : 0);
+  state.directorIcVideoSegments.push({
+    id: values.id || `ic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    start: Math.max(0, Number(start) || 0),
+    duration,
+    trimStart: Math.max(0, Number(values.trimStart) || 0),
+    videoPath: values.videoPath || "",
+    videoName: values.videoName || "",
+    videoPreviewUrl: values.videoPreviewUrl || "",
+  });
+  renderDirectorEditor();
+}
+
 function createDirectorBlock(segment, index, total) {
   const block = document.createElement("div");
   block.className = "director-block ref-none";
   block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-  block.classList.toggle("has-image-guide", Boolean(segment.imagePath));
+  block.classList.toggle("has-image-guide", Boolean(segment.imagePath || segment.videoPath));
+  block.classList.toggle("has-video-guide", Boolean(segment.videoPath));
   block.dataset.id = segment.id;
   block.setAttribute("role", "group");
   block.setAttribute("aria-label", `Segment S${index + 1}`);
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
-  const preview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
+  const imagePreview = segment.imagePreviewUrl || (segment.imagePath ? mediaUrl(segment.imagePath) : "");
+  const videoPreview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
+  const videoPoster = segment.videoPosterUrl || "";
+  const mediaLabel = segment.videoPath ? "timeline video" : (segment.imagePath ? "timeline image" : "text only");
   block.innerHTML = `
-    ${preview ? `<img class="director-block-image" src="${escapeHtml(preview)}" alt="timeline image guide">` : ""}
+    ${videoPoster ? `<img class="director-block-image" src="${escapeHtml(videoPoster)}" alt="timeline video first frame">` : (videoPreview ? directorVideoPosterCanvasHtml(videoPreview, segment.trimStart || 0, "timeline video first frame") : (imagePreview ? `<img class="director-block-image" src="${escapeHtml(imagePreview)}" alt="timeline image guide">` : ""))}
+    <button class="director-block-edit" type="button" aria-label="Edit segment S${index + 1}" title="Edit segment">Edit</button>
     <button class="director-block-remove" type="button" aria-label="Remove segment S${index + 1}">x</button>
     <span class="director-block-index">S${index + 1}</span>
     <span class="director-block-prompt">${escapeHtml(segment.prompt || "empty prompt")}</span>
-    <span class="director-block-ref">${segment.imagePath ? "timeline image" : "text only"}</span>
+    <span class="director-block-ref">${mediaLabel}</span>
     <i class="resize-handle left" data-edge="left"></i>
     <i class="resize-handle right" data-edge="right"></i>
   `;
-  block.addEventListener("click", () => selectDirectorSegment(segment.id));
+  block.addEventListener("click", () => selectDirectorTimelineItem("image", segment.id));
+  const editButton = block.querySelector(".director-block-edit");
+  editButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("image", segment.id);
+  });
+  editButton.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
   const removeButton = block.querySelector(".director-block-remove");
   removeButton.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1465,6 +1873,8 @@ function directorAudioDuration(segment) {
 }
 
 function fixedDirectorAudioDuration(segment) {
+  const segmentDuration = Number(segment.duration);
+  if (Number.isFinite(segmentDuration) && segmentDuration > 0) return Math.max(0.5, segmentDuration);
   const audioDuration = directorAudioDuration(segment);
   const rounded = roundUpHalf(audioDuration);
   return rounded || Math.max(0.5, Number(segment.duration) || 0.5);
@@ -1527,8 +1937,263 @@ function addDirectorAudioClip(audio = {}, start = 0) {
   renderDirectorEditor();
 }
 
+function addDirectorVideoAudioClip(audio = {}, start = 0) {
+  const duration = Number(audio.duration) || 0;
+  const roundedDuration = roundUpHalf(duration);
+  const startTime = Math.max(0, Number(start) || 0);
+  const existing = state.directorVideoAudioSegments.find((item) => !item.sourceSegmentId && Math.abs((Number(item.start) || 0) - startTime) < 0.01);
+  const segment = existing || {
+    id: `video_audio_manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    start: startTime,
+    duration: roundedDuration || 1,
+    trimStart: 0,
+  };
+  segment.audioPath = audio.path || "";
+  segment.audioName = audio.name || "";
+  segment.audioDuration = duration > 0 ? duration : 0;
+  segment.duration = roundedDuration || Math.max(0.5, Number(segment.duration) || 0.5);
+  if (!existing) state.directorVideoAudioSegments.push(segment);
+  state.directorSelectedId = segment.id;
+  state.directorSelectionType = "video_audio";
+  renderDirectorEditor();
+}
+
+const directorWaveformCache = new Map();
+const directorVideoPosterCache = new Map();
+
+function directorVideoPosterCanvasHtml(videoSrc, trimStart = 0, label = "video first frame") {
+  return `<canvas class="director-block-image director-video-poster-canvas" data-video-src="${escapeHtml(videoSrc || "")}" data-trim-start="${escapeHtml(trimStart || 0)}" data-video-poster-status="pending" aria-label="${escapeHtml(label)}"></canvas>`;
+}
+
+function directorWaveformHtml(audioSrc, trimStart = 0, duration = 0, audioDuration = 0) {
+  return `
+    <div class="director-waveform" aria-hidden="true">
+      <canvas class="director-waveform-canvas" data-audio-src="${escapeHtml(audioSrc || "")}" data-trim-start="${escapeHtml(trimStart || 0)}" data-duration="${escapeHtml(duration || 0)}" data-audio-duration="${escapeHtml(audioDuration || 0)}"></canvas>
+    </div>
+  `;
+}
+
+function drawDirectorWaveform(canvas, peaks = []) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || 180));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || 64));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const center = height / 2;
+  ctx.strokeStyle = "rgba(240,235,225,.14)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, center);
+  ctx.lineTo(width, center);
+  ctx.stroke();
+  const usable = peaks.length ? peaks : Array.from({ length: 96 }, (_, index) => {
+    const amp = 0.18 + Math.abs(Math.sin(index * 0.31)) * 0.22;
+    return [-amp, amp];
+  });
+  ctx.fillStyle = "rgba(143,199,192,.32)";
+  ctx.strokeStyle = "rgba(215,180,106,.78)";
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  usable.forEach(([min, max], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + min * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  [...usable].reverse().forEach(([min, max], reverseIndex) => {
+    const index = usable.length - 1 - reverseIndex;
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + max * center * 0.9;
+    ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  usable.forEach(([min], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + min * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.beginPath();
+  usable.forEach(([, max], index) => {
+    const x = (index / Math.max(1, usable.length - 1)) * width;
+    const y = center + max * center * 0.9;
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function waveformPeaksFromAudioBuffer(buffer, count = 128) {
+  const data = buffer.getChannelData(0);
+  const bucketSize = Math.max(1, Math.floor(data.length / count));
+  return Array.from({ length: count }, (_, index) => {
+    const start = index * bucketSize;
+    const end = Math.min(data.length, start + bucketSize);
+    let min = 0;
+    let max = 0;
+    for (let i = start; i < end; i += 1) {
+      const value = data[i] || 0;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    return [Math.max(-1, min), Math.min(1, max)];
+  });
+}
+
+function trimDirectorWaveformPeaks(peaks = [], trimStart = 0, duration = 0, audioDuration = 0) {
+  if (!peaks.length || !audioDuration || !duration) return peaks;
+  const startRatio = Math.max(0, Math.min(1, trimStart / audioDuration));
+  const endRatio = Math.max(startRatio, Math.min(1, (trimStart + duration) / audioDuration));
+  const startIndex = Math.floor(startRatio * peaks.length);
+  const endIndex = Math.max(startIndex + 2, Math.ceil(endRatio * peaks.length));
+  return peaks.slice(startIndex, Math.min(peaks.length, endIndex));
+}
+
+async function hydrateDirectorWaveforms() {
+  const canvases = Array.from(document.querySelectorAll(".director-waveform-canvas:not([data-hydrated])"));
+  if (!canvases.length) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  for (const canvas of canvases) {
+    canvas.dataset.hydrated = "pending";
+    const src = canvas.dataset.audioSrc || "";
+    if (!src || !AudioContextClass) {
+      drawDirectorWaveform(canvas);
+      canvas.dataset.hydrated = "fallback";
+      continue;
+    }
+    try {
+      if (!directorWaveformCache.has(src)) {
+        const response = await fetch(src);
+        const bytes = await response.arrayBuffer();
+        const ctx = new AudioContextClass();
+        const buffer = await ctx.decodeAudioData(bytes.slice(0));
+        try { await ctx.close(); } catch (e) {}
+        directorWaveformCache.set(src, waveformPeaksFromAudioBuffer(buffer));
+      }
+      const trimStart = Math.max(0, Number(canvas.dataset.trimStart) || 0);
+      const duration = Math.max(0, Number(canvas.dataset.duration) || 0);
+      const audioDuration = Math.max(0, Number(canvas.dataset.audioDuration) || 0);
+      drawDirectorWaveform(canvas, trimDirectorWaveformPeaks(directorWaveformCache.get(src), trimStart, duration, audioDuration));
+      canvas.dataset.hydrated = "true";
+    } catch (e) {
+      drawDirectorWaveform(canvas);
+      canvas.dataset.hydrated = "fallback";
+    }
+  }
+}
+
+function drawDirectorVideoPosterFallback(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || 240));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || 120));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#1a1a16");
+  gradient.addColorStop(1, "#090907");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(215,180,106,.24)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x < width; x += Math.max(18, width / 8)) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + width * 0.15, height);
+    ctx.stroke();
+  }
+}
+
+function captureDirectorVideoPoster(canvas, video, cacheKey) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || video.videoWidth || 240));
+  const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || video.videoHeight || 120));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(video, 0, 0, width, height);
+  try {
+    directorVideoPosterCache.set(cacheKey, canvas.toDataURL("image/jpeg", 0.82));
+  } catch (e) {}
+  canvas.dataset.videoPosterStatus = "ready";
+}
+
+function hydrateDirectorVideoPosters() {
+  const canvases = Array.from(document.querySelectorAll(".director-video-poster-canvas[data-video-poster-status='pending']"));
+  for (const canvas of canvases) {
+    const src = canvas.dataset.videoSrc || "";
+    const trimStart = Math.max(0, Number(canvas.dataset.trimStart) || 0);
+    const cacheKey = `${src}#${trimStart.toFixed(3)}`;
+    if (!src) {
+      drawDirectorVideoPosterFallback(canvas);
+      canvas.dataset.videoPosterStatus = "fallback";
+      continue;
+    }
+    const cached = directorVideoPosterCache.get(cacheKey);
+    if (cached) {
+      const image = new Image();
+      image.onload = () => {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(rect.width || canvas.parentElement?.clientWidth || image.width));
+        const height = Math.max(1, Math.round(rect.height || canvas.parentElement?.clientHeight || image.height));
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.drawImage(image, 0, 0, width, height);
+        canvas.dataset.videoPosterStatus = "ready";
+      };
+      image.src = cached;
+      continue;
+    }
+    canvas.dataset.videoPosterStatus = "loading";
+    drawDirectorVideoPosterFallback(canvas);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    const fail = () => {
+      drawDirectorVideoPosterFallback(canvas);
+      canvas.dataset.videoPosterStatus = "fallback";
+    };
+    video.addEventListener("loadeddata", () => {
+      const targetTime = Math.min(Math.max(0.001, trimStart), Math.max(0.001, (video.duration || trimStart + 0.001) - 0.001));
+      const draw = () => captureDirectorVideoPoster(canvas, video, cacheKey);
+      if (Math.abs((video.currentTime || 0) - targetTime) < 0.02) {
+        draw();
+      } else {
+        video.addEventListener("seeked", draw, { once: true });
+        try { video.currentTime = targetTime; } catch (e) { draw(); }
+      }
+    }, { once: true });
+    video.addEventListener("error", fail, { once: true });
+    video.src = src;
+    try { video.load(); } catch (e) { fail(); }
+  }
+}
+
 function defaultDirectorAudioStart() {
   const end = normalizedDirectorAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
+  return roundHalf(end);
+}
+
+function defaultDirectorVideoAudioStart() {
+  syncDirectorVideoAudioSegments();
+  const end = normalizedDirectorVideoAudioSegments().reduce((max, segment) => Math.max(max, segment.start + segment.duration), 0);
   return roundHalf(end);
 }
 
@@ -1544,12 +2209,15 @@ function populateDirectorAudioModalLibrary() {
   });
 }
 
-function openDirectorAudioModal() {
+function openDirectorAudioModal(target = "dialogue") {
+  state.directorAudioModalTarget = target;
   populateDirectorAudioModalLibrary();
-  $("directorAudioModalStart").value = defaultDirectorAudioStart();
+  const isVideoAudio = target === "video_audio";
+  $("directorAudioModalTitle").textContent = isVideoAudio ? "Add video audio clip" : "Add audio clip";
+  $("directorAudioModalStart").value = isVideoAudio ? defaultDirectorVideoAudioStart() : defaultDirectorAudioStart();
   $("directorAudioModalInput").value = "";
   $("directorAudioModalUploadStatus").textContent = "No upload selected";
-  $("directorAudioModalStatus").textContent = "Choose a library clip or upload audio.";
+  $("directorAudioModalStatus").textContent = isVideoAudio ? "Choose a library clip or upload video audio." : "Choose a library clip or upload audio.";
   $("directorAudioModal").classList.add("open");
   $("directorAudioModal").setAttribute("aria-hidden", "false");
 }
@@ -1559,11 +2227,28 @@ function closeDirectorAudioModal() {
   $("directorAudioModal").setAttribute("aria-hidden", "true");
 }
 
+function openDirectorSegmentModal(selectionType = "image", id = "") {
+  if (id) state.directorSelectedId = id;
+  state.directorSelectionType = selectionType;
+  renderDirectorEditor();
+  const modal = $("directorSegmentModal");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeDirectorSegmentModal() {
+  const modal = $("directorSegmentModal");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
 async function addDirectorAudioFromModal() {
   const status = $("directorAudioModalStatus");
   const start = Number($("directorAudioModalStart").value) || 0;
   const file = $("directorAudioModalInput").files[0];
   const selectedFile = $("directorAudioLibrarySelect").value;
+  const isVideoAudio = state.directorAudioModalTarget === "video_audio";
+  const addClip = isVideoAudio ? addDirectorVideoAudioClip : addDirectorAudioClip;
   try {
     if (file) {
       status.textContent = "Uploading audio...";
@@ -1573,21 +2258,21 @@ async function addDirectorAudioFromModal() {
         method: "POST",
         body: JSON.stringify({ name: file.name, data }),
       });
-      addDirectorAudioClip({ path: uploaded.path, name: uploaded.name, duration }, start);
+      addClip({ path: uploaded.path, name: uploaded.name, duration }, start);
       closeDirectorAudioModal();
-      $("runHint").textContent = "Audio clip added to timeline";
+      $("runHint").textContent = isVideoAudio ? "Video audio clip added to timeline" : "Audio clip added to timeline";
       return;
     }
     if (selectedFile) {
       const clip = findCastingClipByFile(selectedFile);
       const option = $("directorAudioLibrarySelect").options[$("directorAudioLibrarySelect").selectedIndex];
-      addDirectorAudioClip({
+      addClip({
         path: selectedFile,
         name: option ? option.textContent : fileNameFromPath(selectedFile),
         duration: clip?.duration || 0,
       }, start);
       closeDirectorAudioModal();
-      $("runHint").textContent = "Audio clip added to timeline";
+      $("runHint").textContent = isVideoAudio ? "Video audio clip added to timeline" : "Audio clip added to timeline";
       return;
     }
     status.textContent = "Choose a library clip or upload audio.";
@@ -1608,21 +2293,16 @@ function createDirectorAudioBlock(segment, index, total) {
   block.setAttribute("aria-label", `Audio for segment S${index + 1}`);
   block.style.left = `${(segment.start / total) * 100}%`;
   block.style.width = `${(segment.duration / total) * 100}%`;
-  const label = hasAudio ? directorAudioLabel(segment) : "Add audio";
-  const timing = hasAudio ? directorAudioTimingLabel(segment) : "";
+  const waveformSrc = hasAudio ? directorAudioUrl(segment) : "";
+  const clipDuration = fixedDirectorAudioDuration(segment);
+  const sourceDuration = directorAudioDuration(segment);
   block.innerHTML = `
-    <span>S${index + 1}</span>
-    <div class="director-audio-copy">
-      <strong>${escapeHtml(label)}</strong>
-      ${timing ? `<em>${escapeHtml(timing)}</em>` : ""}
-    </div>
-    ${hasAudio ? `<span class="director-audio-actions"></span>` : ""}
-    ${hasAudio ? `<button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete audio clip S${index + 1}">${ACTION_ICONS.delete}</button>` : ""}
+    ${hasAudio ? directorWaveformHtml(waveformSrc, segment.trimStart || 0, clipDuration, sourceDuration) : ""}
+    ${hasAudio ? `<button class="director-block-edit" type="button" aria-label="Edit audio clip S${index + 1}" title="Edit audio clip">Edit</button>` : ""}
+    ${hasAudio ? `<button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete audio clip S${index + 1}">x</button>` : ""}
   `;
   const select = () => {
-    state.directorSelectedId = segment.id;
-    state.directorSelectionType = "audio";
-    renderDirectorEditor();
+    selectDirectorTimelineItem("audio", segment.id);
   };
   block.addEventListener("click", select);
   block.addEventListener("keydown", (event) => {
@@ -1641,30 +2321,12 @@ function createDirectorAudioBlock(segment, index, total) {
       removeDirectorAudioSegment(segment.id);
     });
   }
-  const actions = block.querySelector(".director-audio-actions");
-  if (actions) {
-    const previewButton = makeCastingPreviewButton(directorAudioUrl(segment), `Preview audio ${index + 1}`);
-    previewButton.classList.add("director-audio-preview");
-    previewButton.addEventListener("mousedown", (event) => {
+  const editButton = block.querySelector(".director-block-edit");
+  if (editButton) {
+    editButton.addEventListener("mousedown", (event) => event.stopPropagation());
+    editButton.addEventListener("click", (event) => {
       event.stopPropagation();
-    });
-    previewButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    actions.appendChild(previewButton);
-  }
-  const copy = block.querySelector(".director-audio-copy");
-  if (copy) {
-    copy.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-      startDirectorDrag(event, segment.id, "audio");
-    });
-  }
-  const labelIndex = block.querySelector("span");
-  if (labelIndex) {
-    labelIndex.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-      startDirectorDrag(event, segment.id, "audio");
+      openDirectorSegmentModal("audio", segment.id);
     });
   }
   block.addEventListener("mousemove", () => {
@@ -1677,15 +2339,339 @@ function createDirectorAudioBlock(segment, index, total) {
   return block;
 }
 
+function createDirectorVideoAudioBlock(segment, index, total) {
+  const block = document.createElement("div");
+  block.className = "director-video-audio-block has-audio";
+  block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "video_audio");
+  block.dataset.id = segment.id;
+  block.setAttribute("role", "button");
+  block.setAttribute("tabindex", "0");
+  block.setAttribute("aria-label", `Video audio ${index + 1}`);
+  block.style.left = `${(segment.start / total) * 100}%`;
+  block.style.width = `${(segment.duration / total) * 100}%`;
+  const waveformSrc = segment.audioPath ? mediaUrl(segment.audioPath) : "";
+  block.innerHTML = `
+    ${directorWaveformHtml(waveformSrc, segment.trimStart || 0, segment.duration || 0, segment.audioDuration || 0)}
+    <button class="director-block-edit" type="button" aria-label="Edit video audio ${index + 1}" title="Edit video audio">Edit</button>
+    <button class="director-audio-clear compact-icon-button" type="button" title="Delete audio clip" aria-label="Delete video audio ${index + 1}">x</button>
+  `;
+  const select = () => {
+    selectDirectorTimelineItem("video_audio", segment.id);
+  };
+  const clearButton = block.querySelector(".director-audio-clear");
+  if (clearButton) {
+    clearButton.addEventListener("mousedown", (event) => event.stopPropagation());
+    clearButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeDirectorVideoAudioSegment(segment.id);
+    });
+  }
+  const editButton = block.querySelector(".director-block-edit");
+  editButton.addEventListener("mousedown", (event) => event.stopPropagation());
+  editButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("video_audio", segment.id);
+  });
+  block.addEventListener("click", select);
+  block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id, "video_audio"));
+  block.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      select();
+    }
+  });
+  return block;
+}
+
+function createDirectorIcVideoBlock(segment, index, total) {
+  const block = document.createElement("div");
+  block.className = "director-ic-video-block";
+  block.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "ic_video");
+  block.dataset.id = segment.id;
+  block.style.left = `${(segment.start / total) * 100}%`;
+  block.style.width = `${(segment.duration / total) * 100}%`;
+  const poster = segment.videoPosterUrl || "";
+  const preview = segment.videoPreviewUrl || (segment.videoPath ? mediaUrl(segment.videoPath) : "");
+  block.innerHTML = `
+    ${poster ? `<img class="director-block-image" src="${escapeHtml(poster)}" alt="IC video first frame">` : (preview ? directorVideoPosterCanvasHtml(preview, segment.trimStart || 0, "IC video first frame") : "")}
+    <button class="director-block-edit" type="button" aria-label="Edit IC video ${index + 1}" title="Edit IC video">Edit</button>
+    <button class="director-block-remove" type="button" aria-label="Remove IC video ${index + 1}">x</button>
+    <span class="director-block-index">IC${index + 1}</span>
+    <span class="director-block-prompt">${escapeHtml(segment.videoName || fileNameFromPath(segment.videoPath) || "IC video")}</span>
+    <span class="director-block-ref">motionSegments</span>
+  `;
+  block.querySelector(".director-block-edit").addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDirectorSegmentModal("ic_video", segment.id);
+  });
+  block.querySelector(".director-block-edit").addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  block.querySelector(".director-block-remove").addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeDirectorIcVideoSegment(segment.id);
+  });
+  block.querySelector(".director-block-remove").addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+  block.addEventListener("click", () => {
+    selectDirectorTimelineItem("ic_video", segment.id);
+  });
+  block.addEventListener("mousedown", (event) => startDirectorDrag(event, segment.id, "ic_video"));
+  return block;
+}
+
+function directorPreviewClips() {
+  if (state.directorMode === "retake") {
+    const video = normalizedDirectorRetakeVideo();
+    if (!video) return [];
+    return [{
+      start: 0,
+      duration: video.duration,
+      kind: "video",
+      src: video.videoPreviewUrl || mediaUrl(video.videoPath),
+      prompt: state.directorRetakePrompt || "",
+      trimStart: 0,
+    }];
+  }
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => item.track === "main")
+      .map((item) => {
+        let kind = "text";
+        let src = "";
+        if (item.kind === "video") { kind = "video"; src = item.previewUrl || mediaUrl(item.mediaPath); }
+        else if (item.kind === "image") { kind = "image"; src = item.previewUrl || mediaUrl(item.mediaPath); }
+        return {
+          start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+          duration: DirectorTimelineModel.toSeconds(item.length, model.fps),
+          kind,
+          src,
+          prompt: item.prompt || "",
+          trimStart: item.kind === "video" ? DirectorTimelineModel.toSeconds(item.trimStart, model.fps) : 0,
+        };
+      });
+  }
+  return normalizedDirectorSegments().map((segment) => {
+    let kind = "text";
+    let src = "";
+    if (segment.videoPath) { kind = "video"; src = segment.videoPreviewUrl || mediaUrl(segment.videoPath); }
+    else if (segment.imagePath) { kind = "image"; src = segment.imagePreviewUrl || mediaUrl(segment.imagePath); }
+    return {
+      start: segment.start,
+      duration: segment.duration,
+      kind,
+      src,
+      prompt: segment.prompt || "",
+      trimStart: segment.videoPath ? Math.max(0, Number(segment.trimStart) || 0) : 0,
+    };
+  });
+}
+
+function directorPreviewAudioClips() {
+  if (state.directorMode === "retake") {
+    const video = normalizedDirectorRetakeVideo();
+    if (!video?.videoPath) return [];
+    return [{
+      start: 0,
+      duration: video.duration,
+      trimStart: 0,
+      src: video.videoPreviewUrl || mediaUrl(video.videoPath),
+      volume: 1,
+    }];
+  }
+  const model = createDirectorTimelineModelFromState();
+  if (model) {
+    return model.items
+      .filter((item) => (item.track === "video_audio" || item.track === "dialogue") && item.mediaPath)
+      .map((item) => ({
+        start: DirectorTimelineModel.toSeconds(item.start, model.fps),
+        duration: DirectorTimelineModel.toSeconds(item.length, model.fps),
+        trimStart: DirectorTimelineModel.toSeconds(item.trimStart, model.fps),
+        src: mediaUrl(item.mediaPath),
+        volume: Math.max(0, Number(item.volume ?? 1)),
+      }));
+  }
+  const lanes = [...normalizedDirectorVideoAudioSegments(), ...normalizedDirectorAudioSegments()];
+  return lanes
+    .filter((segment) => segment.audioPath)
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start) || 0),
+      duration: Math.max(0.5, Number(segment.duration) || 0.5),
+      trimStart: Math.max(0, Number(segment.trimStart) || 0),
+      src: mediaUrl(segment.audioPath),
+      volume: Math.max(0, Number(segment.volume ?? 1)),
+    }));
+}
+
+function syncDirectorPreview() {
+  if (!window.DirectorPreview) return;
+  DirectorPreview.mount({
+    playerEl: $("directorPreview"),
+    videoEl: $("directorPreviewVideo"),
+    imageEl: $("directorPreviewImage"),
+    overlayEl: $("directorPreviewOverlay"),
+    playButtonEl: $("directorPreviewPlay"),
+    timeReadoutEl: $("directorPreviewTime"),
+    playheadEl: $("directorPlayhead"),
+    playheadFrameEl: $("directorPlayheadFrame"),
+    timelineEl: document.querySelector(".director-timeline-shell"),
+  });
+  const size = currentSize();
+  DirectorPreview.setTimeline({
+    clips: directorPreviewClips(),
+    audioClips: directorPreviewAudioClips(),
+    duration: state.directorMode === "retake" ? directorRetakeTotalSeconds() : directorOutputDurationSeconds(),
+    displayDuration: state.directorMode === "retake" ? directorRetakeTotalSeconds() : directorTotalSeconds(),
+    width: size.width,
+    height: size.height,
+    fps: directorTimelineFps(),
+  });
+}
+
+function updateDirectorModeUi() {
+  const isRetake = state.directorMode === "retake";
+  $("directorModeGenerateBtn")?.classList.toggle("active", !isRetake);
+  $("directorModeRetakeBtn")?.classList.toggle("active", isRetake);
+  $("directorModeGenerateBtn")?.setAttribute("aria-selected", String(!isRetake));
+  $("directorModeRetakeBtn")?.setAttribute("aria-selected", String(isRetake));
+  document.querySelectorAll(".director-lane").forEach((lane) => {
+    const laneName = lane.dataset.lane;
+    const shouldHide = isRetake ? laneName !== "retake" : laneName === "retake";
+    lane.hidden = shouldHide;
+    lane.style.display = shouldHide ? "none" : "";
+  });
+  if ($("directorRetakePanel")) $("directorRetakePanel").hidden = !isRetake;
+  if ($("directorCutAtPlayheadBtn")) $("directorCutAtPlayheadBtn").style.display = isRetake ? "none" : "";
+  updateRunButtonLabel();
+}
+
+function renderDirectorRetakePanel() {
+  const prompt = $("directorRetakePrompt");
+  const strength = $("directorRetakeStrength");
+  if (prompt && document.activeElement !== prompt) prompt.value = state.directorRetakePrompt || "";
+  if (strength && document.activeElement !== strength) strength.value = state.directorRetakeStrength ?? 1;
+  if ($("directorRetakeAutoStitch")) $("directorRetakeAutoStitch").checked = Boolean(state.directorRetakeAutoStitch);
+  renderDirectorRetakeSelectionPreview();
+  renderDirectorRetakeEditModes();
+  const video = normalizedDirectorRetakeVideo();
+  const status = $("directorRetakeStatus");
+  if (status) {
+    const range = normalizedDirectorRetakeRange();
+    const start = range.start;
+    const end = start + range.length;
+    status.textContent = video
+      ? `${video.videoName || fileNameFromPath(video.videoPath)} | Retake ${formatSeconds(start)} - ${formatSeconds(end)}`
+      : "Upload a base video, then use { and } at the playhead to set the retake range.";
+  }
+}
+
+function renderDirectorRetakeSelectionPreview() {
+  const preview = $("directorRetakeSelectionPreview");
+  const label = $("directorRetakeSelectionLabel");
+  if (!preview || !label) return;
+  const video = normalizedDirectorRetakeVideo();
+  if (!video?.videoPath) {
+    preview.removeAttribute("src");
+    label.textContent = "No retake selection preview";
+    return;
+  }
+  const range = normalizedDirectorRetakeRange();
+  const end = Math.min(directorRetakeTotalSeconds(), range.start + range.length);
+  const src = video.videoPreviewUrl || mediaUrl(video.videoPath);
+  if (preview.getAttribute("src") !== src) preview.setAttribute("src", src);
+  preview.muted = true;
+  label.textContent = `${video.videoName || fileNameFromPath(video.videoPath)} | ${formatSeconds(range.start)} - ${formatSeconds(end)}`;
+  try {
+    if (Math.abs(preview.currentTime - range.start) > 0.1) preview.currentTime = range.start;
+  } catch (e) {}
+}
+
+function renderDirectorRetakeEditModes() {
+  const wrap = $("directorRetakeEditModes");
+  if (!wrap) return;
+  const targets = directorRetakeEditTargets();
+  const video = normalizedDirectorRetakeVideo();
+  wrap.innerHTML = "";
+  if (!targets.length) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  targets.forEach((target) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "director-retake-edit-mode";
+    button.textContent = target.label;
+    button.disabled = !video;
+    button.title = video
+      ? `Trim the retake selection and open ${target.label}`
+      : "Add a retake video first";
+    button.addEventListener("click", () => sendDirectorRetakeSelectionToEdit(target));
+    wrap.appendChild(button);
+  });
+}
+
+function renderDirectorRetakeTrack(track, total) {
+  track.onmousedown = startDirectorRetakeTrackMouseDown;
+  const video = normalizedDirectorRetakeVideo();
+  if (!video) {
+    track.innerHTML = "<span>Drop one generated video here for retake</span>";
+    return;
+  }
+  const block = document.createElement("div");
+  block.className = "director-retake-block";
+  block.style.left = "0%";
+  block.style.width = "100%";
+  const poster = video.videoPosterUrl || "";
+  const preview = video.videoPreviewUrl || (video.videoPath ? mediaUrl(video.videoPath) : "");
+  block.innerHTML = `
+    ${poster ? `<img class="director-block-image" src="${escapeHtml(poster)}" alt="retake video first frame">` : (preview ? directorVideoPosterCanvasHtml(preview, 0, "retake video first frame") : "")}
+    <button class="director-retake-remove" type="button" aria-label="Remove Retake video">x</button>
+    <span class="director-block-index">BASE</span>
+    <span class="director-block-prompt">${escapeHtml(video.videoName || fileNameFromPath(video.videoPath) || "Retake video")}</span>
+    <span class="director-block-ref">retakeVideo</span>
+  `;
+  block.querySelector(".director-retake-remove").addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeDirectorRetakeVideo();
+  });
+  track.appendChild(block);
+  const range = normalizedDirectorRetakeRange();
+  const start = Math.max(0, Math.min(total, range.start));
+  const length = Math.max(0.1, range.length);
+  const end = Math.max(start + 0.1, Math.min(total, start + length));
+  const selection = document.createElement("div");
+  selection.className = "director-retake-selection";
+  selection.style.left = `${(start / total) * 100}%`;
+  selection.style.width = `${((end - start) / total) * 100}%`;
+  selection.innerHTML = `
+    <span class="director-retake-handle director-retake-handle-left" data-retake-handle="left" aria-hidden="true"></span>
+    <span class="director-retake-handle director-retake-handle-right" data-retake-handle="right" aria-hidden="true"></span>
+  `;
+  selection.addEventListener("pointerdown", startDirectorRetakeSelectionDrag);
+  selection.addEventListener("mousedown", startDirectorRetakeSelectionDrag);
+  track.appendChild(selection);
+}
+
 function renderDirectorEditor() {
   const track = $("directorTrack");
   const audioTrack = $("directorAudioTrack");
+  const videoAudioTrack = $("directorVideoAudioTrack");
+  const icVideoTrack = $("directorIcVideoTrack");
+  const retakeTrack = $("directorRetakeTrack");
   const ruler = $("directorRuler");
-  const list = $("directorSegments");
-  if (!track || !audioTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !retakeTrack || !ruler) return;
+  syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
-  const total = directorTotalSeconds();
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments();
+  const icVideoSegments = normalizedDirectorIcVideoSegments();
+  const isRetake = state.directorMode === "retake";
+  const total = isRetake ? directorRetakeTotalSeconds() : directorTotalSeconds();
+  updateDirectorTimelineScale(total);
+  updateDirectorModeUi();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
     const tick = document.createElement("span");
@@ -1696,49 +2682,60 @@ function renderDirectorEditor() {
 
   track.innerHTML = "";
   audioTrack.innerHTML = "";
+  videoAudioTrack.innerHTML = "";
+  icVideoTrack.innerHTML = "";
+  retakeTrack.innerHTML = "";
+  if (isRetake) {
+    renderDirectorRetakeTrack(retakeTrack, total);
+    renderDirectorRetakePanel();
+    renderDirectorInspector();
+    syncDirectorPreview();
+    hydrateDirectorVideoPosters();
+    return;
+  }
   for (const [index, segment] of segments.entries()) {
     track.appendChild(createDirectorBlock(segment, index, total));
+  }
+  if (videoAudioSegments.length) {
+    for (const [index, segment] of videoAudioSegments.entries()) {
+      videoAudioTrack.appendChild(createDirectorVideoAudioBlock(segment, index, total));
+    }
+  } else {
+    videoAudioTrack.innerHTML = "<span>Main video guide audio appears here automatically</span>";
   }
   for (const [index, segment] of audioSegments.entries()) {
     audioTrack.appendChild(createDirectorAudioBlock(segment, index, total));
   }
+  if (icVideoSegments.length) {
+    for (const [index, segment] of icVideoSegments.entries()) {
+      icVideoTrack.appendChild(createDirectorIcVideoBlock(segment, index, total));
+    }
+  } else {
+    icVideoTrack.innerHTML = "<span>IC reference clips land here in the IC-LoRA block</span>";
+  }
   track.ondragover = null;
   track.ondrop = null;
 
-  list.innerHTML = "";
-  segments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-    chip.textContent = `S${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
-  audioSegments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip director-audio-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "audio");
-    chip.textContent = `A${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "audio";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
   renderDirectorInspector();
+  syncDirectorPreview();
+  syncDirectorCutButtonState();
+  hydrateDirectorVideoPosters();
+  hydrateDirectorWaveforms();
 }
 
 function renderDirectorInspector() {
   const inspector = $("directorSegmentInspector");
   if (!inspector) return;
+  if (state.directorSelectionType === "video_audio") {
+    renderDirectorVideoAudioInspector(inspector);
+    return;
+  }
   if (state.directorSelectionType === "audio") {
     renderDirectorAudioInspector(inspector);
+    return;
+  }
+  if (state.directorSelectionType === "ic_video") {
+    renderDirectorIcVideoInspector(inspector);
     return;
   }
   const segment = state.directorSegments.find((item) => item.id === state.directorSelectedId) || state.directorSegments[0];
@@ -1757,12 +2754,12 @@ function renderDirectorInspector() {
       <textarea id="directorSegmentPrompt" rows="5"></textarea>
     </label>
     <label>
-      Timeline image guide
-      <span id="directorSegmentImageStatus" class="hint segment-image-status">No image guide on this segment</span>
+      Timeline media guide
+      <span id="directorSegmentImageStatus" class="hint segment-image-status">No media guide on this segment</span>
     </label>
     <label class="selected-segment-upload">
-      <span class="selected-segment-upload-label">Upload / replace image guide</span>
-      <input id="directorSegmentImageInput" type="file" accept="image/*">
+      <span class="selected-segment-upload-label">Upload / replace image or video guide</span>
+      <input id="directorSegmentImageInput" type="file" accept="image/*,video/*">
     </label>
     <div class="director-segment-grid">
       <label>
@@ -1777,18 +2774,13 @@ function renderDirectorInspector() {
         Strength
         <input id="directorSegmentStrength" type="number" min="0" max="1" step="0.05">
       </label>
-      <label>
-        Seed
-        <input id="directorSeedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
-      </label>
     </div>
   `;
   $("directorSegmentPrompt").value = segment.prompt || "";
   $("directorSegmentStart").value = segment.start;
   $("directorSegmentDuration").value = segment.duration;
-  $("directorSegmentStrength").value = segment.strength ?? 0.65;
-  $("directorSeedInput").value = $("seedInput").value;
-  $("directorSegmentImageStatus").textContent = segment.imageName || (segment.imagePath ? "Timeline image guide" : "No image guide on this segment");
+  $("directorSegmentStrength").value = segment.strength ?? 1;
+  $("directorSegmentImageStatus").textContent = segment.videoName || segment.imageName || (segment.videoPath ? "Timeline video guide" : (segment.imagePath ? "Timeline image guide" : "No media guide on this segment"));
   /*
   (state.castingLibrary || []).forEach((clip) => {
     const o = document.createElement("option");
@@ -1817,14 +2809,60 @@ function renderDirectorInspector() {
   $("directorSegmentStart").addEventListener("input", (event) => updateDirectorSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
   $("directorSegmentDuration").addEventListener("input", (event) => updateDirectorSegment(segment.id, { duration: Number(event.target.value) || 0.5 }, false));
   $("directorSegmentStrength").addEventListener("input", (event) => updateDirectorSegment(segment.id, { strength: Number(event.target.value) || 0 }, false));
-  $("directorSeedInput").addEventListener("input", (event) => {
-    $("seedInput").value = event.target.value;
-  });
-  $("directorSegmentImageInput").addEventListener("change", () => uploadDirectorSegmentImage(segment.id, $("directorSegmentImageInput").files[0]).catch((err) => {
+  $("directorSegmentImageInput").addEventListener("change", () => uploadDirectorSegmentGuide(segment.id, $("directorSegmentImageInput").files[0]).catch((err) => {
     $("directorSegmentImageStatus").textContent = err.message;
-    $("runHint").textContent = `Timeline image upload failed: ${err.message}`;
+    $("runHint").textContent = `Timeline media upload failed: ${err.message}`;
   }));
   $("removeDirectorSegmentBtn").addEventListener("click", () => removeDirectorSegment(segment.id));
+}
+
+function renderDirectorIcVideoInspector(inspector) {
+  const segment = state.directorIcVideoSegments.find((item) => item.id === state.directorSelectedId) || state.directorIcVideoSegments[0];
+  if (!segment) {
+    state.directorSelectionType = "image";
+    renderDirectorInspector();
+    return;
+  }
+  state.directorSelectedId = segment.id;
+  inspector.innerHTML = `
+    <div class="director-inspector-head">
+      <span>Selected IC video</span>
+      <button id="removeDirectorIcVideoBtn" type="button">Remove</button>
+    </div>
+    <div class="director-audio-readonly">
+      <b>${escapeHtml(segment.videoName || fileNameFromPath(segment.videoPath) || "IC video")}</b>
+      <span>${formatSeconds(segment.start)} - ${formatSeconds(segment.start + segment.duration)}</span>
+    </div>
+    <div class="director-segment-grid">
+      <label>
+        Start
+        <input id="directorIcVideoStart" type="number" min="0" step="0.5">
+      </label>
+      <label>
+        Duration
+        <input id="directorIcVideoDuration" type="number" min="0.5" step="0.5">
+      </label>
+      <label>
+        Trim start
+        <input id="directorIcVideoTrimStart" type="number" min="0" step="0.25">
+      </label>
+    </div>
+  `;
+  $("directorIcVideoStart").value = segment.start;
+  $("directorIcVideoDuration").value = segment.duration;
+  $("directorIcVideoTrimStart").value = segment.trimStart || 0;
+  $("directorIcVideoStart").addEventListener("input", (event) => {
+    segment.start = Math.max(0, Number(event.target.value) || 0);
+    renderDirectorTimelineOnly();
+  });
+  $("directorIcVideoDuration").addEventListener("input", (event) => {
+    segment.duration = Math.max(0.5, Number(event.target.value) || 0.5);
+    renderDirectorTimelineOnly();
+  });
+  $("directorIcVideoTrimStart").addEventListener("input", (event) => {
+    segment.trimStart = Math.max(0, Number(event.target.value) || 0);
+  });
+  $("removeDirectorIcVideoBtn").addEventListener("click", () => removeDirectorIcVideoSegment(segment.id));
 }
 
 function renderDirectorAudioInspector(inspector) {
@@ -1859,13 +2897,74 @@ function renderDirectorAudioInspector(inspector) {
         Trim start
         <input id="directorAudioTrimStart" type="number" min="0" max="60" step="0.5">
       </label>
+      <label class="director-audio-volume">
+        Volume <span id="directorAudioVolumeReadout">${Math.round((segment.volume ?? 1) * 100)}%</span>
+        <input id="directorAudioVolume" type="range" min="0" max="150" step="5">
+      </label>
     </div>
   `;
   $("directorAudioStart").value = segment.start;
   $("directorAudioTrimStart").value = segment.trimStart || 0;
+  $("directorAudioVolume").value = Math.round((segment.volume ?? 1) * 100);
   $("directorAudioStart").addEventListener("input", (event) => updateDirectorAudioSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
   $("directorAudioTrimStart").addEventListener("input", (event) => updateDirectorAudioSegment(segment.id, { trimStart: Number(event.target.value) || 0 }, false));
+  $("directorAudioVolume").addEventListener("input", (event) => {
+    const pct = Number(event.target.value) || 0;
+    $("directorAudioVolumeReadout").textContent = `${pct}%`;
+    updateDirectorAudioSegment(segment.id, { volume: pct / 100 }, false);
+  });
   $("removeDirectorAudioBtn").addEventListener("click", () => removeDirectorAudioSegment(segment.id));
+}
+
+function renderDirectorVideoAudioInspector(inspector) {
+  const segment = state.directorVideoAudioSegments.find((item) => item.id === state.directorSelectedId) || state.directorVideoAudioSegments[0];
+  if (!segment) {
+    state.directorSelectionType = "image";
+    renderDirectorInspector();
+    return;
+  }
+  state.directorSelectedId = segment.id;
+  inspector.innerHTML = `
+    <div class="director-inspector-head">
+      <span>Selected video audio</span>
+      <button id="removeDirectorVideoAudioBtn" type="button">Remove</button>
+    </div>
+    <div class="director-segment-audio-card">
+      <div class="director-segment-audio-head">
+        <span>${escapeHtml(segment.audioName || fileNameFromPath(segment.audioPath) || "Video audio")}</span>
+      </div>
+      <span class="hint segment-audio-status">Follows main video guide</span>
+    </div>
+    <div class="director-segment-grid">
+      <label>
+        Start
+        <input id="directorVideoAudioStart" type="number" min="0" max="120" step="0.5">
+      </label>
+      <div class="director-audio-readonly">
+        Duration
+        <b>${escapeHtml(formatDurationPrecise(segment.duration) || "0.5s")}</b>
+      </div>
+      <label>
+        Trim start
+        <input id="directorVideoAudioTrimStart" type="number" min="0" max="60" step="0.25">
+      </label>
+      <label class="director-audio-volume">
+        Volume <span id="directorVideoAudioVolumeReadout">${Math.round((segment.volume ?? 1) * 100)}%</span>
+        <input id="directorVideoAudioVolume" type="range" min="0" max="150" step="5">
+      </label>
+    </div>
+  `;
+  $("directorVideoAudioStart").value = segment.start;
+  $("directorVideoAudioTrimStart").value = segment.trimStart || 0;
+  $("directorVideoAudioVolume").value = Math.round((segment.volume ?? 1) * 100);
+  $("directorVideoAudioStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { start: Number(event.target.value) || 0 }, false));
+  $("directorVideoAudioTrimStart").addEventListener("input", (event) => updateDirectorVideoAudioSegment(segment.id, { trimStart: Number(event.target.value) || 0 }, false));
+  $("directorVideoAudioVolume").addEventListener("input", (event) => {
+    const pct = Number(event.target.value) || 0;
+    $("directorVideoAudioVolumeReadout").textContent = `${pct}%`;
+    updateDirectorVideoAudioSegment(segment.id, { volume: pct / 100 }, false);
+  });
+  $("removeDirectorVideoAudioBtn").addEventListener("click", () => removeDirectorVideoAudioSegment(segment.id));
 }
 
 function updateDirectorSegment(id, patch, rerenderInspector = true) {
@@ -1875,6 +2974,18 @@ function updateDirectorSegment(id, patch, rerenderInspector = true) {
   segment.start = Math.max(0, Number(segment.start) || 0);
   segment.duration = Math.max(0.5, Number(segment.duration) || 0.5);
   segment.strength = Math.max(0, Math.min(1, Number(segment.strength) || 0));
+  if (rerenderInspector) renderDirectorEditor();
+  else renderDirectorTimelineOnly();
+}
+
+function updateDirectorVideoAudioSegment(id, patch, rerenderInspector = true) {
+  const segment = state.directorVideoAudioSegments.find((item) => item.id === id);
+  if (!segment) return;
+  const { duration: _duration, audioPath: _audioPath, audioName: _audioName, ...safePatch } = patch;
+  Object.assign(segment, safePatch);
+  segment.start = Math.max(0, Number(segment.start) || 0);
+  segment.duration = Math.max(0.5, Number(segment.duration) || 0.5);
+  segment.trimStart = Math.max(0, Number(segment.trimStart) || 0);
   if (rerenderInspector) renderDirectorEditor();
   else renderDirectorTimelineOnly();
 }
@@ -1895,12 +3006,20 @@ function updateDirectorAudioSegment(id, patch, rerenderInspector = true) {
 function renderDirectorTimelineOnly() {
   const track = $("directorTrack");
   const audioTrack = $("directorAudioTrack");
+  const videoAudioTrack = $("directorVideoAudioTrack");
+  const icVideoTrack = $("directorIcVideoTrack");
+  const retakeTrack = $("directorRetakeTrack");
   const ruler = $("directorRuler");
-  const list = $("directorSegments");
-  if (!track || !audioTrack || !ruler || !list) return;
+  if (!track || !audioTrack || !videoAudioTrack || !icVideoTrack || !retakeTrack || !ruler) return;
+  syncDirectorVideoAudioSegments();
   const segments = normalizedDirectorSegments();
   const audioSegments = normalizedDirectorAudioSegments();
-  const total = directorTotalSeconds();
+  const videoAudioSegments = normalizedDirectorVideoAudioSegments();
+  const icVideoSegments = normalizedDirectorIcVideoSegments();
+  const isRetake = state.directorMode === "retake";
+  const total = isRetake ? directorRetakeTotalSeconds() : directorTotalSeconds();
+  updateDirectorTimelineScale(total);
+  updateDirectorModeUi();
   ruler.innerHTML = "";
   for (let sec = 0; sec <= total; sec += 1) {
     const tick = document.createElement("span");
@@ -1910,62 +3029,69 @@ function renderDirectorTimelineOnly() {
   }
   track.innerHTML = "";
   audioTrack.innerHTML = "";
+  videoAudioTrack.innerHTML = "";
+  icVideoTrack.innerHTML = "";
+  retakeTrack.innerHTML = "";
+  if (isRetake) {
+    renderDirectorRetakeTrack(retakeTrack, total);
+    renderDirectorRetakePanel();
+    syncDirectorCutButtonState();
+    hydrateDirectorVideoPosters();
+    return;
+  }
   for (const [index, segment] of segments.entries()) {
     track.appendChild(createDirectorBlock(segment, index, total));
+  }
+  if (videoAudioSegments.length) {
+    for (const [index, segment] of videoAudioSegments.entries()) {
+      videoAudioTrack.appendChild(createDirectorVideoAudioBlock(segment, index, total));
+    }
+  } else {
+    videoAudioTrack.innerHTML = "<span>Main video guide audio appears here automatically</span>";
   }
   for (const [index, segment] of audioSegments.entries()) {
     audioTrack.appendChild(createDirectorAudioBlock(segment, index, total));
   }
+  if (icVideoSegments.length) {
+    for (const [index, segment] of icVideoSegments.entries()) {
+      icVideoTrack.appendChild(createDirectorIcVideoBlock(segment, index, total));
+    }
+  } else {
+    icVideoTrack.innerHTML = "<span>IC reference clips land here in the IC-LoRA block</span>";
+  }
   track.ondragover = null;
   track.ondrop = null;
-  list.innerHTML = "";
-  segments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType !== "audio");
-    chip.textContent = `S${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "image";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
-  audioSegments.forEach((segment, index) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "director-segment-chip director-audio-chip";
-    chip.classList.toggle("selected", segment.id === state.directorSelectedId && state.directorSelectionType === "audio");
-    chip.textContent = `A${index + 1} ${formatSeconds(segment.start)}-${formatSeconds(segment.start + segment.duration)}`;
-    chip.addEventListener("click", () => {
-      state.directorSelectionType = "audio";
-      state.directorSelectedId = segment.id;
-      renderDirectorEditor();
-    });
-    list.appendChild(chip);
-  });
+  syncDirectorCutButtonState();
+  hydrateDirectorVideoPosters();
+  hydrateDirectorWaveforms();
 }
 
 function startDirectorDrag(event, id, type = "image") {
   if (event.button !== 0) return;
   const isAudio = type === "audio";
-  const segment = (isAudio ? state.directorAudioSegments : state.directorSegments).find((item) => item.id === id);
+  const isVideoAudio = type === "video_audio";
+  const isIcVideo = type === "ic_video";
+  const segments = isIcVideo
+    ? state.directorIcVideoSegments
+    : (isVideoAudio ? state.directorVideoAudioSegments : (isAudio ? state.directorAudioSegments : state.directorSegments));
+  const segment = segments.find((item) => item.id === id);
   if (!segment) return;
   event.preventDefault();
   state.directorSelectedId = id;
-  state.directorSelectionType = isAudio ? "audio" : "image";
-  const trackRect = $(isAudio ? "directorAudioTrack" : "directorTrack").getBoundingClientRect();
-  const edge = isAudio ? "" : directorEdgeFromEvent(event, event.currentTarget);
+  state.directorSelectionType = isIcVideo ? "ic_video" : (isVideoAudio ? "video_audio" : (isAudio ? "audio" : "image"));
+  const trackId = isIcVideo ? "directorIcVideoTrack" : (isVideoAudio ? "directorVideoAudioTrack" : (isAudio ? "directorAudioTrack" : "directorTrack"));
+  const trackRect = $(trackId).getBoundingClientRect();
+  const edge = (isAudio || isVideoAudio || isIcVideo) ? "" : directorEdgeFromEvent(event, event.currentTarget);
   state.directorDrag = {
     id,
-    type: isAudio ? "audio" : "image",
+    type: isIcVideo ? "ic_video" : (isVideoAudio ? "video_audio" : (isAudio ? "audio" : "image")),
     edge,
     rect: trackRect,
     total: directorTotalSeconds(),
     startX: event.clientX,
     originalStart: segment.start,
     originalDuration: segment.duration,
+    moved: false,
   };
   document.body.classList.add("director-dragging");
   document.body.style.cursor = edge ? "ew-resize" : "grabbing";
@@ -1988,23 +3114,22 @@ function updateDirectorBlockCursor(event, block) {
 function onDirectorDrag(event) {
   const drag = state.directorDrag;
   if (!drag) return;
-  const isAudio = drag.type === "audio";
-  const segments = isAudio ? state.directorAudioSegments : state.directorSegments;
-  const segment = segments.find((item) => item.id === drag.id);
-  if (!segment) return;
+  const model = createDirectorTimelineModelFromState();
+  if (!model) return;
   const deltaSeconds = ((event.clientX - drag.startX) / Math.max(1, drag.rect.width)) * drag.total;
-  if (!isAudio && drag.edge === "left") {
-    const nextStart = Math.max(0, drag.originalStart + deltaSeconds);
-    const end = drag.originalStart + drag.originalDuration;
-    segment.start = roundHalf(Math.min(nextStart, end - 0.5));
-    segment.duration = roundHalf(end - segment.start);
-  } else if (!isAudio && drag.edge === "right") {
-    segment.duration = roundHalf(Math.max(0.5, drag.originalDuration + deltaSeconds));
+  const deltaFrames = Math.round(deltaSeconds * directorTimelineFps());
+  if (Math.abs(event.clientX - drag.startX) > 3) drag.moved = true;
+  const track = drag.type === "audio" ? "dialogue" : drag.type === "video_audio" ? "video_audio" : drag.type === "ic_video" ? "ic_video" : "main";
+  const originalStartFrame = DirectorTimelineModel.toFrame(drag.originalStart, directorTimelineFps());
+  const originalDurationFrame = Math.max(1, DirectorTimelineModel.toFrame(drag.originalDuration, directorTimelineFps()));
+  if (drag.type === "image" && drag.edge === "left") {
+    model.resizeLeft(track, drag.id, originalStartFrame + deltaFrames);
+  } else if (drag.type === "image" && drag.edge === "right") {
+    model.resizeRight(track, drag.id, originalStartFrame + originalDurationFrame + deltaFrames);
   } else {
-    segment.start = roundHalf(Math.max(0, drag.originalStart + deltaSeconds));
+    model.move(track, drag.id, originalStartFrame + deltaFrames);
   }
-  if (isAudio) segment.duration = fixedDirectorAudioDuration(segment);
-  if (isAudio) keepDirectorAudioSegmentsSeparated(segment.id);
+  applyDirectorTimelineModelToState(model);
   renderDirectorTimelineOnly();
 }
 
@@ -2014,11 +3139,16 @@ function stopDirectorDrag() {
   document.body.classList.remove("director-dragging");
   document.body.style.cursor = "";
   window.removeEventListener("mousemove", onDirectorDrag);
-  if (drag) renderDirectorEditor();
+  if (!drag) return;
+  renderDirectorEditor();
 }
 
 function roundHalf(value) {
   return Math.round(value * 2) / 2;
+}
+
+function roundTenth(value) {
+  return Math.round(value * 10) / 10;
 }
 
 function roundUpHalf(value) {
@@ -2049,6 +3179,13 @@ function ensureReferenceSlot() {
     state.referenceNames = [""];
     state.referencePreviewUrls = [""];
   }
+  if (!Array.isArray(state.referenceMeta)) state.referenceMeta = [];
+  while (state.referenceMeta.length < state.referencePaths.length) {
+    state.referenceMeta.push({ type: "character", subject: state.referenceMeta.length ? "shared" : "person_a" });
+  }
+  if (state.referenceMeta.length > state.referencePaths.length) {
+    state.referenceMeta = state.referenceMeta.slice(0, state.referencePaths.length);
+  }
 }
 
 function addReferenceSlot() {
@@ -2056,6 +3193,7 @@ function addReferenceSlot() {
   state.referencePaths.push("");
   state.referenceNames.push("");
   state.referencePreviewUrls.push("");
+  state.referenceMeta.push({ type: "prop", subject: "shared" });
   renderReferenceSlots();
 }
 
@@ -2065,13 +3203,47 @@ function clearReferenceSlot(index) {
     state.referencePaths = [""];
     state.referenceNames = [""];
     state.referencePreviewUrls = [""];
+    state.referenceMeta = [{ type: "character", subject: "person_a" }];
   } else {
     state.referencePaths.splice(index, 1);
     state.referenceNames.splice(index, 1);
     state.referencePreviewUrls.splice(index, 1);
+    state.referenceMeta.splice(index, 1);
   }
+  clearIngredientsSheet();
   renderReferenceSlots();
   $("runHint").textContent = "Global reference removed";
+}
+
+const REFERENCE_TYPES = [
+  ["character", "Character"],
+  ["face", "Face / detail"],
+  ["outfit", "Outfit"],
+  ["prop", "Prop"],
+  ["environment", "Environment"],
+  ["style", "Style / mood"],
+];
+
+const REFERENCE_SUBJECTS = [
+  ["person_a", "Person A"],
+  ["person_b", "Person B"],
+  ["person_c", "Person C"],
+  ["shared", "Shared"],
+  ["none", "None"],
+];
+
+function referenceSelectOptions(options, value) {
+  return options
+    .map(([key, label]) => `<option value="${key}"${key === value ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function clearIngredientsSheet() {
+  state.ingredientsSheetPath = "";
+  state.ingredientsSheetName = "";
+  state.ingredientsSheetPreviewUrl = "";
+  const status = $("directorIngredientsSheetStatus");
+  if (status) status.textContent = "Builds automatically for Ingredients";
 }
 
 function renderReferenceSlots() {
@@ -2092,6 +3264,16 @@ function renderReferenceSlots() {
         </label>
         <span id="globalRefStatus_${index}" class="hint">${escapeHtml(state.referenceNames[index] || "No image uploaded")}</span>
       </div>
+      <div class="reference-meta-controls">
+        <label>
+          Type
+          <select id="globalRefType_${index}">${referenceSelectOptions(REFERENCE_TYPES, state.referenceMeta[index]?.type || "character")}</select>
+        </label>
+        <label>
+          Subject
+          <select id="globalRefSubject_${index}">${referenceSelectOptions(REFERENCE_SUBJECTS, state.referenceMeta[index]?.subject || "shared")}</select>
+        </label>
+      </div>
       <button id="globalRefRemove_${index}" class="reference-remove icon-button" type="button" title="Remove reference">x</button>
     `;
     wrap.appendChild(item);
@@ -2104,6 +3286,14 @@ function renderReferenceSlots() {
         renderReferenceSlots();
         $("runHint").textContent = `Global reference upload failed: ${err.message}`;
       });
+    });
+    $(`globalRefType_${index}`).addEventListener("change", (event) => {
+      state.referenceMeta[index] = { ...(state.referenceMeta[index] || {}), type: event.target.value };
+      clearIngredientsSheet();
+    });
+    $(`globalRefSubject_${index}`).addEventListener("change", (event) => {
+      state.referenceMeta[index] = { ...(state.referenceMeta[index] || {}), subject: event.target.value };
+      clearIngredientsSheet();
     });
     $(`globalRefRemove_${index}`).addEventListener("click", () => clearReferenceSlot(index));
   });
@@ -2124,8 +3314,151 @@ async function uploadReferenceImage(file, index) {
   state.referencePaths[index] = uploaded.path;
   state.referenceNames[index] = uploaded.name;
   state.referencePreviewUrls[index] = mediaUrl(uploaded.path);
+  clearIngredientsSheet();
   renderReferenceSlots();
   $("runHint").textContent = "Global reference uploaded";
+}
+
+function referenceItemsForIngredients() {
+  ensureReferenceSlot();
+  return state.referencePaths
+    .map((path, index) => ({
+      path,
+      previewUrl: state.referencePreviewUrls[index] || (path ? mediaUrl(path) : ""),
+      type: state.referenceMeta[index]?.type || "character",
+      subject: state.referenceMeta[index]?.subject || "shared",
+    }))
+    .filter((item) => item.path && item.previewUrl);
+}
+
+function loadSheetImage(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+}
+
+function containRect(srcW, srcH, dst) {
+  const scale = Math.min(dst.w / Math.max(1, srcW), dst.h / Math.max(1, srcH));
+  const w = srcW * scale;
+  const h = srcH * scale;
+  return {
+    x: dst.x + (dst.w - w) / 2,
+    y: dst.y + (dst.h - h) / 2,
+    w,
+    h,
+  };
+}
+
+function drawReferenceTile(ctx, image, rect, index) {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = "rgba(255,255,255,.16)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+  if (!image) {
+    ctx.fillStyle = `hsl(${(index * 67) % 360} 18% 28%)`;
+    ctx.fillRect(rect.x + 12, rect.y + 12, rect.w - 24, rect.h - 24);
+    return;
+  }
+  const inset = 12;
+  const fit = containRect(image.naturalWidth || image.width, image.naturalHeight || image.height, {
+    x: rect.x + inset,
+    y: rect.y + inset,
+    w: Math.max(1, rect.w - inset * 2),
+    h: Math.max(1, rect.h - inset * 2),
+  });
+  ctx.drawImage(image, fit.x, fit.y, fit.w, fit.h);
+}
+
+function gridRects(count, bounds, gap) {
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const cellW = (bounds.w - gap * (cols - 1)) / cols;
+  const cellH = (bounds.h - gap * (rows - 1)) / rows;
+  return Array.from({ length: count }, (_, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    return {
+      x: bounds.x + col * (cellW + gap),
+      y: bounds.y + row * (cellH + gap),
+      w: cellW,
+      h: cellH,
+    };
+  });
+}
+
+async function buildIngredientsSheetDataUrl() {
+  const items = referenceItemsForIngredients();
+  if (!items.length) return "";
+  const size = currentSize();
+  const width = Math.max(512, Number(size.width) || 768);
+  const height = Math.max(320, Number(size.height) || 448);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#050505";
+  ctx.fillRect(0, 0, width, height);
+  const images = await Promise.all(items.map((item) => loadSheetImage(item.previewUrl)));
+  const gap = Math.max(10, Math.round(Math.min(width, height) * 0.025));
+  const pad = gap;
+  const subjectKeys = ["person_a", "person_b", "person_c"].filter((subject) => items.some((item) => item.subject === subject));
+  if (subjectKeys.length > 1) {
+    const shared = items.map((item, index) => ({ item, image: images[index], index })).filter(({ item }) => item.subject === "shared" || item.subject === "none");
+    const subjectH = shared.length ? Math.round((height - pad * 2 - gap) * 0.7) : height - pad * 2;
+    const subjectW = (width - pad * 2 - gap * (subjectKeys.length - 1)) / subjectKeys.length;
+    subjectKeys.forEach((subject, subjectIndex) => {
+      const group = items
+        .map((item, index) => ({ item, image: images[index], index }))
+        .filter(({ item }) => item.subject === subject);
+      const rects = gridRects(group.length, {
+        x: pad + subjectIndex * (subjectW + gap),
+        y: pad,
+        w: subjectW,
+        h: subjectH,
+      }, gap);
+      group.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+    });
+    if (shared.length) {
+      const rects = gridRects(shared.length, {
+        x: pad,
+        y: pad + subjectH + gap,
+        w: width - pad * 2,
+        h: height - pad * 2 - subjectH - gap,
+      }, gap);
+      shared.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+    }
+  } else {
+    const entries = items.map((item, index) => ({ item, image: images[index], index }));
+    const rects = gridRects(entries.length, { x: pad, y: pad, w: width - pad * 2, h: height - pad * 2 }, gap);
+    entries.forEach((entry, index) => drawReferenceTile(ctx, entry.image, rects[index], entry.index));
+  }
+  return canvas.toDataURL("image/png");
+}
+
+async function prepareDirectorIngredientsSheetForRun() {
+  const workflow = state.workspace === "director" ? currentDirectorWorkflow() : null;
+  if (!workflow || !isDirectorWorkflow(workflow) || !isIngredientsIcLora($("directorIcLora")?.value)) {
+    return;
+  }
+  const refs = referenceItemsForIngredients();
+  if (!refs.length) return;
+  $("runHint").textContent = "Building Ingredients reference sheet...";
+  const data = await buildIngredientsSheetDataUrl();
+  if (!data) return;
+  const uploaded = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ name: "director_ingredients_reference_sheet.png", data }),
+  });
+  state.ingredientsSheetPath = uploaded.path;
+  state.ingredientsSheetName = uploaded.name;
+  state.ingredientsSheetPreviewUrl = mediaUrl(uploaded.path);
+  const status = $("directorIngredientsSheetStatus");
+  if (status) status.textContent = "Ingredients sheet ready";
 }
 
 async function uploadDirectorSegmentImage(segmentId, file) {
@@ -2141,8 +3474,299 @@ async function uploadDirectorSegmentImage(segmentId, file) {
     imagePath: uploaded.path,
     imageName: uploaded.name,
     imagePreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPath: "",
+    videoName: "",
+    videoPreviewUrl: "",
+    videoPosterUrl: "",
   });
   $("runHint").textContent = "Image guide added to selected timeline segment";
+}
+
+function isVideoFile(file) {
+  if (!file) return false;
+  if (String(file.type || "").startsWith("video/")) return true;
+  return /\.(mp4|webm|mkv|avi|mov|m4v|flv|wmv)$/i.test(String(file.name || ""));
+}
+
+async function uploadDirectorSegmentGuide(segmentId, file) {
+  if (!file) return;
+  if (isVideoFile(file)) {
+    await uploadDirectorSegmentVideo(segmentId, file);
+    return;
+  }
+  await uploadDirectorSegmentImage(segmentId, file);
+}
+
+async function uploadDirectorSegmentVideo(segmentId, file) {
+  if (!file) return;
+  $("directorSegmentImageStatus").textContent = "Uploading video guide...";
+  const previewUrl = URL.createObjectURL(file);
+  const localDuration = await readVideoDuration(file);
+  const form = new FormData();
+  form.append("file", file);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  const duration = Number(localDuration) || Number(uploaded.duration) || 0;
+  updateDirectorSegment(segmentId, {
+    imagePath: "",
+    imageName: "",
+    imagePreviewUrl: "",
+    videoPath: uploaded.path,
+    videoName: uploaded.name,
+    videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
+    ...(duration > 0 ? { duration } : {}),
+    // Reset so this freshly uploaded video extracts its audio once (also covers
+    // replacing a video on a segment that was already extracted).
+    audioExtracted: false,
+  });
+  // Extract the video's audio once into an independent clip on the video-audio
+  // track, then render so it appears immediately.
+  syncDirectorVideoAudioSegments();
+  renderDirectorEditor();
+  $("runHint").textContent = "Video guide added; audio extracted to its own track";
+}
+
+async function uploadDirectorIcVideo(file) {
+  if (!file) return;
+  if (!isVideoFile(file)) throw new Error("Choose a video file for the IC video track");
+  $("runHint").textContent = "Uploading IC video guide...";
+  const previewUrl = URL.createObjectURL(file);
+  const localDuration = await readVideoDuration(file);
+  const form = new FormData();
+  form.append("file", file);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  const duration = Number(localDuration) || Number(uploaded.duration) || 2;
+  addDirectorIcVideoSegment({
+    duration,
+    videoPath: uploaded.path,
+    videoName: uploaded.name,
+    videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
+  });
+  $("runHint").textContent = "IC video guide added";
+}
+
+async function uploadDirectorRetakeVideo(file) {
+  if (!file) return;
+  if (!isVideoFile(file)) throw new Error("Choose a video file for Retake");
+  $("runHint").textContent = "Uploading Retake base video...";
+  const previewUrl = URL.createObjectURL(file);
+  const metadata = await readVideoMetadata(file);
+  const form = new FormData();
+  form.append("file", file);
+  const uploaded = await uploadFile("/api/upload-video", form);
+  const videoDuration = Number(metadata.duration) || Number(uploaded.duration) || 2;
+  state.directorRetakeVideo = {
+    videoPath: uploaded.path,
+    videoName: uploaded.name,
+    videoPreviewUrl: mediaUrl(uploaded.path) || previewUrl,
+    videoPosterUrl: mediaUrl(uploaded.poster_path || uploaded.posterPath || ""),
+    duration: videoDuration,
+    width: metadata.width,
+    height: metadata.height,
+  };
+  setDirectorRetakeRangeFromSeconds(state.directorRetakeStart || 0, state.directorRetakeLength || Math.min(1, videoDuration), videoDuration);
+  renderDirectorEditor();
+  $("runHint").textContent = "Retake base video added";
+}
+
+function setDirectorMode(mode) {
+  state.directorMode = mode === "retake" ? "retake" : "generate";
+  renderDirectorEditor();
+}
+
+function setDirectorRetakeStartAtPlayhead() {
+  const total = directorRetakeTotalSeconds();
+  const fps = directorTimelineFps();
+  const totalFrame = DirectorTimelineModel.toFrame(total, fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
+  const playheadFrame = Math.max(0, Math.min(totalFrame, DirectorTimelineModel.toFrame(currentDirectorPlayheadSeconds(), fps)));
+  const currentEndFrame = Math.min(totalFrame, DirectorTimelineModel.toFrame((Number(state.directorRetakeStart) || 0) + (Number(state.directorRetakeLength) || 1), fps));
+  const endFrame = Math.max(playheadFrame + minLengthFrame, currentEndFrame);
+  setDirectorRetakeRangeFromFrames(playheadFrame, endFrame - playheadFrame, totalFrame);
+  renderDirectorEditor();
+}
+
+function setDirectorRetakeEndAtPlayhead() {
+  const total = directorRetakeTotalSeconds();
+  const fps = directorTimelineFps();
+  const totalFrame = DirectorTimelineModel.toFrame(total, fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
+  const startFrame = DirectorTimelineModel.toFrame(state.directorRetakeStart, fps);
+  const playheadFrame = Math.max(0, Math.min(totalFrame, DirectorTimelineModel.toFrame(currentDirectorPlayheadSeconds(), fps)));
+  const endFrame = Math.max(startFrame + minLengthFrame, playheadFrame);
+  setDirectorRetakeRangeFromFrames(startFrame, Math.min(totalFrame - startFrame, endFrame - startFrame), totalFrame);
+  renderDirectorEditor();
+}
+
+function removeDirectorRetakeVideo() {
+  state.directorRetakeVideo = null;
+  state.directorRetakeStart = 0;
+  state.directorRetakeLength = 1;
+  state.directorRetakePendingStitch = null;
+  renderDirectorEditor();
+}
+
+function startDirectorRetakeSelectionDrag(event) {
+  if (event.button !== 0 || !state.directorRetakeVideo) return;
+  if (state.directorRetakeDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const track = $("directorRetakeTrack");
+  const rect = track.getBoundingClientRect();
+  const mode = directorRetakeDragModeFromEvent(event);
+  const originalStart = Number(state.directorRetakeStart) || 0;
+  const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  const fps = directorTimelineFps();
+  const originalStartFrame = DirectorTimelineModel.toFrame(originalStart, fps);
+  const lengthFrame = Math.max(1, DirectorTimelineModel.toFrame(length, fps));
+  state.directorRetakeDrag = {
+    mode,
+    startX: event.clientX,
+    originalStart,
+    originalEnd: originalStart + length,
+    length,
+    total: directorRetakeTotalSeconds(),
+    originalStartFrame,
+    originalEndFrame: originalStartFrame + lengthFrame,
+    lengthFrame,
+    totalFrame: Math.max(1, DirectorTimelineModel.toFrame(directorRetakeTotalSeconds(), fps)),
+    width: Math.max(1, rect.width),
+  };
+  document.body.classList.add("director-dragging");
+  document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+  window.addEventListener("pointermove", onDirectorRetakeSelectionDrag);
+  window.addEventListener("pointerup", stopDirectorRetakeSelectionDrag, { once: true });
+  window.addEventListener("pointercancel", stopDirectorRetakeSelectionDrag, { once: true });
+  window.addEventListener("mousemove", onDirectorRetakeSelectionDrag);
+  window.addEventListener("mouseup", stopDirectorRetakeSelectionDrag, { once: true });
+}
+
+function directorRetakeDragModeFromEvent(event) {
+  const handle = event.target.closest?.("[data-retake-handle]")?.dataset?.retakeHandle || "";
+  if (handle === "left" || handle === "right") return handle;
+  const selection = document.querySelector("#directorRetakeTrack .director-retake-selection");
+  if (!selection) return "move";
+  const rect = selection.getBoundingClientRect();
+  const edge = Math.min(18, Math.max(10, rect.width * 0.2));
+  if (event.clientX <= rect.left + edge) return "left";
+  if (event.clientX >= rect.right - edge) return "right";
+  return "move";
+}
+
+function maybeStartDirectorRetakeSelectionDrag(event) {
+  if (state.directorMode !== "retake" || event.button !== 0 || !state.directorRetakeVideo) return;
+  if (event.target.closest?.(".director-retake-remove")) return;
+  const selection = document.querySelector("#directorRetakeTrack .director-retake-selection");
+  if (!selection) return;
+  const rect = selection.getBoundingClientRect();
+  const inside = event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+  if (!inside) return;
+  startDirectorRetakeSelectionDrag(event);
+}
+
+function startDirectorRetakeTrackMouseDown(event) {
+  if (event.button !== 0 || !state.directorRetakeVideo) return;
+  if (event.target.closest?.(".director-retake-remove")) return;
+  const track = $("directorRetakeTrack");
+  const rect = track.getBoundingClientRect();
+  const total = directorRetakeTotalSeconds();
+  const x = event.clientX - rect.left;
+  const start = Math.max(0, Number(state.directorRetakeStart) || 0);
+  const length = Math.max(0.1, Number(state.directorRetakeLength) || 0.1);
+  const selLeft = (start / total) * rect.width;
+  const selRight = ((start + length) / total) * rect.width;
+  if (x < selLeft || x > selRight) return;
+  startDirectorRetakeSelectionDrag(event);
+}
+
+function onDirectorRetakeSelectionDrag(event) {
+  const drag = state.directorRetakeDrag;
+  if (!drag) return;
+  const deltaSeconds = ((event.clientX - drag.startX) / drag.width) * drag.total;
+  const fps = directorTimelineFps();
+  const deltaFrames = Math.round(deltaSeconds * fps);
+  const minLengthFrame = Math.max(1, DirectorTimelineModel.toFrame(0.1, fps));
+  if (drag.mode === "left") {
+    const nextStart = Math.max(0, Math.min(drag.originalEndFrame - minLengthFrame, drag.originalStartFrame + deltaFrames));
+    setDirectorRetakeRangeFromFrames(nextStart, drag.originalEndFrame - nextStart, drag.totalFrame);
+  } else if (drag.mode === "right") {
+    const nextEnd = Math.max(drag.originalStartFrame + minLengthFrame, Math.min(drag.totalFrame, drag.originalEndFrame + deltaFrames));
+    setDirectorRetakeRangeFromFrames(drag.originalStartFrame, nextEnd - drag.originalStartFrame, drag.totalFrame);
+  } else {
+    setDirectorRetakeRangeFromFrames(drag.originalStartFrame + deltaFrames, drag.lengthFrame, drag.totalFrame);
+  }
+  renderDirectorTimelineOnly();
+}
+
+function stopDirectorRetakeSelectionDrag() {
+  if (!state.directorRetakeDrag) return;
+  state.directorRetakeDrag = null;
+  document.body.classList.remove("director-dragging");
+  document.body.style.cursor = "";
+  window.removeEventListener("pointermove", onDirectorRetakeSelectionDrag);
+  window.removeEventListener("mousemove", onDirectorRetakeSelectionDrag);
+  renderDirectorEditor();
+}
+
+async function sendDirectorRetakeSelectionToEdit(target) {
+  const video = normalizedDirectorRetakeVideo();
+  if (!video?.videoPath || !target) return;
+  const range = normalizedDirectorRetakeRange();
+  const start = range.start;
+  const length = range.length;
+  const end = Math.min(directorRetakeTotalSeconds(), start + length);
+  const prompt = $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "";
+  const buttons = [...document.querySelectorAll("#directorRetakeEditModes button")];
+  buttons.forEach((button) => { button.disabled = true; });
+  $("runHint").textContent = `Creating ${target.label} clip from retake selection...`;
+  try {
+    const clipped = await api("/api/trim-video", {
+      method: "POST",
+      body: JSON.stringify({ video_path: video.videoPath, start, end }),
+    });
+    const clippedDuration = Math.max(0.1, Number(clipped.duration) || (end - start));
+    if (target.kind === "inpaint") setInpaintWorkflow();
+    else setBerniniWorkflow(target.id);
+    applyRetakeEditRunSettings(video, target, clippedDuration);
+    setVideoSlot(target.slotKey, clipped.path, clipped.name, { duration: clippedDuration, trimmed: true });
+    if ($("promptText")) $("promptText").value = prompt;
+    state.directorRetakeAutoStitch = Boolean($("directorRetakeAutoStitch")?.checked);
+    const retakeContext = {
+      retake_id: newRetakeId(),
+      base_video_path: video.videoPath,
+      base_video_name: video.videoName || fileNameFromPath(video.videoPath),
+      base_video_duration: Number(video.duration) || directorRetakeTotalSeconds(),
+      clipped_path: clipped.path,
+      clipped_name: clipped.name,
+      start,
+      end,
+      prompt,
+      target_workflow: target.id,
+      target_kind: target.kind,
+      target_label: target.label,
+      auto_stitch: state.directorRetakeAutoStitch,
+      createdAt: Date.now(),
+      stitching: false,
+      baseVideoPath: video.videoPath,
+      targetId: target.id,
+      targetKind: target.kind,
+    };
+    state.editRetakeContext = retakeContext;
+    if (state.directorRetakeAutoStitch) {
+      state.directorRetakeStitches[retakeContext.retake_id] = retakeContext;
+      state.directorRetakePendingStitch = retakeContext;
+    } else {
+      state.directorRetakePendingStitch = null;
+    }
+    $("runHint").textContent = `Loaded retake selection into ${target.label} (${formatSeconds(start)} - ${formatSeconds(end)})`;
+  } catch (err) {
+    $("runHint").textContent = `Retake edit handoff failed: ${err.message}`;
+    buttons.forEach((button) => { button.disabled = false; });
+  }
 }
 
 async function uploadDirectorSegmentAudio(segmentId, file) {
@@ -2222,7 +3846,64 @@ function renderDirectorSegments(card, run) {
 }
 
 function mediaUrl(path) {
+  if (!path) return "";
   return `/media?path=${encodeURIComponent(path)}`;
+}
+
+function newRetakeId() {
+  return `retake-${Math.random().toString(36).slice(2, 6)}${Date.now().toString(36).slice(-3)}`;
+}
+
+function retakeContextForPayload(context) {
+  if (!context?.retake_id) return null;
+  return {
+    retake_id: context.retake_id,
+    base_video_path: context.base_video_path,
+    base_video_name: context.base_video_name || fileNameFromPath(context.base_video_path || ""),
+    base_video_duration: Number(context.base_video_duration) || 0,
+    clipped_path: context.clipped_path || "",
+    clipped_name: context.clipped_name || "",
+    start: Number(context.start) || 0,
+    end: Number(context.end) || 0,
+    prompt: context.prompt || "",
+    target_workflow: context.target_workflow || "",
+    target_label: context.target_label || "",
+    target_kind: context.target_kind || "",
+    auto_stitch: context.auto_stitch !== false,
+  };
+}
+
+function retakeContextForQueue(context) {
+  const retake = retakeContextForPayload(context);
+  return retake ? { ...retake, retake_id: newRetakeId() } : null;
+}
+
+function retakeContextMatchesVideo(context, videoPath) {
+  const retake = retakeContextForPayload(context);
+  return Boolean(retake?.retake_id && retake.clipped_path && retake.clipped_path === videoPath);
+}
+
+function pendingRetakeStitchRun(context, status = "queued") {
+  const retake = retakeContextForPayload(context);
+  if (!retake) return null;
+  return {
+    batch_id: `director_${retake.retake_id}`,
+    run_id: "pending_stitch",
+    workflow_id: "ltx_director_2",
+    workflow_mode: "director_ref",
+    workflow_label: "LTX Director Reference V2",
+    status,
+    prompt: `${retake.retake_id} waiting for ${retake.target_label || retake.target_workflow || "Edit"} result`,
+    duration: Number(retake.base_video_duration) || 0,
+    retake_stitch_pending: true,
+    retake_stitch: {
+      retake_id: retake.retake_id,
+      base_video: retake.base_video_path,
+      start: retake.start,
+      end: retake.end,
+      target_workflow: retake.target_workflow,
+    },
+  };
 }
 
 function renderBatch(batch) {
@@ -2363,11 +4044,67 @@ function resultsGridForRun(run) {
 
 function mergeHistoryRuns(runs, newestFirst = false) {
   if (!Array.isArray(runs) || !runs.length) return;
+  for (const run of runs) {
+    if (run?.retake_stitch_pending) continue;
+    const stitchedRetakeId = run?.retake_stitch?.retake_id;
+    if (stitchedRetakeId) state.directorRetakeCompletedStitches[stitchedRetakeId] = true;
+  }
   const existing = new Map(state.historyRuns.map((run) => [runKey(run), run]));
   const incoming = runs.map((run) => ({ ...existing.get(runKey(run)), ...run }));
   const incomingKeys = new Set(incoming.map((run) => runKey(run)));
   const rest = state.historyRuns.filter((run) => !incomingKeys.has(runKey(run)));
   state.historyRuns = newestFirst ? [...incoming, ...rest] : [...rest, ...incoming];
+  for (const run of incoming) maybeAutoStitchDirectorRetake(run);
+}
+
+async function maybeAutoStitchDirectorRetake(run) {
+  const runRetake = retakeContextForPayload(run?.retake_context);
+  if (runRetake?.retake_id && state.directorRetakeCompletedStitches[runRetake.retake_id]) return;
+  const pending = runRetake?.retake_id
+    ? { ...(state.directorRetakeStitches[runRetake.retake_id] || {}), ...runRetake }
+    : state.directorRetakePendingStitch;
+  if (pending?.retake_id && state.directorRetakeCompletedStitches[pending.retake_id]) return;
+  if (!pending || pending.stitching || pending.stitch_failed || pending.stitched || run?.retake_stitch || !run?.video) return;
+  if (pending.auto_stitch === false) return;
+  const workflows = new Set([run.workflow_id, run.workflow_mode].filter(Boolean).map(String));
+  const targetWorkflow = pending.target_workflow || pending.targetId;
+  if (targetWorkflow && !workflows.has(String(targetWorkflow))) return;
+  pending.stitching = true;
+  if (pending.retake_id) state.directorRetakeStitches[pending.retake_id] = pending;
+  const hint = $("runHint");
+  if (hint) hint.textContent = "Stitching retake edit back into Director output...";
+  try {
+    const result = await api("/api/stitch-retake-video", {
+      method: "POST",
+      body: JSON.stringify({
+        base_video_path: pending.base_video_path || pending.baseVideoPath,
+        edited_video_path: run.video,
+        start: pending.start,
+        end: pending.end,
+        prompt: pending.prompt,
+        retake_id: pending.retake_id || "",
+        edit_mode: pending.target_label || pending.target_workflow || pending.targetId || "",
+        edit_run_key: runKey(run),
+      }),
+    });
+    const stitchedRun = result?.run || result?.batch?.runs?.[0] || null;
+    if (!runRetake?.retake_id) state.directorRetakePendingStitch = null;
+    if (pending.retake_id) {
+      state.directorRetakeCompletedStitches[pending.retake_id] = true;
+      delete state.directorRetakeStitches[pending.retake_id];
+      state.historyRuns = state.historyRuns.filter((item) => runKey(item) !== `director_${pending.retake_id}:pending_stitch`);
+    }
+    if (stitchedRun) {
+      mergeHistoryRuns([stitchedRun], true);
+      renderScopedHistory();
+    }
+    if (hint) hint.textContent = "Retake edit stitched into Director output";
+  } catch (err) {
+    pending.stitching = false;
+    pending.stitch_failed = true;
+    if (pending.retake_id) state.directorRetakeStitches[pending.retake_id] = pending;
+    if (hint) hint.textContent = `Retake stitch failed: ${err.message}`;
+  }
 }
 
 function renderScopedHistory() {
@@ -2428,16 +4165,16 @@ function runWorkflowToken(run) {
 function isBerniniRun(run) {
   const id = String(run.workflow_id || "");
   const mode = String(run.workflow_mode || "");
-  return Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)
-    || Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)
+  return Boolean(getBerniniTask(id))
+    || Boolean(getBerniniTask(mode))
     || runWorkflowToken(run).includes("bernini");
 }
 
 function berniniRunWorkflowId(run) {
   const id = String(run.workflow_id || "");
   const mode = String(run.workflow_mode || "");
-  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)) return id;
-  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)) return mode;
+  if (getBerniniTask(id)) return id;
+  if (getBerniniTask(mode)) return mode;
   const raw = runWorkflowToken(run);
   return Object.keys(BERNINI_TASKS).find((workflowId) => raw.includes(workflowId)) || "";
 }
@@ -2556,7 +4293,9 @@ function updateRunCard(card, run) {
   }
 
   const promptLine = card.querySelector(".paths");
-  const promptKey = run.prompt || "";
+  const promptKey = run.retake_stitch && run.variant_name
+    ? [run.variant_name, run.prompt].filter(Boolean).join(" | ")
+    : run.prompt || "";
   if (card.dataset.promptKey !== promptKey) {
     card.dataset.promptKey = promptKey;
     promptLine.textContent = promptKey;
@@ -2778,8 +4517,15 @@ function saveFrameExtract() {
 function runModeLabel(run) {
   const raw = String(run.workflow_mode || run.workflow_id || "").toLowerCase();
   const berniniWorkflowId = berniniRunWorkflowId(run);
-  if (berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return BERNINI_TASKS[berniniWorkflowId].tag;
-  if (isInpaintRun(run)) return "INPAINT";
+  const isDirectorRetake = run?.retake_mode === true || String(run?.retake_mode).toLowerCase() === "true"
+    || run?.director_timeline?.retake_mode === true || String(run?.director_timeline?.retake_mode).toLowerCase() === "true";
+  if (run?.retake_stitch) return "retake";
+  if (isDirectorRetake) return "retake";
+  if (run?.retake_context && berniniWorkflowId && getBerniniTask(berniniWorkflowId)) return `retake-${getBerniniTask(berniniWorkflowId).tag}`;
+  if (run?.retake_context && isInpaintRun(run)) return "retake-Inpaint";
+  if (run?.retake_context) return "retake";
+  if (berniniWorkflowId && getBerniniTask(berniniWorkflowId)) return getBerniniTask(berniniWorkflowId).tag;
+  if (isInpaintRun(run)) return "Inpaint";
   if (isMotionRun(run)) {
     const kind = motionRunKind(run);
     if (kind === "3d") return "3D";
@@ -2861,7 +4607,7 @@ function setInputValueIfPresent(id, value) {
 function useRunSeed(seed, run = null) {
   if (!seed) return;
   setInputValueIfPresent("seedInput", seed);
-  setInputValueIfPresent("directorSeedInput", seed);
+  setInputValueIfPresent("directorGlobalSeedInput", seed);
   if (run && isMotionRun(run)) {
     const kind = motionRunKind(run);
     if (kind === "text") setInputValueIfPresent("motionSeed", seed);
@@ -3375,6 +5121,37 @@ function savedFrameSeconds(value, fallback = 0) {
   return Number.isFinite(frame) ? frame / 24 : fallback;
 }
 
+function isVideoMediaPath(path) {
+  return /\.(mp4|webm|mkv|avi|mov|m4v|flv|wmv)$/i.test(String(path || ""));
+}
+
+function isDirectorVideoAudioTimelineSegment(segment = {}) {
+  const source = String(segment.source || "").toLowerCase();
+  const id = String(segment.id || "");
+  const audioPath = segment.audio_path || segment.file || "";
+  return source === "video" || id.startsWith("video_audio") || isVideoMediaPath(audioPath);
+}
+
+function restoredDirectorAudioSegment(segment, index, prefix) {
+  const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 1);
+  const start = Number.isFinite(Number(segment.start_frame))
+    ? savedFrameSeconds(segment.start_frame)
+    : Number.isFinite(Number(segment.start))
+      ? savedFrameSeconds(segment.start)
+      : 0;
+  const audioPath = segment.audio_path || segment.file || "";
+  return {
+    id: segment.id || `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+    start,
+    duration,
+    audioPath,
+    audioName: segment.fileName || fileNameFromPath(audioPath),
+    audioDuration: Number(segment.audio_duration || segment.audioDuration || 0) || duration,
+    trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
+    volume: Math.max(0, Number(segment.volume ?? 1)),
+  };
+}
+
 function useRunTimeline(run) {
   const timeline = run.director_timeline || null;
   if (!timeline || !Array.isArray(timeline.segments) || !timeline.segments.length) {
@@ -3383,12 +5160,22 @@ function useRunTimeline(run) {
   }
   setWorkspace("director");
   $("directorGlobalPrompt").value = timeline.global_prompt || run.global_prompt || "";
-  $("directorGlobalReferenceStrength").value = timeline.global_reference_strength ?? run.global_reference_strength ?? 0.35;
+  if (run.negative_prompt) setInputValueIfPresent("directorNegativePrompt", run.negative_prompt);
+  state.directorGlobalPromptInitialized = true;
   if (run.seed) useRunSeed(run.seed);
   const refs = Array.isArray(run.reference_images) ? run.reference_images.filter(Boolean) : [];
   state.referencePaths = refs.length ? refs : [""];
   state.referenceNames = state.referencePaths.map(fileNameFromPath);
   state.referencePreviewUrls = state.referencePaths.map((path) => (path ? mediaUrl(path) : ""));
+  state.referenceMeta = state.referencePaths.map((_, index) => ({ type: index === 0 ? "character" : "prop", subject: index === 0 ? "person_a" : "shared" }));
+  clearIngredientsSheet();
+  const rawAudioSegments = timeline.audio_segments || timeline.audioSegments || [];
+  const restoredVideoAudioPaths = new Set(
+    rawAudioSegments
+      .filter(isDirectorVideoAudioTimelineSegment)
+      .map((segment) => segment.audio_path || segment.file || "")
+      .filter(Boolean)
+  );
   state.directorSegments = timeline.segments.map((segment, index) => {
     const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || segment.frames || 0) / 24 || 4);
     const start = Number.isFinite(Number(segment.start_frame))
@@ -3401,6 +5188,8 @@ function useRunTimeline(run) {
     const guideFrame = Number.isFinite(Number(segment.guide_frame)) ? Number(segment.guide_frame) : Math.round(start * 24);
     const guideOffsetFrames = guideFrame - Math.round(start * 24);
     const imagePath = segment.image_path || "";
+    const videoPath = segment.video_path || "";
+    const videoPosterPath = segment.poster_path || segment.video_poster_path || segment.videoPosterPath || "";
     return {
       id: segment.id || `seg_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
       start,
@@ -3411,25 +5200,38 @@ function useRunTimeline(run) {
       imagePath,
       imageName: fileNameFromPath(imagePath),
       imagePreviewUrl: imagePath ? mediaUrl(imagePath) : "",
+      videoPath,
+      videoName: fileNameFromPath(videoPath),
+      videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
+      videoPosterUrl: videoPosterPath ? mediaUrl(videoPosterPath) : "",
+      audioExtracted: Boolean(videoPath && restoredVideoAudioPaths.has(videoPath)),
       strength: segment.strength ?? (index === 0 ? 1 : 0.85),
     };
   });
-  state.directorAudioSegments = (timeline.audio_segments || timeline.audioSegments || []).map((segment, index) => {
-    const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 1);
+  state.directorVideoAudioSegments = rawAudioSegments
+    .filter(isDirectorVideoAudioTimelineSegment)
+    .map((segment, index) => restoredDirectorAudioSegment(segment, index, "video_audio"));
+  state.directorAudioSegments = rawAudioSegments
+    .filter((segment) => !isDirectorVideoAudioTimelineSegment(segment))
+    .map((segment, index) => restoredDirectorAudioSegment(segment, index, "aud"));
+  state.directorIcVideoSegments = (timeline.motion_segments || timeline.motionSegments || []).map((segment, index) => {
+    const duration = Math.max(0.5, Number(segment.duration) || Number(segment.length || 0) / 24 || 2);
     const start = Number.isFinite(Number(segment.start_frame))
       ? savedFrameSeconds(segment.start_frame)
       : Number.isFinite(Number(segment.start))
         ? savedFrameSeconds(segment.start)
         : 0;
-    const audioPath = segment.audio_path || segment.file || "";
+    const videoPath = segment.video_path || segment.videoFile || segment.file || "";
+    const videoPosterPath = segment.poster_path || segment.video_poster_path || segment.videoPosterPath || "";
     return {
-      id: segment.id || `aud_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+      id: segment.id || `ic_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
       start,
       duration,
-      audioPath,
-      audioName: segment.fileName || fileNameFromPath(audioPath),
-      audioDuration: Number(segment.audio_duration || segment.audioDuration || 0) || duration,
       trimStart: savedFrameSeconds(segment.trim_start ?? segment.trimStart, 0),
+      videoPath,
+      videoName: segment.fileName || fileNameFromPath(videoPath),
+      videoPreviewUrl: videoPath ? mediaUrl(videoPath) : "",
+      videoPosterUrl: videoPosterPath ? mediaUrl(videoPosterPath) : "",
     };
   });
   for (const segment of timeline.segments) {
@@ -3527,6 +5329,13 @@ function runHasPreviewOutput(run) {
   return Boolean(run && (run.video || run.image || run.contact_sheet));
 }
 
+function resultPlaybackIsActive() {
+  if ($("videoPreviewModal")?.classList.contains("open")) return true;
+  return Array.from(document.querySelectorAll(".result-card video")).some((video) => {
+    return !video.paused && !video.ended && Number(video.readyState || 0) > 0;
+  });
+}
+
 function doneBatchNeedsPreview(batch) {
   if (!batch || batch.status !== "done") return false;
   return (batch.runs || []).some((run) => {
@@ -3547,6 +5356,10 @@ function shouldPollForLatePreview(batch, waits, limit = 8) {
 
 async function pollBatch() {
   if (!state.activeBatch) return;
+  if (resultPlaybackIsActive()) {
+    state.pollTimer = setTimeout(pollBatch, 2000);
+    return;
+  }
   try {
     const batch = await api(`/api/batches/${state.activeBatch.batch_id}`);
     renderBatch(batch);
@@ -3562,6 +5375,7 @@ async function pollBatch() {
 }
 
 async function loadHistory({ replace = true } = {}) {
+  if (!replace && resultPlaybackIsActive()) return;
   const data = await api("/api/history?limit=200");
   if (replace) {
     state.historyRuns = data.runs || [];
@@ -3629,19 +5443,45 @@ async function prepareInpaintMaskForRun() {
   $("inpaintMaskStatus").textContent = "Mask ready";
 }
 
+function validateDirectorRunMode() {
+  if (state.workspace !== "director" || !isDirectorWorkflow(currentDirectorWorkflow())) return;
+  const retakeVideo = normalizedDirectorRetakeVideo();
+  if (state.directorMode === "retake" && !retakeVideo) {
+    throw new Error("Add a retake base video before queueing Director Retake.");
+  }
+}
+
 async function startBatch() {
   $("runBtn").disabled = true;
   $("runBtn").textContent = "Queueing...";
   try {
+    validateDirectorRunMode();
     if (isInpaintWorkflow(state.workspace === "edit" ? currentEditWorkflow() : currentWorkflow())) {
       await prepareInpaintMaskForRun();
     }
+    if (state.workspace === "director") {
+      await prepareDirectorIngredientsSheetForRun();
+    }
+    const payload = collectPayload();
+    if (payload.retake_context?.retake_id) {
+      payload.retake_context = retakeContextForQueue(payload.retake_context);
+    }
     const batch = await api("/api/run", {
       method: "POST",
-      body: JSON.stringify(collectPayload()),
+      body: JSON.stringify(payload),
     });
     state.batchPreviewWaits[batch.batch_id] = 0;
     renderBatch(batch);
+    if (payload.retake_context?.retake_id) {
+      const context = { ...state.editRetakeContext, ...payload.retake_context };
+      state.directorRetakeStitches[context.retake_id] = context;
+      const pendingRun = pendingRetakeStitchRun(context, "queued");
+      if (pendingRun) mergeHistoryRuns([pendingRun], true);
+      setWorkspace("director");
+      setDirectorMode("retake");
+      renderScopedHistory();
+      $("runHint").textContent = `${context.retake_id} queued in ${context.target_label || context.target_workflow}; waiting to stitch`;
+    }
     if (state.clockTimer) clearInterval(state.clockTimer);
     state.clockTimer = setInterval(updateElapsed, 1000);
     if (state.pollTimer) clearTimeout(state.pollTimer);
@@ -3650,7 +5490,7 @@ async function startBatch() {
     $("runHint").textContent = err.message;
   } finally {
     $("runBtn").disabled = false;
-    $("runBtn").textContent = "Queue Run";
+    updateRunButtonLabel({ force: true });
   }
 }
 
@@ -4156,6 +5996,41 @@ function readAudioDuration(file) {
   });
 }
 
+function readVideoMetadata(file) {
+  return new Promise((resolve) => {
+    if (!file) {
+      resolve({ duration: 0, width: 0, height: 0 });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    video.preload = "metadata";
+    video.muted = true;
+    video.addEventListener("loadedmetadata", () => {
+      finish({
+        duration: Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0,
+        width: Number(video.videoWidth) || 0,
+        height: Number(video.videoHeight) || 0,
+      });
+    }, { once: true });
+    video.addEventListener("error", () => finish({ duration: 0, width: 0, height: 0 }), { once: true });
+    setTimeout(() => finish({ duration: 0, width: 0, height: 0 }), 1500);
+    video.src = url;
+  });
+}
+
+async function readVideoDuration(file) {
+  const metadata = await readVideoMetadata(file);
+  return metadata.duration || 0;
+}
+
 async function uploadAudio() {
   const file = $("audioInput").files[0];
   if (!file) return;
@@ -4474,6 +6349,7 @@ const ACTION_ICONS = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7-11-7z"></path></svg>',
   stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"></path></svg>',
   edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17.3V20h2.7L18.8 8.9l-2.7-2.7L5 17.3zm13.9-10.5 1.3-1.3c.4-.4.4-1 0-1.4l-.3-.3c-.4-.4-1-.4-1.4 0l-1.3 1.3 2.7 2.7z"></path></svg>',
+  scissors: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 9.8 19 4.5l.9 1.8-8.2 4.2 8.2 4.2-.9 1.8-10.4-5.3A3.5 3.5 0 1 1 8.6 9.8zM5.5 10A1.5 1.5 0 1 0 5.5 7a1.5 1.5 0 0 0 0 3zm0 7A1.5 1.5 0 1 0 5.5 14a1.5 1.5 0 0 0 0 3zM8.6 14.2l3.1-1.6 1.9 1-5 2.6a3.5 3.5 0 1 1 0-2z"></path></svg>',
   delete: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8l1 2h4v2H3V6h4l1-2zm-1 6h10l-.8 10H7.8L7 10zm3 2v6h2v-6h-2zm4 0v6h2v-6h-2z"></path></svg>',
   save: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm3 2v5h8V5H8zm0 10v4h8v-4H8z"></path></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6 6.4 5z"></path></svg>',
@@ -5165,8 +7041,20 @@ async function saveCustomVoice() {
   }
 }
 
+function fillDirectorIcLoras() {
+  const select = $("directorIcLora");
+  if (!select) return;
+  const options = state.config?.director?.ic_loras?.length ? state.config.director.ic_loras : ["None"];
+  const current = select.value || "None";
+  select.innerHTML = options
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name === "None" ? "No IC-LoRA" : fileNameFromPath(name))}</option>`)
+    .join("");
+  select.value = options.includes(current) ? current : "None";
+}
+
 async function loadConfig() {
   state.config = await api("/api/config");
+  fillDirectorIcLoras();
   fillSelect($("workflowSelect"), visibleWorkflowItems(state.config.workflows));
   fillSelect($("moveSelect"), state.config.camera_moves, "name");
   applyModuleAvailability();
@@ -5182,6 +7070,7 @@ async function loadConfig() {
   }
   rememberCurrentWorkflow();
   $("negativePrompt").value = state.config.default_negative;
+  setInputValueIfPresent("directorNegativePrompt", state.config.default_negative);
   $("comfyStatus").textContent = state.config.comfy.ok ? "ComfyUI: online" : "ComfyUI: offline";
   $("comfyStatus").className = `status-pill ${state.config.comfy.ok ? "ok" : "bad"}`;
   $("comfyStatus").title = state.config.comfy.reason || state.config.comfy.url || "";
@@ -5265,6 +7154,32 @@ $("motionGuideInput").addEventListener("change", () => uploadMotionGuideVideo($(
   updateVideoClipperButtons();
   updateMotionRunAvailability();
 }));
+$("addDirectorIcVideoBtn").addEventListener("click", () => $("directorIcVideoInput").click());
+$("directorIcVideoInput").addEventListener("change", () => uploadDirectorIcVideo($("directorIcVideoInput").files[0]).catch((err) => {
+  $("runHint").textContent = `IC video upload failed: ${err.message}`;
+}).finally(() => {
+  $("directorIcVideoInput").value = "";
+}));
+$("directorModeGenerateBtn").addEventListener("click", () => setDirectorMode("generate"));
+$("directorModeRetakeBtn").addEventListener("click", () => setDirectorMode("retake"));
+$("addDirectorRetakeVideoBtn").addEventListener("click", () => $("directorRetakeVideoInput").click());
+$("directorRetakeVideoInput").addEventListener("change", () => uploadDirectorRetakeVideo($("directorRetakeVideoInput").files[0]).catch((err) => {
+  $("runHint").textContent = `Retake video upload failed: ${err.message}`;
+}).finally(() => {
+  $("directorRetakeVideoInput").value = "";
+}));
+$("directorRetakeSetStartBtn").addEventListener("click", setDirectorRetakeStartAtPlayhead);
+$("directorRetakeSetEndBtn").addEventListener("click", setDirectorRetakeEndAtPlayhead);
+$("directorRetakePrompt").addEventListener("input", (event) => {
+  state.directorRetakePrompt = event.target.value;
+});
+$("directorRetakeStrength").addEventListener("input", (event) => {
+  state.directorRetakeStrength = Math.max(0, Math.min(1, Number(event.target.value) || 0));
+});
+$("directorRetakeAutoStitch")?.addEventListener("change", (event) => {
+  state.directorRetakeAutoStitch = Boolean(event.target.checked);
+  if (!state.directorRetakeAutoStitch) state.directorRetakePendingStitch = null;
+});
 $("motionGuide").addEventListener("loadedmetadata", () => {
   state.motionGuideDuration = $("motionGuide").duration || motionGuideDurationFallback();
 });
@@ -5383,8 +7298,18 @@ $("motionCopyRewrite").addEventListener("click", () => copyMotionRewritePrompt()
   $("motionStatus").textContent = err.message;
 }));
 $("addDirectorSegmentBtn").addEventListener("click", () => addDirectorSegment());
-$("addDirectorAudioBtn").addEventListener("click", openDirectorAudioModal);
+$("directorCutAtPlayheadBtn").innerHTML = ACTION_ICONS.scissors;
+$("directorCutAtPlayheadBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  splitSelectedDirectorSegmentAtPlayhead();
+});
+$("addDirectorAudioBtn").addEventListener("click", () => openDirectorAudioModal("dialogue"));
+$("addDirectorVideoAudioBtn").addEventListener("click", () => openDirectorAudioModal("video_audio"));
 $("openStoryboardImportBtn").addEventListener("click", openStoryboardImportModal);
+$("closeDirectorSegmentModalBtn").addEventListener("click", closeDirectorSegmentModal);
+$("directorSegmentModal").addEventListener("click", (event) => {
+  if (event.target.matches("[data-close-director-segment-modal]")) closeDirectorSegmentModal();
+});
 $("closeStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("cancelStoryboardImportBtn").addEventListener("click", closeStoryboardImportModal);
 $("storyboardImportModal").addEventListener("click", (event) => {
@@ -5415,6 +7340,7 @@ $("frameExtractPlayer").addEventListener("timeupdate", () => {
   updateFrameExtractReadout(time);
 });
 $("saveFrameExtractBtn").addEventListener("click", saveFrameExtract);
+document.addEventListener("mousedown", maybeStartDirectorRetakeSelectionDrag, true);
 window.addEventListener("resize", () => {
   updateVideoPreviewLayout();
   updateVideoClipperLayout();
@@ -5423,6 +7349,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && $("videoPreviewModal").classList.contains("open")) closeVideoPreview();
   if (event.key === "Escape" && $("frameExtractModal").classList.contains("open")) closeFrameExtract();
   if (event.key === "Escape" && $("videoClipperModal").classList.contains("open")) closeVideoClipper();
+  handleDirectorTimelineDeleteKey(event);
 });
 $("storyboardImportInput").addEventListener("change", () => {
   $("storyboardImportStatus").textContent = $("storyboardImportInput").files[0]?.name || "No storyboard selected";
@@ -5433,7 +7360,7 @@ $("applyStoryboardImportBtn").addEventListener("click", () => {
     $("runHint").textContent = `2x2 storyboard import failed: ${err.message}`;
   });
 });
-$("globalAddRefBtn").addEventListener("click", addReferenceSlot);
+$("globalAddRefBtn")?.addEventListener("click", addReferenceSlot);
 renderReferenceSlots();
 updateVideoClipperButtons();
 $("exampleVideo").addEventListener("loadedmetadata", () => {

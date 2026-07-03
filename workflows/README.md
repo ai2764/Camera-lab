@@ -15,10 +15,14 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 
 ## App Workflow Map
 
-- `ltx23_nag_i2v_extendcrop_general.json`: `LTX 2.3 NAG I2V Extendcrop`
+- `ltx23_i2v_subtitle_cleaner_nag_extend.json`: `LTX 2.3 I2V Subtitle Cleaner`
+- `ltx23_flf_subtitle_cleaner_nag_extend.json`: `LTX 2.3 FLF (2 images, audio)`
+- Built in `server/camera_lab_server.py`: `LTX 2.3 FML (3 images, 2-stage, audio)`
 - `LTX-2.3_FML2V_RuneXX_guider.local.json`: `LTX 2.3 FML RuneXX Guider Local (3 images)`
 - `ltx23_nag_ia2v_extendcrop_general.json`: `LTX 2.3 IA2V`
-- `ltx_director_reference_mvp.json`: `LTX Director Reference MVP`
+- `ltx23_flf_ia2v_nag_extend.json`: `LTX 2.3 FLF IA2V (2 images + audio)`
+- `ltx_director_2.json`: `LTX Director 2`
+- `ltx_director_reference_mvp.json`: legacy Director reference workflow
 - `wan22_bernini_t2v.ui.json`: `WAN2.2 Bernini T2V`
 - `wan22_bernini_t2i.ui.json`: `WAN2.2 Bernini T2I`
 - `wan22_bernini_i2v.ui.json`: `WAN2.2 Bernini I2V`
@@ -33,7 +37,7 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 - `wan22_bernini_ads2v.ui.json`: `WAN2.2 Bernini ADS2V`
 - `wan_vace_inpainting.ui.json`: `WAN VACE Inpaint`
 
-The `FLF TTP Control` and `FML 2-stage TTP FLF` dropdown options are built in `server/camera_lab_server.py`, so they do not have standalone workflow JSON files.
+Some dropdown options are built in `server/camera_lab_server.py`, so they do not have standalone workflow JSON files.
 
 ## Install into ComfyUI
 
