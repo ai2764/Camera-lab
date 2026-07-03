@@ -54,11 +54,13 @@
       </label>
 
       <section id="berniniTaskPanel" class="bernini-panel" hidden>
-        <label id="berniniSourceVideoWrap">
-          Source video
-          <input id="berniniSourceVideoInput" type="file" accept="video/*">
-          <span id="berniniSourceVideoStatus" class="hint">No video uploaded</span>
-          <button id="berniniSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="berniniSourceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Source video</span>
+          <span class="edit-media-control-row">
+            <input id="berniniSourceVideoInput" type="file" accept="video/*">
+            <button id="berniniSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="berniniSourceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="berniniSourceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="berniniSourceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
@@ -67,10 +69,12 @@
           <input id="berniniPreserveAudio" type="checkbox">
           <span>Preserve audio</span>
         </label>
-        <label id="berniniReferenceImageWrap">
-          Reference image
-          <input id="berniniReferenceImageInput" type="file" accept="image/*">
-          <span id="berniniReferenceImageStatus" class="hint">No image uploaded</span>
+        <label id="berniniReferenceImageWrap" class="edit-media-field">
+          <span class="edit-media-label">Reference image</span>
+          <span class="edit-media-control-row">
+            <input id="berniniReferenceImageInput" type="file" accept="image/*">
+          </span>
+          <span id="berniniReferenceImageStatus" class="hint edit-media-status">No image uploaded</span>
         </label>
         <div id="berniniReferenceImagePreviewWrap" class="source-preview">
           <img id="berniniReferenceImagePreview" alt="Bernini reference image preview">
@@ -85,11 +89,13 @@
             <input id="berniniRefMaxSize" type="number" min="16" max="8192" step="16" value="848">
           </label>
         </section>
-        <label id="berniniReferenceVideoWrap">
-          Reference video
-          <input id="berniniReferenceVideoInput" type="file" accept="video/*">
-          <span id="berniniReferenceVideoStatus" class="hint">No video uploaded</span>
-          <button id="berniniReferenceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="berniniReferenceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Reference video</span>
+          <span class="edit-media-control-row">
+            <input id="berniniReferenceVideoInput" type="file" accept="video/*">
+            <button id="berniniReferenceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="berniniReferenceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="berniniReferenceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="berniniReferenceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
@@ -113,19 +119,23 @@
       </section>
 
       <section id="inpaintTaskPanel" class="inpaint-panel" hidden>
-        <label id="inpaintSourceVideoWrap">
-          Source video
-          <input id="inpaintSourceVideoInput" type="file" accept="video/*">
-          <span id="inpaintSourceVideoStatus" class="hint">No video uploaded</span>
-          <button id="inpaintSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="inpaintSourceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Source video</span>
+          <span class="edit-media-control-row">
+            <input id="inpaintSourceVideoInput" type="file" accept="video/*">
+            <button id="inpaintSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="inpaintSourceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="inpaintSourceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="inpaintSourceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
         </label>
-        <label>
-          Reference image (optional)
-          <input id="inpaintReferenceImageInput" type="file" accept="image/*">
-          <span id="inpaintReferenceImageStatus" class="hint">Optional reference not uploaded</span>
+        <label class="edit-media-field">
+          <span class="edit-media-label">Reference image (optional)</span>
+          <span class="edit-media-control-row">
+            <input id="inpaintReferenceImageInput" type="file" accept="image/*">
+          </span>
+          <span id="inpaintReferenceImageStatus" class="hint edit-media-status">Optional reference not uploaded</span>
         </label>
         <div id="inpaintReferenceImagePreviewWrap" class="source-preview">
           <img id="inpaintReferenceImagePreview" alt="Inpaint reference image preview">
@@ -272,17 +282,17 @@
                   </div>
                 </div>
                 <section class="director-global-settings">
-                  <label>
+                  <label class="director-global-prompt-field">
                     Global prompt
                     <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
                   </label>
-                  <div class="grid-2">
+                  <div class="grid-2 director-seed-field">
                     <label>
                       Seed
                       <input id="directorGlobalSeedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
                     </label>
                   </div>
-                  <label>
+                  <label class="director-negative-prompt-field">
                     Negative prompt
                     <textarea id="directorNegativePrompt" rows="4"></textarea>
                   </label>
@@ -304,7 +314,7 @@
                       </label>
                     </div>
                     <label class="size-text-row">
-                      Frame size
+                      Custom frame size
                       <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
                     </label>
                   </section>
@@ -312,14 +322,16 @@
               </div>
               <div class="director-timeline-toolbar">
                 <div class="director-mode-tabs" role="tablist" aria-label="Director mode">
-                  <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">生成</button>
+                  <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">Generate</button>
                   <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
                 </div>
                 <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
               </div>
               <div class="director-timeline-shell">
                 <div class="director-ruler" id="directorRuler"></div>
-                <div class="director-playhead" id="directorPlayhead"></div>
+                <div class="director-playhead" id="directorPlayhead">
+                  <span class="director-playhead-frame" id="directorPlayheadFrame">F0</span>
+                </div>
                 <section class="director-lane" data-lane="main">
                   <div class="director-track-label">
                     <span>Main</span>
@@ -368,13 +380,15 @@
                   <div class="director-track-label">
                     <span>IC video</span>
                     <small>Ingredients / IC-LoRA reference</small>
-                    <select id="directorIcLora" class="director-ic-lora-select" title="IC-LoRA model" aria-label="IC-LoRA model">
-                      <option value="None">No IC-LoRA</option>
-                    </select>
-                    <label class="director-ic-lora-strength-label" title="IC-LoRA model strength">
-                      <span>Strength</span>
-                      <input id="directorIcLoraStrength" type="number" min="0" max="2" step="0.05" value="1" aria-label="IC-LoRA strength">
-                    </label>
+                    <div class="director-ic-lora-controls">
+                      <select id="directorIcLora" class="director-ic-lora-select" title="IC-LoRA model" aria-label="IC-LoRA model">
+                        <option value="None">No IC-LoRA</option>
+                      </select>
+                      <label class="director-ic-lora-strength-label" title="IC-LoRA model strength">
+                        <span>Strength</span>
+                        <input id="directorIcLoraStrength" type="number" min="0" max="2" step="0.05" value="1" aria-label="IC-LoRA strength">
+                      </label>
+                    </div>
                     <button id="addDirectorIcVideoBtn" class="timeline-add director-ic-video-add" type="button" title="Add IC video" aria-label="Add IC video">+</button>
                     <input id="directorIcVideoInput" type="file" accept="video/*" hidden>
                   </div>
@@ -482,10 +496,9 @@
       <section class="director-output-zone">
         <div class="director-section-heading director-output-heading">
           <div>
-            <div class="director-section-kicker">03</div>
-            <h3>Output</h3>
+            <div class="director-section-kicker">Output</div>
+            <h3 class="visually-hidden">Output</h3>
           </div>
-          <p>Queue / Video results / Segment jumps</p>
         </div>
         <div id="audioUploadHome">
           <label id="audioUploadWrap" class="audio-upload">

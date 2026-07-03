@@ -315,6 +315,24 @@ test("uploaded motion media inputs show inline previews below the upload fields"
   await expect(inpaintPreview).toBeVisible();
   await expect(inpaintPreview).toHaveAttribute("src", /\/media\?path=.*inpaint\.mp4/);
   await expect(inpaintPreview.locator("xpath=ancestor::*[@id='inpaintSourceVideoWrap']")).toHaveCount(1);
+  const inpaintUploadMetrics = await page.locator("#inpaintSourceVideoWrap").evaluate((wrap) => {
+    const panel = wrap.closest(".inpaint-panel").getBoundingClientRect();
+    const control = wrap.querySelector(".edit-media-control-row").getBoundingClientRect();
+    const status = wrap.querySelector(".edit-media-status").getBoundingClientRect();
+    const preview = wrap.querySelector(".video-upload-preview").getBoundingClientRect();
+    return {
+      controlInsidePanel: control.left >= panel.left && control.right <= panel.right + 1,
+      statusInsidePanel: status.left >= panel.left && status.right <= panel.right + 1,
+      previewInsidePanel: preview.left >= panel.left && preview.right <= panel.right + 1,
+      previewAlignedWithControl: Math.abs(preview.left - control.left) < 1 && Math.abs(preview.right - control.right) < 1,
+    };
+  });
+  expect(inpaintUploadMetrics).toEqual({
+    controlInsidePanel: true,
+    statusInsidePanel: true,
+    previewInsidePanel: true,
+    previewAlignedWithControl: true,
+  });
 
   await page.locator("#motionWorkspaceTab").click();
   await page.locator("#motionScailTab").click();
@@ -1483,6 +1501,18 @@ test("director IC video lane uploads reference video into motion segments", asyn
   expect(payload.timeline_segments.some((segment) => segment.video_path?.includes("ic_reference.mp4"))).toBe(false);
 });
 
+test("normal director result card keeps DIR tag when retake mode is false", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  const label = await page.evaluate(() => runModeLabel({
+    workflow_id: "ltx_director_2",
+    workflow_mode: "director_ref",
+    director_timeline: { retake_mode: "false" },
+  }));
+
+  expect(label).toBe("DIR");
+});
+
 test("director retake tab uploads one base video and emits native retake payload", async ({ page }) => {
   await page.route("**/api/run", async (route) => {
     await route.fulfill({
@@ -1601,6 +1631,16 @@ test("director preview keeps global prompt and size controls in the right rail",
   expect(payload.global_reference_strength).toBe(0);
 });
 
+test("director output heading is compact", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+
+  await expect(page.locator(".director-output-heading .director-section-kicker")).toHaveText("Output");
+  await expect(page.locator(".director-output-heading")).not.toContainText("Queue / Video results / Segment jumps");
+  await expect(page.locator(".director-output-heading")).not.toContainText("03");
+});
+
 test("director queue keeps global seed empty when run returns a random seed", async ({ page }) => {
   await page.route("**/api/run", async (route) => {
     const payload = route.request().postDataJSON();
@@ -1641,13 +1681,13 @@ test("director queue keeps global seed empty when run returns a random seed", as
   await expect(page.locator("#directorGlobalSeedInput")).toHaveValue("");
 });
 
-test("director generate queue is blocked when a retake base video is loaded", async ({ page }) => {
+test("director generate queue ignores loaded retake base video", async ({ page }) => {
   let runRequests = 0;
   await page.route("**/api/run", async (route) => {
     runRequests += 1;
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ batch_id: "unexpected", status: "queued", runs: [] }),
+      body: JSON.stringify({ batch_id: "generate_with_retake_loaded", status: "queued", runs: [] }),
     });
   });
   await page.goto("/");
@@ -1667,10 +1707,13 @@ test("director generate queue is blocked when a retake base video is loaded", as
 
   await expect(page.locator("#directorModeGenerateBtn")).toHaveClass(/active/);
   await expect(page.locator("#runBtn")).toHaveText("Queue Run");
+  const runRequest = page.waitForRequest("**/api/run");
   await page.locator("#runBtn").click();
+  const payload = JSON.parse((await runRequest).postData());
 
-  await expect(page.locator("#runHint")).toContainText("Retake base video is loaded");
-  expect(runRequests).toBe(0);
+  expect(payload.retake_mode).toBeUndefined();
+  expect(payload.retake_video).toBeUndefined();
+  expect(runRequests).toBe(1);
 });
 
 test("director retake selection can be dragged and base video removed", async ({ page }) => {
@@ -1729,6 +1772,8 @@ test("director retake preview includes base video audio", async ({ page }) => {
       videoPreviewUrl: "",
       videoPosterUrl: "",
       duration: 6,
+      width: 1920,
+      height: 1080,
     };
     state.directorRetakeStart = 1;
     state.directorRetakeLength = 2;
@@ -1762,6 +1807,8 @@ test("director retake edit panel previews the selected clip range", async ({ pag
       videoPreviewUrl: "",
       videoPosterUrl: "",
       duration: 6,
+      width: 1920,
+      height: 1080,
     };
     state.directorRetakeStart = 1.2;
     state.directorRetakeLength = 2.2;
@@ -1855,6 +1902,8 @@ test("director retake edit mode buttons trim the selection into Edit inputs", as
       videoPreviewUrl: "",
       videoPosterUrl: "",
       duration: 6,
+      width: 1920,
+      height: 1080,
     };
     state.directorRetakeStart = 1.2;
     state.directorRetakeLength = 2.2;
@@ -1882,6 +1931,9 @@ test("director retake edit mode buttons trim the selection into Edit inputs", as
   expect(pendingStitch.end).toBeCloseTo(82 / 24, 2);
   let payload = await page.evaluate(() => collectPayload());
   expect(payload.duration).toBe(2.2);
+  expect(payload.width).toBe(1920);
+  expect(payload.height).toBe(1080);
+  expect(payload.bernini_preserve_audio).toBe(true);
   expect(payload.source_video_path).toContain("retake_clip_1_2_3_4.mp4");
 
   await page.locator("#directorWorkspaceTab").click();
@@ -1891,11 +1943,13 @@ test("director retake edit mode buttons trim the selection into Edit inputs", as
   await expect(page.locator("#inpaintSourceVideoStatus")).toContainText("retake_clip_1_2_3_4.mp4");
   payload = await page.evaluate(() => collectPayload());
   expect(payload.duration).toBe(2.2);
+  expect(payload.width).toBe(1920);
+  expect(payload.height).toBe(1080);
   expect(payload.source_video_path).toContain("retake_clip_1_2_3_4.mp4");
 });
 
-test("director retake edit run carries lineage and shows a pending stitched output", async ({ page }) => {
-  let runPayload = null;
+test("director retake edit run carries lineage and shows pending stitched outputs", async ({ page }) => {
+  const runPayloads = [];
   await page.route("**/api/trim-video", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -1907,22 +1961,24 @@ test("director retake edit run carries lineage and shows a pending stitched outp
     });
   });
   await page.route("**/api/run", async (route) => {
-    runPayload = route.request().postDataJSON();
+    const payload = route.request().postDataJSON();
+    runPayloads.push(payload);
+    const index = runPayloads.length;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        batch_id: "bernini_retake_batch",
+        batch_id: `bernini_retake_batch_${index}`,
         status: "queued",
         runs: [{
-          batch_id: "bernini_retake_batch",
-          run_id: "01_v2v",
+          batch_id: `bernini_retake_batch_${index}`,
+          run_id: `01_v2v_${index}`,
           workflow_id: "bernini_v2v",
           workflow_mode: "bernini_v2v",
           workflow_label: "WAN2.2 Bernini V2V",
           status: "queued",
           prompt: "replace the hand motion",
           duration: 3.8,
-          retake_context: runPayload.retake_context,
+          retake_context: payload.retake_context,
         }],
       }),
     });
@@ -1950,6 +2006,7 @@ test("director retake edit run carries lineage and shows a pending stitched outp
 
   await expect(page.locator("#directorWorkspaceTab")).toHaveClass(/active/);
   await expect(page.locator("#directorModeRetakeBtn")).toHaveClass(/active/);
+  const runPayload = runPayloads[0];
   expect(runPayload.retake_context).toMatchObject({
     base_video_path: "tasks/camera_lab_runs/retake/base.mp4",
     start: expect.closeTo(2.3, 1),
@@ -1961,13 +2018,28 @@ test("director retake edit run carries lineage and shows a pending stitched outp
   });
   expect(runPayload.retake_context.retake_id).toMatch(/^retake-/);
   await expect(page.locator("#directorResultsGrid .result-card").filter({ hasText: runPayload.retake_context.retake_id })).toContainText("waiting for V2V result");
-  expect(await page.evaluate(() => runModeLabel(state.historyRuns.find((run) => run.retake_context?.retake_id)))).toBe("V2V-retake");
+  expect(await page.evaluate((retakeId) => state.directorRetakeCompletedStitches[retakeId], runPayload.retake_context.retake_id)).toBeUndefined();
+  expect(await page.evaluate(() => runModeLabel(state.historyRuns.find((run) => run.retake_context?.retake_id)))).toBe("retake-V2V");
+
+  await page.evaluate(() => {
+    setWorkspace("edit", { syncWorkflow: false });
+    setBerniniWorkflow("bernini_v2v");
+  });
+  await page.locator("#runBtn").click();
+  await expect(page.locator("#directorWorkspaceTab")).toHaveClass(/active/);
+  expect(runPayloads).toHaveLength(2);
+  const firstRetakeId = runPayloads[0].retake_context.retake_id;
+  const secondRetakeId = runPayloads[1].retake_context.retake_id;
+  expect(secondRetakeId).toMatch(/^retake-/);
+  expect(secondRetakeId).not.toBe(firstRetakeId);
+  await expect(page.locator("#directorResultsGrid .result-card").filter({ hasText: firstRetakeId })).toContainText("waiting for V2V result");
+  await expect(page.locator("#directorResultsGrid .result-card").filter({ hasText: secondRetakeId })).toContainText("waiting for V2V result");
 });
 
 test("director retake auto stitch merges an edit result into Director output", async ({ page }) => {
-  let stitchPayload = null;
+  const stitchPayloads = [];
   await page.route("**/api/stitch-retake-video", async (route) => {
-    stitchPayload = route.request().postDataJSON();
+    stitchPayloads.push(route.request().postDataJSON());
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -1980,13 +2052,14 @@ test("director retake auto stitch merges an edit result into Director output", a
           status: "done",
           video: "tasks/camera_lab_runs/director_retake_stitch_test/01_stitched/director_retake_stitched.mp4",
           duration: 6,
-          variant_name: "Director Retake Stitch",
+          variant_name: "retake-auto1+V2V",
           prompt: "replace the middle action",
           retake_stitch: {
             retake_id: "retake-auto1",
             edit_run_key: "bernini_done:01",
             base_video: "tasks/camera_lab_runs/retake/clip.mp4",
             edited_video: "tasks/camera_lab_runs/bernini_done/01/output.mp4",
+            edit_mode: "V2V",
             start: 1,
             end: 3,
           },
@@ -2029,19 +2102,77 @@ test("director retake auto stitch merges an edit result into Director output", a
   });
 
   await page.waitForFunction(() => state.historyRuns.some((run) => run.retake_stitch && run.video.includes("director_retake_stitched")));
-  expect(stitchPayload).toMatchObject({
+  expect(stitchPayloads[0]).toMatchObject({
     base_video_path: "tasks/camera_lab_runs/retake/clip.mp4",
     edited_video_path: "tasks/camera_lab_runs/bernini_done/01/output.mp4",
     start: 1,
     end: 3,
     prompt: "replace the middle action",
     retake_id: "retake-auto1",
+    edit_mode: "V2V",
     edit_run_key: "bernini_done:01",
   });
+  await page.evaluate(() => {
+    const editRun = state.historyRuns.find((run) => run.batch_id === "bernini_done" && run.run_id === "01");
+    mergeHistoryRuns([editRun], false);
+  });
+  await page.waitForTimeout(100);
+  expect(stitchPayloads).toHaveLength(1);
   expect(await page.evaluate(() => state.directorRetakeStitches["retake-auto1"])).toBeUndefined();
   const stitchedCard = page.locator('#directorResultsGrid .result-card[data-run-key="director_retake_stitch_test:01_stitched"]');
   await expect(stitchedCard).toContainText("replace the middle action");
+  await expect(stitchedCard).toContainText("retake-auto1+V2V");
   await expect(stitchedCard.locator(".mode-tag")).toHaveText("retake");
+});
+
+test("director retake auto stitch failure does not retry on later edit results", async ({ page }) => {
+  let stitchRequests = 0;
+  await page.route("**/api/stitch-retake-video", async (route) => {
+    stitchRequests += 1;
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "ffprobe failed on stale stitched output" }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.evaluate(() => {
+    state.directorRetakePendingStitch = {
+      retake_id: "retake-stale",
+      base_video_path: "tasks/camera_lab_runs/missing/director_retake_stitched.mp4",
+      start: 1,
+      end: 3,
+      prompt: "old retake",
+      target_workflow: "bernini_i2v",
+      target_label: "I2V",
+      auto_stitch: true,
+    };
+    mergeHistoryRuns([{
+      batch_id: "i2v_done_one",
+      run_id: "01",
+      workflow_id: "bernini_i2v",
+      workflow_mode: "bernini_i2v",
+      status: "done",
+      video: "tasks/camera_lab_runs/i2v_done_one/01/out.mp4",
+      prompt: "first i2v",
+    }], true);
+  });
+  await expect(page.locator("#runHint")).toContainText("Retake stitch failed");
+
+  await page.evaluate(() => {
+    mergeHistoryRuns([{
+      batch_id: "i2v_done_two",
+      run_id: "01",
+      workflow_id: "bernini_i2v",
+      workflow_mode: "bernini_i2v",
+      status: "done",
+      video: "tasks/camera_lab_runs/i2v_done_two/01/out.mp4",
+      prompt: "second i2v",
+    }], true);
+  });
+  await page.waitForTimeout(100);
+  expect(stitchRequests).toBe(1);
 });
 
 test("director retake result card shows the retake prompt instead of global prompt", async ({ page }) => {
@@ -2071,6 +2202,7 @@ test("director retake result card shows the retake prompt instead of global prom
   });
 
   const card = page.locator("#directorResultsGrid .result-card").filter({ hasText: "replace the middle action" });
+  await expect(card.locator(".mode-tag")).toHaveText("retake");
   await expect(card.locator(".paths")).toHaveText("replace the middle action");
   await expect(card.locator(".paths")).not.toContainText("keep the existing scene continuous");
 });
@@ -4324,13 +4456,40 @@ test("director preview is a primary control without reserved blank space", async
   const metrics = await page.evaluate(() => {
     const preview = document.getElementById("directorPreview").getBoundingClientRect();
     const stage = document.querySelector(".director-preview-stage").getBoundingClientRect();
+    const play = document.getElementById("directorPreviewPlay").getBoundingClientRect();
+    const settings = document.querySelector(".director-preview-row .director-global-settings").getBoundingClientRect();
+    const globalPrompt = document.getElementById("directorGlobalPrompt").getBoundingClientRect();
+    const negativePrompt = document.getElementById("directorNegativePrompt").getBoundingClientRect();
+    const seed = document.querySelector(".director-seed-field").getBoundingClientRect();
+    const seedInput = document.getElementById("directorGlobalSeedInput").getBoundingClientRect();
+    const preset = document.getElementById("directorSizePreset").getBoundingClientRect();
+    const size = document.querySelector(".director-video-size").getBoundingClientRect();
     return {
       stageWidth: stage.width,
       reservedBlank: preview.height - stage.height,
+      playRightOfStage: play.left > stage.right,
+      playCenterOffset: Math.abs((play.top + play.height / 2) - (stage.top + stage.height / 2)),
+      settingsWidth: settings.width,
+      settingsHeight: settings.height,
+      stageHeight: stage.height,
+      promptsShareRow: Math.abs(globalPrompt.top - negativePrompt.top) < 8 && negativePrompt.left > globalPrompt.right,
+      promptFieldsStartNearLabels: globalPrompt.top < settings.top + 60 && negativePrompt.top < settings.top + 60,
+      lowerControlsAligned: Math.abs(seed.top - size.top) < 18,
+      promptHeight: globalPrompt.height,
+      controlHeight: Math.min(seedInput.height, preset.height),
     };
   });
-  expect(metrics.stageWidth).toBeGreaterThan(620);
-  expect(metrics.reservedBlank).toBeLessThan(90);
+  expect(metrics.stageWidth).toBeGreaterThan(760);
+  expect(metrics.reservedBlank).toBeLessThan(20);
+  expect(metrics.playRightOfStage).toBe(true);
+  expect(metrics.playCenterOffset).toBeLessThan(12);
+  expect(metrics.settingsWidth).toBeGreaterThan(430);
+  expect(Math.abs(metrics.settingsHeight - metrics.stageHeight)).toBeLessThanOrEqual(2);
+  expect(metrics.promptsShareRow).toBe(true);
+  expect(metrics.promptFieldsStartNearLabels).toBe(true);
+  expect(metrics.lowerControlsAligned).toBe(true);
+  expect(metrics.promptHeight).toBeGreaterThanOrEqual(146);
+  expect(metrics.controlHeight).toBeGreaterThanOrEqual(40);
 });
 
 test("director workspace avoids page-level horizontal overflow on mobile", async ({ page }) => {
@@ -4378,17 +4537,37 @@ test("director preview play toggles state and advances the playhead", async ({ p
 
 test("director timeline toolbar sits below preview and above the playhead line", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
   await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator("#directorTimelinePanel")).toBeVisible();
+  await page.evaluate(() => {
+    DirectorPreview.mount({
+      playerEl: document.getElementById("directorPreview"),
+      videoEl: document.getElementById("directorPreviewVideo"),
+      imageEl: document.getElementById("directorPreviewImage"),
+      overlayEl: document.getElementById("directorPreviewOverlay"),
+      playButtonEl: document.getElementById("directorPreviewPlay"),
+      timeReadoutEl: document.getElementById("directorPreviewTime"),
+      playheadEl: document.getElementById("directorPlayhead"),
+      playheadFrameEl: document.getElementById("directorPlayheadFrame"),
+      timelineEl: document.querySelector(".director-timeline-shell"),
+    });
+    DirectorPreview.setTimeline({
+      duration: 6, width: 1280, height: 720, audioClips: [],
+      clips: [{ start: 0, duration: 6, kind: "text", src: "", prompt: "x" }],
+    });
+    DirectorPreview.seek(1);
+  });
   const marker = await page.locator("#directorPlayhead").evaluate((el) => {
     const before = getComputedStyle(el, "::before");
-    const after = getComputedStyle(el, "::after");
     return {
       lineWidth: before.width,
-      frameContent: after.content,
+      pointerEvents: getComputedStyle(el).pointerEvents,
     };
   });
   expect(parseFloat(marker.lineWidth)).toBeGreaterThanOrEqual(2);
-  expect(marker.frameContent).toBe("none");
+  expect(marker.pointerEvents).toBe("auto");
+  await expect(page.locator("#directorPlayheadFrame")).toHaveText(/F\d+/);
   await expect(page.locator("#directorCutAtPlayheadBtn")).toHaveCount(1);
   await expect(page.locator("#directorCutAtPlayheadBtn svg")).toHaveCount(1);
   expect(await page.locator("#directorPlayhead #directorCutAtPlayheadBtn").count()).toBe(0);
@@ -4404,12 +4583,45 @@ test("director timeline toolbar sits below preview and above the playhead line",
       toolbarBottom: toolbar.bottom,
       timelineTop: timeline.top,
       tabsTop: tabs.top,
+      tabsRight: tabs.right,
+      tabsHeight: tabs.height,
       scissorsTop: scissors.top,
+      scissorsLeft: scissors.left,
+      scissorsHeight: scissors.height,
     };
   });
   expect(order.toolbarTop).toBeGreaterThanOrEqual(order.previewBottom - 1);
   expect(order.toolbarBottom).toBeLessThanOrEqual(order.timelineTop + 1);
-  expect(Math.abs(order.tabsTop - order.scissorsTop)).toBeLessThanOrEqual(4);
+  expect(Math.abs(order.tabsTop - order.scissorsTop)).toBeLessThanOrEqual(6);
+  expect(order.scissorsLeft).toBeGreaterThanOrEqual(order.tabsRight);
+  expect(Math.abs(order.scissorsHeight - order.tabsHeight)).toBeLessThanOrEqual(1);
+});
+
+test("director ic video model controls stack model above strength", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+  await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator("#directorTimelinePanel")).toBeVisible();
+  await expect(page.locator("#directorIcLora")).toBeVisible();
+  await expect(page.locator("#directorIcLoraStrength")).toBeVisible();
+  const layout = await page.evaluate(() => {
+    const controls = document.querySelector(".director-ic-lora-controls").getBoundingClientRect();
+    const select = document.getElementById("directorIcLora").getBoundingClientRect();
+    const strength = document.querySelector(".director-ic-lora-strength-label").getBoundingClientRect();
+    return {
+      controlsWidth: controls.width,
+      selectTop: select.top,
+      selectLeft: select.left,
+      selectWidth: select.width,
+      strengthTop: strength.top,
+      strengthLeft: strength.left,
+      strengthWidth: strength.width,
+    };
+  });
+  expect(layout.strengthTop).toBeGreaterThan(layout.selectTop);
+  expect(Math.abs(layout.selectLeft - layout.strengthLeft)).toBeLessThanOrEqual(2);
+  expect(layout.selectWidth).toBeGreaterThan(layout.controlsWidth * 0.85);
+  expect(layout.strengthWidth).toBeGreaterThan(layout.controlsWidth * 0.85);
 });
 
 test("director preview playhead can be dragged across the timeline", async ({ page }) => {

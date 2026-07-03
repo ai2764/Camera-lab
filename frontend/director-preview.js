@@ -12,7 +12,7 @@
   }
 
   const els = {};
-  let timeline = { clips: [], audioClips: [], duration: 0, displayDuration: 0, width: 16, height: 9 };
+  let timeline = { clips: [], audioClips: [], duration: 0, displayDuration: 0, width: 16, height: 9, fps: 24 };
   let currentTime = 0;
   let playing = false;
   let rafId = 0;
@@ -71,6 +71,10 @@
     const displayDuration = Math.max(timeline.duration, Number(timeline.displayDuration) || 0);
     const pct = displayDuration > 0 ? Math.max(0, Math.min(1, currentTime / displayDuration)) : 0;
     els.playheadEl.style.setProperty("--director-playhead-pct", pct);
+    if (els.playheadFrameEl) {
+      const fps = Math.max(1, Math.round(Number(timeline.fps) || 24));
+      els.playheadFrameEl.textContent = `F${Math.max(0, Math.round(currentTime * fps))}`;
+    }
     if (els.timelineEl) {
       const metrics = timelineTrackMetrics();
       els.playheadEl.style.setProperty("--director-playhead-left", `${metrics.left + (metrics.width * pct)}px`);
@@ -184,11 +188,13 @@
       displayDuration: Math.max(0, Number(next && next.displayDuration) || Number(next && next.duration) || 0),
       width: Number(next && next.width) || 16,
       height: Number(next && next.height) || 9,
+      fps: Math.max(1, Number(next && next.fps) || 24),
     };
     if (els.playerEl) els.playerEl.style.removeProperty("--director-preview-aspect-ratio");
     currentTime = Math.min(currentTime, timeline.duration);
     rebuildAudio();
     renderFrame(currentTime);
+    positionPlayhead();
   }
 
   function show(el, visible) {
