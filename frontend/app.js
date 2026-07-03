@@ -6,210 +6,20 @@ function initialWorkspace() {
   return "camera";
 }
 
-const BERNINI_TASKS = {
-  bernini_t2v: {
-    tag: "T2V",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "A cat walking through a sunny garden, cinematic",
-  },
-  bernini_t2i: {
-    tag: "T2I",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "a portrait of a woman in a red dress, studio lighting",
-  },
-  bernini_i2v: {
-    tag: "I2V",
-    sourceImage: true,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "Animate this image with gentle camera push-in",
-  },
-  bernini_i2i: {
-    tag: "I2I",
-    sourceImage: true,
-    sourceVideo: false,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "change the shirt color to blue",
-  },
-  bernini_v2v: {
-    tag: "V2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "Restyle the video into a watercolor look",
-  },
-  bernini_mv2v: {
-    tag: "MV2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "change the lighting to warm golden hour",
-  },
-  bernini_vi2v: {
-    tag: "VI2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "propagate the edit consistently across the whole clip",
-  },
-  bernini_vrc2v: {
-    tag: "VRC2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: false,
-    prompt: "make the subject raise their right hand",
-  },
-  bernini_r2v: {
-    tag: "R2V",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "This subject dancing on a neon stage",
-  },
-  bernini_r2i: {
-    tag: "R2I",
-    sourceImage: false,
-    sourceVideo: false,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "this subject standing in a snowy street",
-  },
-  bernini_rv2v: {
-    tag: "RV2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: true,
-    referenceVideo: false,
-    prompt: "Replace the girl in the video with a girl dressed in student attire",
-  },
-  bernini_ads2v: {
-    tag: "ADS2V",
-    sourceImage: false,
-    sourceVideo: true,
-    referenceImage: false,
-    referenceVideo: true,
-    prompt: "Insert the product naturally onto the table",
-  },
-};
+const {
+  BERNINI_TASKS,
+  BERNINI_DEFAULT_NEGATIVE,
+  INPAINT_WORKFLOW_MODE,
+  INPAINT_DEFAULT_PROMPT,
+  INPAINT_DEFAULT_NEGATIVE,
+  DIRECTOR_DEFAULT_GLOBAL_PROMPT,
+  DIRECTOR_TIMELINE_PIXELS_PER_SECOND,
+  getBerniniTask,
+  isBerniniImageMode,
+  createInitialState,
+} = window.CameraLabWorkspace;
 
-const BERNINI_IMAGE_MODES = new Set(["bernini_t2i", "bernini_i2i", "bernini_r2i"]);
-const EDIT_BERNINI_MODES = Object.keys(BERNINI_TASKS).filter((mode) => !BERNINI_IMAGE_MODES.has(mode));
-const BERNINI_DEFAULT_NEGATIVE = "bad video";
-const INPAINT_WORKFLOW_MODE = "wan_vace_inpaint";
-const INPAINT_DEFAULT_PROMPT = "Place the reference object naturally inside the painted area, matching lighting, scale, perspective, and motion.";
-const INPAINT_DEFAULT_NEGATIVE = "bad video";
-const DIRECTOR_DEFAULT_GLOBAL_PROMPT = "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.";
-const DIRECTOR_TIMELINE_PIXELS_PER_SECOND = 96;
-
-const state = {
-  config: null,
-  activeBatch: null,
-  pollTimer: null,
-  batchPreviewWaits: {},
-  motionPreviewWaits: {},
-  motionPendingCounter: 0,
-  historyTimer: null,
-  historyRuns: [],
-  clockTimer: null,
-  exampleAnimation: null,
-  exampleDiagram: "",
-  hiddenRunKeys: new Set(),
-  sourcePath: "",
-  middlePath: "",
-  endPath: "",
-  motionRefPath: "",
-  motionGuideVideoPath: "",
-  motionGuideDuration: 4,
-  motionBatch: null,
-  motionSubtab: "text",
-  motion3d: {
-    initialized: false,
-    playing: false,
-    time: 0,
-    duration: 3,
-    timeline: [],
-    animationFrame: 0,
-    lastTick: 0,
-    refPath: "",
-    guideUrl: "",
-    generating: false,
-  },
-  audioPath: "",
-  referencePaths: [""],
-  referenceNames: [""],
-  referencePreviewUrls: [""],
-  referenceMeta: [{ type: "character", subject: "person_a" }],
-  ingredientsSheetPath: "",
-  ingredientsSheetName: "",
-  ingredientsSheetPreviewUrl: "",
-  directorSegments: [],
-  directorVideoAudioSegments: [],
-  directorIcVideoSegments: [],
-  directorAudioSegments: [],
-  directorMode: "generate",
-  directorRetakeVideo: null,
-  directorRetakeStart: 0,
-  directorRetakeLength: 1,
-  directorRetakePrompt: "",
-  directorRetakeStrength: 1,
-  directorRetakeDrag: null,
-  directorRetakeAutoStitch: true,
-  directorRetakePendingStitch: null,
-  directorRetakeStitches: {},
-  directorRetakeCompletedStitches: {},
-  editRetakeContext: null,
-  directorAudioModalTarget: "dialogue",
-  directorSelectedId: "",
-  directorSelectionType: "image",
-  directorGlobalPromptInitialized: false,
-  directorDrag: null,
-  workspace: initialWorkspace(),
-  cameraWorkflowId: "",
-  directorWorkflowId: "",
-  berniniWorkflowId: "bernini_t2v",
-  berniniSourceVideoPath: "",
-  berniniSourceVideoName: "",
-  berniniReferenceVideoPath: "",
-  berniniReferenceVideoName: "",
-  berniniReferenceImagePath: "",
-  berniniReferenceImageName: "",
-  inpaintWorkflowId: "wan_vace_inpaint",
-  inpaintSourceVideoPath: "",
-  inpaintSourceVideoName: "",
-  inpaintReferenceImagePath: "",
-  inpaintReferenceImageName: "",
-  inpaintMaskImagePath: "",
-  inpaintMaskPainted: false,
-  inpaintDrawing: false,
-  inpaintLastPoint: null,
-  castingLines: [],
-  castingLibrary: [],
-  castingEdit: null,
-  castingPreview: null,
-  videoClipper: {
-    slot: "",
-    path: "",
-    name: "",
-    duration: 0,
-    playing: false,
-    renderingFilmstrip: false,
-  },
-  videoPreviewRun: null,
-  frameExtractRun: null,
-};
+const state = createInitialState(initialWorkspace());
 
 const $ = (id) => document.getElementById(id);
 const imageSlots = {
@@ -335,7 +145,7 @@ function fillSelect(el, items, labelKey = "label") {
 }
 
 function visibleWorkflowItems(items) {
-  return items.filter((item) => !(isBerniniWorkflow(item) && BERNINI_IMAGE_MODES.has(item.mode)));
+  return items.filter((item) => !(isBerniniWorkflow(item) && isBerniniImageMode(item.mode)));
 }
 
 function currentMove() {
@@ -366,9 +176,9 @@ function currentInpaintWorkflow() {
 
 function currentEditWorkflow() {
   const wf = currentWorkflow();
-  if (isInpaintWorkflow(wf) || (isBerniniWorkflow(wf) && !BERNINI_IMAGE_MODES.has(wf.mode))) return wf;
+  if (isInpaintWorkflow(wf) || (isBerniniWorkflow(wf) && !isBerniniImageMode(wf.mode))) return wf;
   const bernini = currentBerniniWorkflow();
-  if (isBerniniWorkflow(bernini) && !BERNINI_IMAGE_MODES.has(bernini.mode)) return bernini;
+  if (isBerniniWorkflow(bernini) && !isBerniniImageMode(bernini.mode)) return bernini;
   return currentInpaintWorkflow();
 }
 
@@ -378,7 +188,7 @@ function isDirectorWorkflow() {
 }
 
 function isBerniniWorkflow(workflow = currentWorkflow()) {
-  return workflow && Object.prototype.hasOwnProperty.call(BERNINI_TASKS, workflow.mode);
+  return Boolean(workflow && getBerniniTask(workflow.mode));
 }
 
 function isInpaintWorkflow(workflow = currentWorkflow()) {
@@ -395,7 +205,7 @@ function directorWorkflowOption() {
 function berniniWorkflowOption() {
   return [...$("workflowSelect").options].find((opt) => {
     const workflow = state.config?.workflows?.find((item) => item.id === opt.value);
-    return isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode);
+    return isBerniniWorkflow(workflow) && !isBerniniImageMode(workflow.mode);
   });
 }
 
@@ -419,7 +229,7 @@ function workflowOptionById(id, mode) {
   if (!option) return null;
   const workflow = state.config?.workflows?.find((item) => item.id === option.value);
   if (mode === "camera" && (workflow?.mode === "director_ref" || isBerniniWorkflow(workflow) || isInpaintWorkflow(workflow))) return null;
-  else if (mode === "edit" && !(isInpaintWorkflow(workflow) || (isBerniniWorkflow(workflow) && !BERNINI_IMAGE_MODES.has(workflow.mode)))) return null;
+  else if (mode === "edit" && !(isInpaintWorkflow(workflow) || (isBerniniWorkflow(workflow) && !isBerniniImageMode(workflow.mode)))) return null;
   else if (mode === "bernini" && !isBerniniWorkflow(workflow)) return null;
   else if (mode === "inpaint" && !isInpaintWorkflow(workflow)) return null;
   else if (mode && !["camera", "edit", "bernini", "inpaint"].includes(mode) && workflow?.mode !== mode) return null;
@@ -476,7 +286,7 @@ function setWorkspace(workspace, { syncWorkflow = true } = {}) {
 
 function setBerniniWorkflow(id) {
   const workflow = state.config?.workflows?.find((item) => item.id === id);
-  if (!isBerniniWorkflow(workflow) || BERNINI_IMAGE_MODES.has(workflow.mode)) return;
+  if (!isBerniniWorkflow(workflow) || isBerniniImageMode(workflow.mode)) return;
   const option = workflowOptionById(id, "edit");
   state.berniniWorkflowId = id;
   if (option) $("workflowSelect").value = id;
@@ -532,7 +342,7 @@ function useResultVideoForEdit(run, workflowId, slotKey, kind = "bernini") {
   setVideoSlot(slotKey, run.video, fileNameFromPath(run.video));
   $("runHint").textContent = kind === "inpaint"
     ? "Loaded result video into Inpaint"
-    : `Loaded result video into ${BERNINI_TASKS[workflowId]?.tag || "Bernini"}`;
+    : `Loaded result video into ${getBerniniTask(workflowId)?.tag || "Bernini"}`;
 }
 
 function useResultVideoForRetake(run) {
@@ -764,7 +574,7 @@ function resetPrompt() {
         : currentWorkflow();
   if (!move || !workflow) return;
   if (isBerniniWorkflow(workflow)) {
-    const task = BERNINI_TASKS[workflow.mode];
+    const task = getBerniniTask(workflow.mode);
     $("promptTag").textContent = task.tag;
     $("promptText").value = task.prompt;
     $("negativePrompt").value = BERNINI_DEFAULT_NEGATIVE;
@@ -949,7 +759,7 @@ function updateWorkflowFields() {
   const isDirector = wf.mode === "director_ref";
   const isBernini = isBerniniWorkflow(wf);
   const isInpaint = isInpaintWorkflow(wf);
-  const berniniTask = isBernini ? BERNINI_TASKS[wf.mode] : null;
+  const berniniTask = isBernini ? getBerniniTask(wf.mode) : null;
   const showDirectorWorkspace = state.workspace === "director" && isDirector;
   const showEditWorkspace = state.workspace === "edit" && (isBernini || isInpaint);
   const showBerniniWorkspace = showEditWorkspace && isBernini;
@@ -958,7 +768,7 @@ function updateWorkflowFields() {
   const showCastingWorkspace = state.workspace === "casting";
   const showMotionWorkspace = state.workspace === "motion";
   const showSourceImage = isBernini ? !!berniniTask?.sourceImage : !isInpaint && wf.mode !== "t2v" && !isDirector;
-  const showDuration = !(isBernini && BERNINI_IMAGE_MODES.has(wf.mode));
+  const showDuration = !(isBernini && isBerniniImageMode(wf.mode));
   const showMiddleImage = !isBernini && !isInpaint && (wf.mode === "fml" || wf.mode === "fml_native");
   const showEndImage = !isBernini && !isInpaint && (wf.mode === "flf" || wf.mode === "fml" || wf.mode === "fml_native" || wf.mode === "flf_ia2v");
   document.body.classList.toggle("director-mode", showDirectorWorkspace);
@@ -1035,7 +845,7 @@ function updateWorkflowFields() {
   const runStrip = $("directorRunStrip");
   const runTarget = showDirectorWorkspace ? $("directorRunSlot") : $("runStripHome");
   if (runStrip.parentElement !== runTarget) runTarget.appendChild(runStrip);
-  $("promptTag").textContent = isBernini ? BERNINI_TASKS[wf.mode].tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
+  $("promptTag").textContent = isBernini ? getBerniniTask(wf.mode).tag : isInpaint ? "INPAINT" : wf.mode.toUpperCase();
   $("promptPanelTitle").textContent = showDirectorWorkspace ? "Director" : showBerniniWorkspace ? "Bernini Prompt" : showInpaintWorkspace ? "Inpaint Prompt" : "Prompt";
   if (showDirectorWorkspace) {
     ensureDirectorGlobalPromptDefault();
@@ -1155,7 +965,7 @@ function collectPayload() {
   }
 
   if (isBerniniWorkflow(workflow)) {
-    const berniniTask = BERNINI_TASKS[workflow.mode];
+    const berniniTask = getBerniniTask(workflow.mode);
     const payload = {
       workflow_id: workflow.id,
       camera_move: workflow.mode,
@@ -1182,7 +992,7 @@ function collectPayload() {
     if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.berniniSourceVideoPath)) {
       payload.retake_context = retakeContext;
     }
-    if (!BERNINI_IMAGE_MODES.has(workflow.mode)) {
+    if (!isBerniniImageMode(workflow.mode)) {
       payload.duration = Number($("durationInput").value);
     }
     return payload;
@@ -4308,16 +4118,16 @@ function runWorkflowToken(run) {
 function isBerniniRun(run) {
   const id = String(run.workflow_id || "");
   const mode = String(run.workflow_mode || "");
-  return Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)
-    || Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)
+  return Boolean(getBerniniTask(id))
+    || Boolean(getBerniniTask(mode))
     || runWorkflowToken(run).includes("bernini");
 }
 
 function berniniRunWorkflowId(run) {
   const id = String(run.workflow_id || "");
   const mode = String(run.workflow_mode || "");
-  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, id)) return id;
-  if (Object.prototype.hasOwnProperty.call(BERNINI_TASKS, mode)) return mode;
+  if (getBerniniTask(id)) return id;
+  if (getBerniniTask(mode)) return mode;
   const raw = runWorkflowToken(run);
   return Object.keys(BERNINI_TASKS).find((workflowId) => raw.includes(workflowId)) || "";
 }
@@ -4664,10 +4474,10 @@ function runModeLabel(run) {
     || run?.director_timeline?.retake_mode === true || String(run?.director_timeline?.retake_mode).toLowerCase() === "true";
   if (run?.retake_stitch) return "retake";
   if (isDirectorRetake) return "retake";
-  if (run?.retake_context && berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return `retake-${BERNINI_TASKS[berniniWorkflowId].tag}`;
+  if (run?.retake_context && berniniWorkflowId && getBerniniTask(berniniWorkflowId)) return `retake-${getBerniniTask(berniniWorkflowId).tag}`;
   if (run?.retake_context && isInpaintRun(run)) return "retake-Inpaint";
   if (run?.retake_context) return "retake";
-  if (berniniWorkflowId && BERNINI_TASKS[berniniWorkflowId]) return BERNINI_TASKS[berniniWorkflowId].tag;
+  if (berniniWorkflowId && getBerniniTask(berniniWorkflowId)) return getBerniniTask(berniniWorkflowId).tag;
   if (isInpaintRun(run)) return "Inpaint";
   if (isMotionRun(run)) {
     const kind = motionRunKind(run);
