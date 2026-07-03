@@ -761,23 +761,26 @@ test("motion guide subtypes can be sent to edit video inputs", async ({ page }) 
 });
 
 test("result video edit menu only offers Bernini video input modes", async ({ page }) => {
+  const resultRun = {
+    batch_id: "batch_result_video",
+    run_id: "01_result",
+    workflow_id: "bernini_t2v",
+    workflow_mode: "bernini_t2v",
+    workflow_label: "WAN2.2 Bernini T2V",
+    status: "done",
+    video: "tasks/camera_lab_runs/batch_result_video/01_result/output.mp4",
+    prompt: "source prompt",
+    duration: 4,
+  };
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs: [resultRun] }),
+    });
+  });
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='bernini_ads2v']")).toHaveCount(1);
   await page.locator("#editWorkspaceTab").click();
-  await page.evaluate(() => {
-    mergeHistoryRuns([{
-      batch_id: "batch_result_video",
-      run_id: "01_result",
-      workflow_id: "bernini_t2v",
-      workflow_mode: "bernini_t2v",
-      workflow_label: "WAN2.2 Bernini T2V",
-      status: "done",
-      video: "tasks/camera_lab_runs/batch_result_video/01_result/output.mp4",
-      prompt: "source prompt",
-      duration: 4,
-    }], true);
-    renderScopedHistory();
-  });
 
   const card = page.locator("#resultsGrid .result-card").filter({ hasText: "source prompt" });
   await expect(card.locator(".result-video-edit-button")).toBeVisible();
@@ -822,6 +825,23 @@ test("result video edit menu only offers Bernini video input modes", async ({ pa
 });
 
 test("result video edit menu can extract a frame from the playback timeline", async ({ page }) => {
+  const resultRun = {
+    batch_id: "frame_extract_batch",
+    run_id: "01_frame_extract",
+    workflow_id: "bernini_t2v",
+    workflow_mode: "bernini_t2v",
+    workflow_label: "WAN2.2 Bernini T2V",
+    status: "done",
+    video: "tasks/camera_lab_runs/frame_extract_batch/01/output.mp4",
+    prompt: "frame extraction prompt",
+    duration: 4,
+  };
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs: [resultRun] }),
+    });
+  });
   await page.addInitScript(() => {
     Object.defineProperty(HTMLMediaElement.prototype, "duration", {
       configurable: true,
@@ -847,20 +867,6 @@ test("result video edit menu can extract a frame from the playback timeline", as
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='bernini_t2v']")).toHaveCount(1);
   await page.locator("#editWorkspaceTab").click();
-  await page.evaluate(() => {
-    mergeHistoryRuns([{
-      batch_id: "frame_extract_batch",
-      run_id: "01_frame_extract",
-      workflow_id: "bernini_t2v",
-      workflow_mode: "bernini_t2v",
-      workflow_label: "WAN2.2 Bernini T2V",
-      status: "done",
-      video: "tasks/camera_lab_runs/frame_extract_batch/01/output.mp4",
-      prompt: "frame extraction prompt",
-      duration: 4,
-    }], true);
-    renderScopedHistory();
-  });
 
   const card = page.locator("#resultsGrid .result-card").filter({ hasText: "frame extraction prompt" });
   await card.locator(".result-video-edit-button").click();

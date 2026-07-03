@@ -2594,12 +2594,22 @@ function updateRunCard(card, run) {
   const actions = card.querySelector(".result-text-actions");
   const existingSkeletonButton = actions.querySelector(".use-skeleton-run");
   if (existingSkeletonButton) existingSkeletonButton.remove();
-  const existingEditMenu = actions.querySelector(".result-video-edit");
-  if (existingEditMenu) existingEditMenu.remove();
   const skeletonButton = renderMotionSkeletonButton(run);
-  if (skeletonButton) actions.appendChild(skeletonButton);
-  const editMenu = renderResultVideoEditMenu(run);
-  if (editMenu) actions.appendChild(editMenu);
+  const existingEditMenu = actions.querySelector(".result-video-edit");
+  if (skeletonButton) actions.insertBefore(skeletonButton, existingEditMenu || null);
+  const editMenuKey = [
+    run.video || "",
+    run.duration || "",
+    run.workflow_id || "",
+    run.workflow_mode || "",
+    run.workflow_label || "",
+  ].join("|");
+  if (card.dataset.editMenuKey !== editMenuKey) {
+    card.dataset.editMenuKey = editMenuKey;
+    if (existingEditMenu) existingEditMenu.remove();
+    const editMenu = renderResultVideoEditMenu(run);
+    if (editMenu) actions.appendChild(editMenu);
+  }
   const pinButton = card.querySelector(".pin-run");
   pinButton.title = run.pinned ? "Unpin" : "Pin";
   pinButton.setAttribute("aria-label", run.pinned ? "Unpin" : "Pin");
