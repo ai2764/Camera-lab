@@ -38,6 +38,34 @@ test("workspace module exposes edit mode metadata from a single browser API", as
   expect(result.defaults.directorPrompt).toContain("continuous cinematic video");
 });
 
+test("workspace module resolves Bernini tasks through helper functions", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const workspace = window.CameraLabWorkspace;
+    return {
+      v2v: workspace.getBerniniTask("bernini_v2v"),
+      missing: workspace.getBerniniTask("missing_mode"),
+      imageMode: workspace.isBerniniImageMode("bernini_t2i"),
+      videoMode: workspace.isBerniniImageMode("bernini_v2v"),
+      visibleModes: workspace.getVisibleBerniniModes(),
+      rv2vPrompt: workspace.getBerniniDefaultPrompt("bernini_rv2v"),
+      missingPrompt: workspace.getBerniniDefaultPrompt("missing_mode"),
+    };
+  });
+
+  expect(result.v2v).toMatchObject({
+    tag: "V2V",
+    sourceVideo: true,
+    sourceImage: false,
+  });
+  expect(result.missing).toBeNull();
+  expect(result.imageMode).toBe(true);
+  expect(result.videoMode).toBe(false);
+  expect(result.visibleModes).toContain("bernini_ads2v");
+  expect(result.visibleModes).not.toContain("bernini_r2i");
+  expect(result.rv2vPrompt).toContain("Replace the girl");
+  expect(result.missingPrompt).toBe("");
+});
+
 test("workspace module creates the default app state used by the monolithic app", async ({ page }) => {
   const state = await page.evaluate(() => {
     const created = window.CameraLabWorkspace.createInitialState("director");

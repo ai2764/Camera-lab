@@ -109,6 +109,22 @@
   const DIRECTOR_DEFAULT_GLOBAL_PROMPT = "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.";
   const DIRECTOR_TIMELINE_PIXELS_PER_SECOND = 96;
 
+  function getBerniniTask(mode) {
+    return BERNINI_TASKS[mode] || null;
+  }
+
+  function isBerniniImageMode(mode) {
+    return BERNINI_IMAGE_MODES.has(mode);
+  }
+
+  function getVisibleBerniniModes() {
+    return [...EDIT_BERNINI_MODES];
+  }
+
+  function getBerniniDefaultPrompt(mode) {
+    return getBerniniTask(mode)?.prompt || "";
+  }
+
   function createInitialState(workspace = "camera") {
     return {
       config: null,
@@ -218,7 +234,11 @@
     INPAINT_DEFAULT_NEGATIVE,
     DIRECTOR_DEFAULT_GLOBAL_PROMPT,
     DIRECTOR_TIMELINE_PIXELS_PER_SECOND,
+    getBerniniTask,
+    isBerniniImageMode,
+    getVisibleBerniniModes,
+    getBerniniDefaultPrompt,
     createInitialState,
-    visibleBerniniModes: () => [...EDIT_BERNINI_MODES],
+    visibleBerniniModes: getVisibleBerniniModes,
   };
 })();
