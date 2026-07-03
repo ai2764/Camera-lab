@@ -2200,12 +2200,13 @@ function upsertMotionRuns(runs, newestFirst = false) {
   for (const run of runs) {
     if (!isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
-    const grid = motionResultsGridForRun(run);
-    if (!grid) continue;
-    removeMotionRunFromOtherGrids(run, grid);
-    const displayRun = motionDisplayRun(run);
-    const card = ensureRunCard(grid, displayRun, newestFirst);
-    updateRunCard(card, displayRun);
+    for (const displayRun of motionDisplayRunsForRun(run)) {
+      const grid = motionResultsGridForRun(displayRun);
+      if (!grid) continue;
+      removeMotionRunFromOtherGrids(displayRun, grid);
+      const card = ensureRunCard(grid, displayRun, newestFirst);
+      updateRunCard(card, displayRun);
+    }
   }
 }
 
@@ -2234,10 +2235,10 @@ function ensureRunCard(grid, run, newestFirst = false) {
     });
     card.querySelector(".pin-run").addEventListener("click", () => {
       const action = card.dataset.pinned === "true" ? "unpin" : "pin";
-      updateHistoryState(card.dataset.runKey, action);
+      updateHistoryState(card._run?.base_history_key || card.dataset.runKey, action);
     });
     card.querySelector(".delete-run").addEventListener("click", () => {
-      updateHistoryState(card.dataset.runKey, "delete");
+      updateHistoryState(card._run?.base_history_key || card.dataset.runKey, "delete");
     });
     if (newestFirst) grid.prepend(node);
     else grid.appendChild(node);
@@ -2252,6 +2253,132 @@ function motionDisplayRun(run) {
     motion_result_video: run.video || "",
     video: kind === "scail" ? (run.video || "") : (run.video || run.guide_video || ""),
   };
+}
+
+function motionSkeletonVideo(run) {
+  if (!isMotionRun(run) || motionRunKind(run) !== "text") return "";
+  if (run.guide_video) return run.guide_video;
+  if (run.video && !motionFinalVideo(run)) return run.video;
+  return "";
+}
+
+function useMotionSkeleton(run) {
+  const skeletonVideo = motionSkeletonVideo(run);
+  if (!skeletonVideo) return;
+  setWorkspace("motion", { syncWorkflow: false });
+  if (run.prompt) setMotionPromptValue(run.prompt);
+  setInputIfPresent("motionDuration", run.duration);
+  setInputIfPresent("motionSeed", run.seed);
+  setInputIfPresent("motionScailSeed", run.seed);
+  restoreMotionSize(run);
+  restoreMotionGuide({ ...run, guide_video: skeletonVideo });
+  clearMotionResult();
+  setMotionSubtab("scail");
+  $("motionStatus").textContent = "Skeleton loaded for SCAIL2.";
+  updateMotionRunAvailability();
+}
+
+function renderMotionSkeletonButton(run) {
+  if (!motionSkeletonVideo(run)) return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "use-skeleton-run";
+  button.textContent = "Use Skeleton";
+  button.addEventListener("click", () => useMotionSkeleton(run));
+  return button;
+}
+
+function motionOutputPath(record) {
+  if (!record) return "";
+  if (typeof record === "string") return record;
+  return String(record.path || record.file || record.video || "");
+}
+
+function motionOutputType(record) {
+  if (!record || typeof record === "string") return "output";
+  return String(record.type || record.comfy_type || "output");
+}
+
+function motionOutputMediaType(record) {
+  if (record && typeof record === "object" && record.media_type) return String(record.media_type);
+  const path = motionOutputPath(record);
+  return /\.(mp4|webm|mov)$/i.test(path) ? "video" : "";
+}
+
+function motionRunExplicitlyUsesGuideAsInput(run) {
+  const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
+  return raw.includes("scail")
+    || raw.includes("uploaded_motion_to_scail")
+    || raw.includes("motion_3d")
+    || raw.includes("3d motion")
+    || raw.includes("motion-3d");
+}
+
+function motionVideoOutputRecords(run, stage) {
+  const records = [];
+  const seen = new Set();
+  const add = (record) => {
+    const path = motionOutputPath(record);
+    if (!path || seen.has(path)) return;
+    if (motionOutputType(record) !== "output") return;
+    if (motionOutputMediaType(record) !== "video") return;
+    seen.add(path);
+    records.push(typeof record === "object" ? record : { path, type: "output", media_type: "video" });
+  };
+  if (stage === "guide") {
+    const guideOutputs = Array.isArray(run.guide_outputs) ? run.guide_outputs : [];
+    const guideVideos = Array.isArray(run.guide_videos) ? run.guide_videos : [];
+    guideOutputs.forEach(add);
+    guideVideos.forEach(add);
+    if (!guideOutputs.length && !guideVideos.length && !motionRunExplicitlyUsesGuideAsInput(run)) add(run.guide_video);
+  } else {
+    (Array.isArray(run.video_outputs) ? run.video_outputs : []).forEach(add);
+    (Array.isArray(run.videos) ? run.videos : []).forEach(add);
+    if (run.video && run.video !== run.guide_video) add(run.video);
+  }
+  return records;
+}
+
+function motionOutputDisplayRun(run, record, kind, index) {
+  const path = motionOutputPath(record);
+  const baseKey = run.base_history_key || runKey(run);
+  const isGuide = kind === "guide";
+  const workflowMode = isGuide ? "motion_text" : kind === "3d" ? "motion_3d" : "motion_scail";
+  const workflowLabel = isGuide ? "Motion Guide" : kind === "3d" ? "3D Motion" : "SCAIL2";
+  return {
+    ...run,
+    history_key: `${baseKey}:${kind}:${index + 1}`,
+    base_history_key: baseKey,
+    workflow_id: isGuide ? "text_to_motion" : kind === "3d" ? "motion_3d_to_scail" : "uploaded_motion_to_scail",
+    workflow_mode: workflowMode,
+    workflow_label: workflowLabel,
+    output_path: path,
+    output_bucket: record?.bucket || "",
+    output_type: motionOutputType(record),
+    output_media_type: "video",
+    video: path,
+    motion_result_video: isGuide ? "" : path,
+    guide_video: isGuide ? path : (run.guide_video || ""),
+  };
+}
+
+function motionDisplayRunsForRun(run) {
+  const kind = motionRunKind(run);
+  const displayRuns = [];
+  const guideRecords = motionVideoOutputRecords(run, "guide");
+  const finalRecords = motionVideoOutputRecords(run, "video");
+  guideRecords.forEach((record, index) => {
+    displayRuns.push(motionOutputDisplayRun(run, record, "guide", index));
+  });
+  finalRecords.forEach((record, index) => {
+    displayRuns.push(motionOutputDisplayRun(run, record, kind === "3d" ? "3d" : "scail", index));
+  });
+  const status = String(run.status || "").toLowerCase();
+  const waitingForFinal = ["scail", "3d"].includes(kind)
+    && !finalRecords.length
+    && ["queued", "queued_video", "guide_done", "running_video"].includes(status);
+  if (waitingForFinal || !displayRuns.length) displayRuns.push(motionDisplayRun(run));
+  return displayRuns;
 }
 
 function motionRunKind(run) {
@@ -2327,20 +2454,21 @@ function renderScopedHistory() {
   const visibleRuns = sortRunsNewestFirst(state.historyRuns.filter((run) => !state.hiddenRunKeys.has(runKey(run))));
   const directorRuns = visibleRuns.filter((run) => isDirectorRun(run));
   const motionRuns = visibleRuns.filter((run) => isMotionRun(run));
+  const motionDisplayRuns = motionRuns.flatMap(motionDisplayRunsForRun);
   const resultRuns = visibleRuns.filter((run) => !isDirectorRun(run) && !isMotionRun(run) && runBelongsInCurrentResults(run));
   syncRunGrid($("resultsGrid"), resultRuns);
   syncRunGrid($("directorResultsGrid"), directorRuns);
-  syncRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
-  syncRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
-  syncRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+  syncRunGrid($("motionResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "text"));
+  syncRunGrid($("motionScailResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "scail"));
+  syncRunGrid($("motion3dResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "3d"));
   upsertRuns(resultRuns, false);
   upsertRuns(directorRuns, false);
   upsertMotionRuns(motionRuns, false);
   orderRunGrid($("resultsGrid"), resultRuns);
   orderRunGrid($("directorResultsGrid"), directorRuns);
-  orderRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
-  orderRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
-  orderRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+  orderRunGrid($("motionResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "text"));
+  orderRunGrid($("motionScailResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "scail"));
+  orderRunGrid($("motion3dResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "3d"));
 }
 
 function syncRunGrid(grid, runs) {
@@ -2464,8 +2592,12 @@ function updateRunCard(card, run) {
   card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
   const actions = card.querySelector(".result-text-actions");
+  const existingSkeletonButton = actions.querySelector(".use-skeleton-run");
+  if (existingSkeletonButton) existingSkeletonButton.remove();
   const existingEditMenu = actions.querySelector(".result-video-edit");
   if (existingEditMenu) existingEditMenu.remove();
+  const skeletonButton = renderMotionSkeletonButton(run);
+  if (skeletonButton) actions.appendChild(skeletonButton);
   const editMenu = renderResultVideoEditMenu(run);
   if (editMenu) actions.appendChild(editMenu);
   const pinButton = card.querySelector(".pin-run");

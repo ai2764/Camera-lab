@@ -505,6 +505,116 @@ test("motion results are typed and scoped by motion subtab", async ({ page }) =>
   await expect(page.locator("#motion3dResultsGrid .result-card").filter({ hasText: "3d final result" }).locator(".mode-tag")).toHaveText("3D");
 });
 
+test("motion result cards expand output videos with matching output types", async ({ page }) => {
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: [
+          {
+            batch_id: "motion_text_multi",
+            run_id: "01_text",
+            workflow_id: "text_to_motion",
+            workflow_mode: "motion_text",
+            workflow_label: "Motion Guide",
+            status: "guide_done",
+            guide_video: "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+            guide_outputs: [
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+                bucket: "images",
+                type: "output",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_temp.mp4",
+                bucket: "images",
+                type: "temp",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_b.webm",
+                bucket: "gifs",
+                type: "output",
+                media_type: "video",
+              },
+            ],
+            prompt: "text multi output",
+            duration: 4,
+          },
+          {
+            batch_id: "motion_scail_multi",
+            run_id: "01_scail",
+            workflow_id: "uploaded_motion_to_scail",
+            workflow_mode: "motion_scail",
+            workflow_label: "SCAIL2",
+            status: "done",
+            guide_video: "tasks/camera_lab_runs/motion_scail_multi/01/guide.mp4",
+            video: "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+            video_outputs: [
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+                bucket: "images",
+                type: "output",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_temp.mp4",
+                bucket: "images",
+                type: "temp",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_b.webm",
+                bucket: "gifs",
+                type: "output",
+                media_type: "video",
+              },
+            ],
+            prompt: "scail multi output",
+            duration: 4,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/#motion");
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(2);
+  await expect(page.locator("#motionResultsGrid .mode-tag")).toHaveText(["GUIDE", "GUIDE"]);
+  const guidePaths = await page.locator("#motionResultsGrid video").evaluateAll((videos) =>
+    videos.map((video) => new URL(video.currentSrc || video.src).searchParams.get("path")),
+  );
+  expect(guidePaths).toEqual(expect.arrayContaining([
+    "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+    "tasks/camera_lab_runs/motion_text_multi/01/guide_b.webm",
+  ]));
+  expect(guidePaths).not.toContain("tasks/camera_lab_runs/motion_text_multi/01/guide_temp.mp4");
+
+  const firstSkeletonCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "text multi output" }).first();
+  await expect(firstSkeletonCard.locator(".use-skeleton-run")).toHaveText("Use Skeleton");
+  await page.evaluate(() => {
+    state.motionRefPath = "tasks/camera_lab_uploads/images/ref.png";
+  });
+  await firstSkeletonCard.locator(".use-skeleton-run").click();
+  await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
+  await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide_a\.mp4/);
+  await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide_a.mp4");
+  await expect(page.locator("#motionRunBtn")).toBeEnabled();
+
+  await page.locator("#motionScailTab").click();
+  await expect(page.locator("#motionScailResultsGrid video")).toHaveCount(2);
+  await expect(page.locator("#motionScailResultsGrid .mode-tag")).toHaveText(["SCAIL2", "SCAIL2"]);
+  const finalPaths = await page.locator("#motionScailResultsGrid video").evaluateAll((videos) =>
+    videos.map((video) => new URL(video.currentSrc || video.src).searchParams.get("path")),
+  );
+  expect(finalPaths).toEqual(expect.arrayContaining([
+    "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+    "tasks/camera_lab_runs/motion_scail_multi/01/final_b.webm",
+  ]));
+  expect(finalPaths).not.toContain("tasks/camera_lab_runs/motion_scail_multi/01/final_temp.mp4");
+});
+
 test("delete removes motion 3d output cards from the visible panel", async ({ page }) => {
   await page.route("**/api/history?limit=200", async (route) => {
     await route.fulfill({

@@ -2331,26 +2331,51 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
     return sorted(set(models))
 
 
-def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+def output_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in VIDEO_OUTPUT_SUFFIXES:
+        return "video"
+    if suffix in IMAGE_OUTPUT_SUFFIXES:
+        return "image"
+    if suffix == ".gif":
+        return "gif"
+    return "file"
+
+
+def copy_output_records(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[dict[str, str]]:
     history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url).get(prompt_id, {})
     (run_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-    copied: list[Path] = []
+    copied: list[dict[str, str]] = []
     input_root = MOTION_COMFY_INPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_INPUT
     output_root = MOTION_COMFY_OUTPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_OUTPUT
     for output in history.get("outputs", {}).values():
-        for key in ("videos", "images", "gifs"):
-            for item in output.get(key, []):
+        for bucket in ("videos", "images", "gifs"):
+            for item in output.get(bucket, []):
                 filename = item.get("filename")
                 if not filename:
                     continue
                 subfolder = item.get("subfolder", "")
-                src_root = output_root if item.get("type", "output") == "output" else input_root
+                output_type = str(item.get("type", "output") or "output")
+                src_root = output_root if output_type == "output" else input_root
                 src = src_root / subfolder / filename
                 if src.exists():
                     dst = run_dir / filename
                     shutil.copy2(src, dst)
-                    copied.append(dst)
+                    copied.append(
+                        {
+                            "path": str(dst),
+                            "filename": str(filename),
+                            "subfolder": str(subfolder),
+                            "bucket": bucket,
+                            "type": output_type,
+                            "media_type": output_media_type(dst),
+                        }
+                    )
     return copied
+
+
+def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+    return [Path(record["path"]) for record in copy_output_records(run_dir, prompt_id, base_url)]
 
 
 def make_contact_sheet(video: Path, contact: Path, title: str) -> None:
@@ -3093,6 +3118,22 @@ def first_video(copied: list[Path], stage: str) -> Path:
     return videos[0]
 
 
+def output_record_paths(records: list[dict[str, Any]]) -> list[Path]:
+    return [Path(str(record["path"])) for record in records if record.get("path")]
+
+
+def output_record_videos(records: list[dict[str, Any]]) -> list[Path]:
+    videos: list[Path] = []
+    for record in records:
+        if str(record.get("type") or "output") != "output":
+            continue
+        path = Path(str(record.get("path") or ""))
+        if not path or output_media_type(path) != "video":
+            continue
+        videos.append(path)
+    return videos
+
+
 def persist_motion_batch(batch: dict[str, Any] | None) -> None:
     if batch:
         write_batch(batch)
@@ -3326,9 +3367,13 @@ def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
     wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
     check_run_canceled(run)
 
-    guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
-    guide_video = first_video(guide_copied, "HY-Motion guide")
+    guide_records = copy_output_records(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
+    guide_copied = output_record_paths(guide_records)
+    guide_videos = output_record_videos(guide_records)
+    guide_video = first_video(guide_videos, "HY-Motion guide")
     run["guide_video"] = str(guide_video)
+    run["guide_videos"] = [str(path) for path in guide_videos]
+    run["guide_outputs"] = guide_records
     run["scail_length"] = align_4k1(video_frame_count(guide_video))
     run["copied"] = [str(path) for path in guide_copied]
     run["status"] = "guide_done"
@@ -3372,9 +3417,13 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
     check_run_canceled(run)
 
-    final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
-    final_video = first_video(final_copied, "SCAIL video")
+    final_records = copy_output_records(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
+    final_copied = output_record_paths(final_records)
+    final_videos = output_record_videos(final_records)
+    final_video = first_video(final_videos, "SCAIL video")
     run["video"] = str(final_video)
+    run["videos"] = [str(path) for path in final_videos]
+    run["video_outputs"] = final_records
     run["copied"] = [*run.get("copied", []), *[str(path) for path in final_copied]]
     contact = run_dir / "contact.jpg"
     try:
