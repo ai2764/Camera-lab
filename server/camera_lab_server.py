@@ -2298,7 +2298,14 @@ def next_api_node_id(api: Mapping[str, Any]) -> str:
     return str(max(numeric + [0]) + 1)
 
 
-def add_inpaint_control_video_nodes(api: dict, source_frames: list[Any], width: int, height: int, length: int) -> list[Any]:
+def add_inpaint_control_video_nodes(
+    api: dict,
+    source_frames: list[Any],
+    control_mask: list[Any],
+    width: int,
+    height: int,
+    length: int,
+) -> list[Any]:
     frame_batch_id = next_api_node_id(api)
     api[frame_batch_id] = {
         "class_type": "ImageFromBatch",
@@ -2317,7 +2324,32 @@ def add_inpaint_control_video_nodes(api: dict, source_frames: list[Any], width: 
         },
         "_meta": {"title": "Camera Lab inpaint source resize"},
     }
-    return [scaled_id, 0]
+    inverted_mask_id = next_api_node_id(api)
+    api[inverted_mask_id] = {
+        "class_type": "InvertMask",
+        "inputs": {"mask": control_mask},
+        "_meta": {"title": "Camera Lab inverted inpaint mask"},
+    }
+    mask_image_id = next_api_node_id(api)
+    api[mask_image_id] = {
+        "class_type": "MaskToImage",
+        "inputs": {"mask": [inverted_mask_id, 0]},
+        "_meta": {"title": "Camera Lab inpaint mask fill image"},
+    }
+    masked_video_id = next_api_node_id(api)
+    api[masked_video_id] = {
+        "class_type": "ImageCompositeMasked",
+        "inputs": {
+            "destination": [scaled_id, 0],
+            "source": [mask_image_id, 0],
+            "mask": control_mask,
+            "x": 0,
+            "y": 0,
+            "resize_source": True,
+        },
+        "_meta": {"title": "Camera Lab masked inpaint control video"},
+    }
+    return [masked_video_id, 0]
 
 
 def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None:
@@ -2384,7 +2416,7 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
 
     control_video: list[Any] | None = None
     if source_frames:
-        control_video = add_inpaint_control_video_nodes(api, source_frames, width, height, length)
+        control_video = add_inpaint_control_video_nodes(api, source_frames, [image_to_mask_id, 0], width, height, length)
 
     for node in api.values():
         if node.get("class_type") != "WanVaceToVideo":
@@ -2406,6 +2438,9 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
         raise RuntimeError("inpaint workflow is missing WanVaceToVideo")
 
     for node_id, node in list(api.items()):
+        title = str(node.get("_meta", {}).get("title") or "")
+        if title.startswith("Camera Lab"):
+            continue
         if node.get("class_type") in {"SAM3_Detect", "ResizeImageMaskNode", "GrowMask", "ImageCompositeMasked", "MaskPreview", "PreviewImage"}:
             api.pop(node_id, None)
 
@@ -2805,7 +2840,37 @@ def merge_segment_videos(
         lines.append(f"file '{safe_path}'")
     concat_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
     runner(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(output)],
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-movflags",
+            "+faststart",
+            "-avoid_negative_ts",
+            "make_zero",
+            str(output),
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -2912,7 +2977,9 @@ def stitch_retake_video(payload: Mapping[str, Any], *, runner: Any = subprocess.
     stitched_duration = video_duration_seconds(output)
     prompt = str(payload.get("prompt") or payload.get("retake_prompt") or "Director retake stitch").strip() or "Director retake stitch"
     retake_id = str(payload.get("retake_id") or payload.get("retakeId") or "").strip()
+    edit_mode = str(payload.get("edit_mode") or payload.get("editMode") or "").strip()
     edit_run_key = str(payload.get("edit_run_key") or payload.get("editRunKey") or "").strip()
+    variant_name = "+".join(part for part in [retake_id, edit_mode] if part) or "retake"
     run = {
         "batch_id": batch_id,
         "run_id": run_id,
@@ -2924,7 +2991,7 @@ def stitch_retake_video(payload: Mapping[str, Any], *, runner: Any = subprocess.
         "video": str(output),
         "copied": [str(output)],
         "duration": round(stitched_duration, 3),
-        "variant_name": "Director Retake Stitch",
+        "variant_name": variant_name,
         "prompt": prompt,
         "status": "done",
         "queued_at": now,
@@ -2937,6 +3004,7 @@ def stitch_retake_video(payload: Mapping[str, Any], *, runner: Any = subprocess.
             "edit_run_key": edit_run_key,
             "base_video": str(base_video),
             "edited_video": str(edited_video),
+            "edit_mode": edit_mode,
             "start": round(start, 3),
             "end": round(end, 3),
         },
@@ -5546,6 +5614,8 @@ def history_runs(limit: int = 30) -> list[dict[str, Any]]:
             key = history_key(run)
             if key in hidden:
                 continue
+            if run_done_video_missing(run):
+                continue
             item = dict(run)
             item["history_key"] = key
             item["pinned"] = key in pinned
@@ -5560,6 +5630,15 @@ def history_runs(limit: int = 30) -> list[dict[str, Any]]:
             runs.append(item)
     runs.sort(key=lambda run: (0 if run.get("pinned") else 1, -(run.get("sort_time") or 0)))
     return runs[: max(1, min(limit, 200))]
+
+
+def run_done_video_missing(run: Mapping[str, Any]) -> bool:
+    if run.get("status") not in {"done", "guide_done"}:
+        return False
+    video = str(run.get("video") or "").strip()
+    if not video:
+        return False
+    return not Path(video).exists()
 
 
 def history_key(run: dict[str, Any]) -> str:

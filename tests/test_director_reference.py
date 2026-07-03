@@ -466,6 +466,11 @@ class DirectorReferenceTests(unittest.TestCase):
             for node_id, node in api.items()
             if node["class_type"] == "ImageScale" and node["inputs"].get("image") == [source_range_id, 0]
         )
+        source_masked_id = next(
+            node_id
+            for node_id, node in api.items()
+            if node["class_type"] == "ImageCompositeMasked" and node["inputs"].get("destination") == [source_resize_id, 0]
+        )
         image_to_mask = api[image_to_mask_id]
         vace = next(node for node in api.values() if node["class_type"] == "WanVaceToVideo")
         sampler = next(node for node in api.values() if node["class_type"] == "KSampler")
@@ -483,7 +488,8 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(api[source_resize_id]["inputs"]["width"], 320)
         self.assertEqual(api[source_resize_id]["inputs"]["height"], 320)
         self.assertEqual(api[source_resize_id]["inputs"]["crop"], "center")
-        self.assertEqual(vace["inputs"]["control_video"], [source_resize_id, 0])
+        self.assertEqual(api[source_masked_id]["inputs"]["mask"], [image_to_mask_id, 0])
+        self.assertEqual(vace["inputs"]["control_video"], [source_masked_id, 0])
         self.assertEqual(vace["inputs"]["width"], 320)
         self.assertEqual(vace["inputs"]["height"], 320)
         self.assertEqual(vace["inputs"]["length"], 25)
@@ -597,6 +603,40 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertTrue((comfy_input / input_names["source_video"]).exists())
             self.assertTrue((comfy_input / input_names["mask_image"]).exists())
 
+    def test_history_runs_skips_done_video_runs_when_video_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            batch_dir = root / "missing_video_batch"
+            batch_dir.mkdir()
+            missing_video = batch_dir / "01" / "missing.mp4"
+            batch = {
+                "batch_id": "missing_video_batch",
+                "status": "done",
+                "runs": [
+                    {
+                        "batch_id": "missing_video_batch",
+                        "run_id": "01",
+                        "workflow_id": "ltx_director_2",
+                        "workflow_mode": "director_ref",
+                        "workflow_label": "LTX Director Reference V2",
+                        "status": "done",
+                        "video": str(missing_video),
+                        "copied": [str(missing_video)],
+                        "finished_at": 1,
+                    }
+                ],
+            }
+            (batch_dir / "batch.json").write_text(json.dumps(batch), encoding="utf-8")
+            original_run_root = server.RUN_ROOT
+            original_history_state = server.HISTORY_STATE
+            try:
+                server.RUN_ROOT = root
+                server.HISTORY_STATE = root / "_history_state.json"
+                self.assertEqual(server.history_runs(), [])
+            finally:
+                server.RUN_ROOT = original_run_root
+                server.HISTORY_STATE = original_history_state
+
     def test_stage_bernini_inputs_copies_images_and_videos(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -681,6 +721,9 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertTrue(concat_list.exists())
             self.assertIn("one.mp4", concat_list.read_text(encoding="utf-8"))
             self.assertEqual(commands[0][:5], ["ffmpeg", "-y", "-f", "concat", "-safe"])
+            self.assertNotIn("copy", commands[0])
+            self.assertIn("libx264", commands[0])
+            self.assertIn("+faststart", commands[0])
 
     def test_trim_video_clip_uses_precise_ffmpeg_range(self):
         with tempfile.TemporaryDirectory() as tmp:
