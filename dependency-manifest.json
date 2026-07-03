@@ -109,7 +109,7 @@
       "workflows/app/ltx23_flf_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_i2v_subtitle_cleaner_nag_extend.json",
       "workflows/app/ltx23_nag_ia2v_extendcrop_general.json",
-      "workflows/app/ltx_director_reference_mvp.json",
+      "workflows/app/ltx_director_2.json",
       "workflows/app/wan22_bernini_ads2v.ui.json",
       "workflows/app/wan22_bernini_i2i.ui.json",
       "workflows/app/wan22_bernini_i2v.ui.json",
@@ -171,10 +171,10 @@
       "source": "workflows/app/ltx23_flf_ia2v_nag_extend.json"
     },
     {
-      "id": "ltx_director_reference_mvp",
-      "label": "LTX Director Reference MVP",
+      "id": "ltx_director_2",
+      "label": "LTX Director 2",
       "mode": "director_ref",
-      "source": "workflows/app/ltx_director_reference_mvp.json"
+      "source": "workflows/app/ltx_director_2.json"
     },
     {
       "id": "bernini_t2v",

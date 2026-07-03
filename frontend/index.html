@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Camera Lab</title>
-  <link rel="stylesheet" href="/static/styles.css?v=video-clipper-2">
+  <link rel="stylesheet" href="/static/styles.css?v=director-key-delete-scroll-1">
 </head>
 <body>
   <header class="topbar">
@@ -54,11 +54,13 @@
       </label>
 
       <section id="berniniTaskPanel" class="bernini-panel" hidden>
-        <label id="berniniSourceVideoWrap">
-          Source video
-          <input id="berniniSourceVideoInput" type="file" accept="video/*">
-          <span id="berniniSourceVideoStatus" class="hint">No video uploaded</span>
-          <button id="berniniSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="berniniSourceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Source video</span>
+          <span class="edit-media-control-row">
+            <input id="berniniSourceVideoInput" type="file" accept="video/*">
+            <button id="berniniSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="berniniSourceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="berniniSourceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="berniniSourceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
@@ -67,10 +69,12 @@
           <input id="berniniPreserveAudio" type="checkbox">
           <span>Preserve audio</span>
         </label>
-        <label id="berniniReferenceImageWrap">
-          Reference image
-          <input id="berniniReferenceImageInput" type="file" accept="image/*">
-          <span id="berniniReferenceImageStatus" class="hint">No image uploaded</span>
+        <label id="berniniReferenceImageWrap" class="edit-media-field">
+          <span class="edit-media-label">Reference image</span>
+          <span class="edit-media-control-row">
+            <input id="berniniReferenceImageInput" type="file" accept="image/*">
+          </span>
+          <span id="berniniReferenceImageStatus" class="hint edit-media-status">No image uploaded</span>
         </label>
         <div id="berniniReferenceImagePreviewWrap" class="source-preview">
           <img id="berniniReferenceImagePreview" alt="Bernini reference image preview">
@@ -85,11 +89,13 @@
             <input id="berniniRefMaxSize" type="number" min="16" max="8192" step="16" value="848">
           </label>
         </section>
-        <label id="berniniReferenceVideoWrap">
-          Reference video
-          <input id="berniniReferenceVideoInput" type="file" accept="video/*">
-          <span id="berniniReferenceVideoStatus" class="hint">No video uploaded</span>
-          <button id="berniniReferenceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="berniniReferenceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Reference video</span>
+          <span class="edit-media-control-row">
+            <input id="berniniReferenceVideoInput" type="file" accept="video/*">
+            <button id="berniniReferenceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="berniniReferenceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="berniniReferenceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="berniniReferenceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
@@ -113,19 +119,23 @@
       </section>
 
       <section id="inpaintTaskPanel" class="inpaint-panel" hidden>
-        <label id="inpaintSourceVideoWrap">
-          Source video
-          <input id="inpaintSourceVideoInput" type="file" accept="video/*">
-          <span id="inpaintSourceVideoStatus" class="hint">No video uploaded</span>
-          <button id="inpaintSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+        <label id="inpaintSourceVideoWrap" class="edit-media-field">
+          <span class="edit-media-label">Source video</span>
+          <span class="edit-media-control-row">
+            <input id="inpaintSourceVideoInput" type="file" accept="video/*">
+            <button id="inpaintSourceVideoEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
+          </span>
+          <span id="inpaintSourceVideoStatus" class="hint edit-media-status">No video uploaded</span>
           <div id="inpaintSourceVideoPreviewWrap" class="video-upload-preview" hidden>
             <video id="inpaintSourceVideoPreview" controls playsinline muted preload="metadata"></video>
           </div>
         </label>
-        <label>
-          Reference image (optional)
-          <input id="inpaintReferenceImageInput" type="file" accept="image/*">
-          <span id="inpaintReferenceImageStatus" class="hint">Optional reference not uploaded</span>
+        <label class="edit-media-field">
+          <span class="edit-media-label">Reference image (optional)</span>
+          <span class="edit-media-control-row">
+            <input id="inpaintReferenceImageInput" type="file" accept="image/*">
+          </span>
+          <span id="inpaintReferenceImageStatus" class="hint edit-media-status">Optional reference not uploaded</span>
         </label>
         <div id="inpaintReferenceImagePreviewWrap" class="source-preview">
           <img id="inpaintReferenceImagePreview" alt="Inpaint reference image preview">
@@ -256,109 +266,176 @@
         <textarea id="promptText" class="variant-prompt" rows="16"></textarea>
       </article>
       <section id="directorTimelinePanel" class="director-only director-editor">
-        <div class="director-stage-head">
-          <div>
-            <div class="eyebrow">Director</div>
-            <h2>Timeline Studio</h2>
-          </div>
-          <div class="director-stage-meta">
-            <span>01 Global</span>
-            <span>02 Timeline Segments</span>
-            <span>03 Output</span>
-          </div>
-        </div>
-        <section class="director-workbench-section director-global-zone">
-          <div class="director-section-heading">
-            <div>
-              <div class="director-section-kicker">01</div>
-              <h3>Global Setup</h3>
-            </div>
-            <p>References / Prompt / Audio / Size</p>
-          </div>
-          <div class="director-global-grid">
-            <section id="directorReferenceWrap" class="director-reference-tray">
-              <div class="director-reference-head">
-                <div>
-                  <div class="eyebrow">Global</div>
-                  <h2>Reference images</h2>
-                </div>
-                <button id="globalAddRefBtn" class="reference-add" type="button">+</button>
-              </div>
-              <div id="globalRefSlots" class="reference-slot-list"></div>
-            </section>
-            <section class="director-global-settings">
-              <label>
-                Global prompt
-                <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
-              </label>
-              <label>
-                Global ref strength
-                <input id="directorGlobalReferenceStrength" type="number" min="0" max="1" step="0.05" value="0.35">
-              </label>
-              <section class="director-video-size">
-                <div class="grid-2">
-                  <label>
-                    Preset
-                    <select id="directorSizePreset">
-                      <option value="512x512">1:1 512x512</option>
-                      <option value="1280x720" selected>16:9 1280x720</option>
-                      <option value="720x1280">9:16 720x1280</option>
-                      <option value="768x1152">2:3 768x1152</option>
-                      <option value="1152x768">3:2 1152x768</option>
-                    </select>
-                  </label>
-                  <label>
-                    Scale <span id="directorSizeReadout">1280x720 / 100%</span>
-                    <input id="directorSizeScale" type="range" min="50" max="150" step="5" value="100">
-                  </label>
-                </div>
-                <label class="size-text-row">
-                  Frame size
-                  <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
-                </label>
-              </section>
-            </section>
-          </div>
-        </section>
         <section class="director-workbench-section director-timeline-zone">
-          <div class="director-section-heading">
-            <div>
-              <div class="director-section-kicker">02</div>
-              <h3>Timeline Segments</h3>
-            </div>
-            <p>Image or text blocks / Duration / Prompt / Guide image</p>
-          </div>
           <div class="director-workspace-grid">
             <section class="director-main-editor">
-              <div class="director-timeline-shell">
-                <div class="director-timeline-head">
-                  <span>Image and text timeline</span>
-                  <div class="timeline-tools">
-                    <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
-                    <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+              <div class="director-preview-row">
+                <div class="director-preview" id="directorPreview">
+                  <div class="director-preview-stage">
+                    <video id="directorPreviewVideo" class="director-preview-media" muted playsinline preload="metadata" style="display:none"></video>
+                    <img id="directorPreviewImage" class="director-preview-media" alt="Timeline preview" style="display:none">
+                    <div id="directorPreviewOverlay" class="director-preview-overlay" style="display:none"></div>
+                  </div>
+                  <div class="director-preview-transport">
+                    <button id="directorPreviewPlay" type="button" aria-label="Play preview">▶</button>
+                    <span id="directorPreviewTime" class="director-preview-time">0.0s / 0.0s</span>
                   </div>
                 </div>
+                <section class="director-global-settings">
+                  <label class="director-global-prompt-field">
+                    Global prompt
+                    <textarea id="directorGlobalPrompt" rows="4" placeholder="Shared visual continuity for the full timeline"></textarea>
+                  </label>
+                  <div class="grid-2 director-seed-field">
+                    <label>
+                      Seed
+                      <input id="directorGlobalSeedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
+                    </label>
+                  </div>
+                  <label class="director-negative-prompt-field">
+                    Negative prompt
+                    <textarea id="directorNegativePrompt" rows="4"></textarea>
+                  </label>
+                  <section class="director-video-size">
+                    <div class="grid-2">
+                      <label>
+                        Preset
+                        <select id="directorSizePreset">
+                          <option value="512x512">1:1 512x512</option>
+                          <option value="1280x720" selected>16:9 1280x720</option>
+                          <option value="720x1280">9:16 720x1280</option>
+                          <option value="768x1152">2:3 768x1152</option>
+                          <option value="1152x768">3:2 1152x768</option>
+                        </select>
+                      </label>
+                      <label>
+                        Scale <span id="directorSizeReadout">1280x720 / 100%</span>
+                        <input id="directorSizeScale" type="range" min="50" max="150" step="5" value="100">
+                      </label>
+                    </div>
+                    <label class="size-text-row">
+                      Custom frame size
+                      <input id="directorCustomSizeInput" type="text" value="1280x720" placeholder="1280x720">
+                    </label>
+                  </section>
+                </section>
+              </div>
+              <div class="director-timeline-toolbar">
+                <div class="director-mode-tabs" role="tablist" aria-label="Director mode">
+                  <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">Generate</button>
+                  <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
+                </div>
+                <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
+              </div>
+              <div class="director-timeline-shell">
                 <div class="director-ruler" id="directorRuler"></div>
-                <div class="director-track-label">Video</div>
-                <div class="director-track" id="directorTrack"></div>
-                <div class="director-track-label director-audio-track-label">
-                  <span>Audio</span>
-                  <button id="addDirectorAudioBtn" class="timeline-add director-audio-add" type="button" title="Add audio clip" aria-label="Add audio clip">+</button>
+                <div class="director-playhead" id="directorPlayhead">
+                  <span class="director-playhead-frame" id="directorPlayheadFrame">F0</span>
                 </div>
-                <div class="director-audio-track" id="directorAudioTrack"></div>
+                <section class="director-lane" data-lane="main">
+                  <div class="director-track-label">
+                    <span>Main</span>
+                    <small>Image keyframes now, video clips next</small>
+                    <div class="timeline-tools director-main-tools">
+                      <button id="openStoryboardImportBtn" class="timeline-tool-button" type="button">2x2 Storyboard</button>
+                      <button id="addDirectorSegmentBtn" class="timeline-add" type="button" title="Add segment" aria-label="Add segment">+</button>
+                    </div>
+                  </div>
+                  <div class="director-track" id="directorTrack"></div>
+                </section>
+                <section class="director-lane director-retake-lane" data-lane="retake" hidden>
+                  <div class="director-track-label">
+                    <span>Retake video</span>
+                    <small>Base video and selected regenerate range</small>
+                    <div class="timeline-tools director-retake-tools">
+                      <button id="directorRetakeSetStartBtn" class="timeline-tool-button" type="button" title="Set retake start at playhead">{</button>
+                      <button id="directorRetakeSetEndBtn" class="timeline-tool-button" type="button" title="Set retake end at playhead">}</button>
+                      <button id="addDirectorRetakeVideoBtn" class="timeline-add" type="button" title="Add retake base video" aria-label="Add retake base video">+</button>
+                      <input id="directorRetakeVideoInput" type="file" accept="video/*" hidden>
+                    </div>
+                  </div>
+                  <div class="director-track director-retake-track" id="directorRetakeTrack">
+                    <span>Drop one generated video here for retake</span>
+                  </div>
+                </section>
+                <section class="director-lane director-lane-muted" data-lane="video-audio">
+                  <div class="director-track-label">
+                    <span>Video audio</span>
+                    <small>Follows main video guides</small>
+                    <button id="addDirectorVideoAudioBtn" class="timeline-add director-audio-add" type="button" title="Add video audio clip" aria-label="Add video audio clip">+</button>
+                  </div>
+                  <div class="director-placeholder-track" id="directorVideoAudioTrack">
+                    <span>Main video guide audio appears here automatically</span>
+                  </div>
+                </section>
+                <section class="director-lane" data-lane="dialogue">
+                  <div class="director-track-label director-audio-track-label">
+                    <span>Dialogue</span>
+                    <small>Voice, TTS, and external audio</small>
+                    <button id="addDirectorAudioBtn" class="timeline-add director-audio-add" type="button" title="Add audio clip" aria-label="Add audio clip">+</button>
+                  </div>
+                  <div class="director-audio-track" id="directorAudioTrack"></div>
+                </section>
+                <section class="director-lane director-lane-muted" data-lane="ic-video">
+                  <div class="director-track-label">
+                    <span>IC video</span>
+                    <small>Ingredients / IC-LoRA reference</small>
+                    <div class="director-ic-lora-controls">
+                      <select id="directorIcLora" class="director-ic-lora-select" title="IC-LoRA model" aria-label="IC-LoRA model">
+                        <option value="None">No IC-LoRA</option>
+                      </select>
+                      <label class="director-ic-lora-strength-label" title="IC-LoRA model strength">
+                        <span>Strength</span>
+                        <input id="directorIcLoraStrength" type="number" min="0" max="2" step="0.05" value="1" aria-label="IC-LoRA strength">
+                      </label>
+                    </div>
+                    <button id="addDirectorIcVideoBtn" class="timeline-add director-ic-video-add" type="button" title="Add IC video" aria-label="Add IC video">+</button>
+                    <input id="directorIcVideoInput" type="file" accept="video/*" hidden>
+                  </div>
+                  <div class="director-track director-ic-video-track" id="directorIcVideoTrack">
+                    <span>IC reference clips land here in the IC-LoRA block</span>
+                  </div>
+                </section>
               </div>
-              <div class="director-edit-row">
-                <div id="directorSegmentInspector" class="director-inspector"></div>
-                <div class="director-shot-list">
-                  <div class="eyebrow">Timeline</div>
-                  <div id="directorSegments" class="director-segments"></div>
+              <section class="director-retake-panel" id="directorRetakePanel" hidden>
+                <label>
+                  Retake prompt
+                  <textarea id="directorRetakePrompt" rows="3" placeholder="Prompt for the selected retake range"></textarea>
+                </label>
+                <label>
+                  Retake strength
+                  <input id="directorRetakeStrength" type="number" min="0" max="1" step="0.05" value="1">
+                </label>
+                <div class="director-retake-selection-preview">
+                  <video id="directorRetakeSelectionPreview" muted playsinline preload="metadata"></video>
+                  <span id="directorRetakeSelectionLabel" class="hint">No retake selection preview</span>
                 </div>
-              </div>
+                <label class="director-retake-auto-stitch">
+                  <input id="directorRetakeAutoStitch" type="checkbox" checked>
+                  Auto stitch edited clip back to Director output
+                </label>
+                <div class="director-retake-edit-label">Send selection to Edit</div>
+                <div class="director-retake-edit-modes" id="directorRetakeEditModes" aria-label="Send retake selection to Edit mode"></div>
+                <span id="directorRetakeStatus" class="hint">Upload a base video, then use { and } at the playhead to set the retake range.</span>
+              </section>
             </section>
           </div>
         </section>
       </section>
       <div id="directorRunSlot" class="director-run-slot"></div>
+      <div id="directorSegmentModal" class="director-modal" aria-hidden="true">
+        <div class="director-modal-backdrop" data-close-director-segment-modal></div>
+        <section class="director-modal-panel director-segment-modal-panel" role="dialog" aria-modal="true" aria-labelledby="directorSegmentModalTitle">
+          <div class="director-modal-head">
+            <div>
+              <div class="eyebrow">Timeline edit</div>
+              <h2 id="directorSegmentModalTitle">Selected segment</h2>
+            </div>
+            <button id="closeDirectorSegmentModalBtn" class="modal-icon-button" type="button" aria-label="Close">x</button>
+          </div>
+          <div id="directorSegmentInspector" class="director-inspector"></div>
+        </section>
+      </div>
       <div id="storyboardImportModal" class="director-modal" aria-hidden="true">
         <div class="director-modal-backdrop" data-close-storyboard-modal></div>
         <section class="director-modal-panel" role="dialog" aria-modal="true" aria-labelledby="storyboardImportTitle">
@@ -419,10 +496,9 @@
       <section class="director-output-zone">
         <div class="director-section-heading director-output-heading">
           <div>
-            <div class="director-section-kicker">03</div>
-            <h3>Output</h3>
+            <div class="director-section-kicker">Output</div>
+            <h3 class="visually-hidden">Output</h3>
           </div>
-          <p>Queue / Video results / Segment jumps</p>
         </div>
         <div id="audioUploadHome">
           <label id="audioUploadWrap" class="audio-upload">
@@ -946,7 +1022,9 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=late-preview-poll-1"></script>
+  <script src="/static/director-timeline-model.js?v=director-frame-model-1"></script>
+  <script src="/static/director-preview.js?v=director-key-delete-scroll-1"></script>
+  <script src="/static/app.js?v=director-audio-waveform-trim-1"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>

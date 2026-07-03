@@ -451,7 +451,26 @@ class DirectorReferenceTests(unittest.TestCase):
         ref_id = node_id_by_type_and_input("LoadImage", "image", "ref.png")
         mask_id = node_id_by_type_and_input("LoadImage", "image", "mask.png")
         image_to_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "ImageToMask")
+        repeated_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "RepeatImageBatch")
         load_video = next(node for node in api.values() if node["class_type"] == "LoadVideo")
+        video_components_id = next(node_id for node_id, node in api.items() if node["class_type"] == "GetVideoComponents")
+        source_range_id = next(
+            node_id
+            for node_id, node in api.items()
+            if node["class_type"] == "ImageFromBatch" and node["inputs"].get("image") == [video_components_id, 0]
+            and node["inputs"].get("batch_index") == 0
+            and node["inputs"].get("length") == 25
+        )
+        source_resize_id = next(
+            node_id
+            for node_id, node in api.items()
+            if node["class_type"] == "ImageScale" and node["inputs"].get("image") == [source_range_id, 0]
+        )
+        source_masked_id = next(
+            node_id
+            for node_id, node in api.items()
+            if node["class_type"] == "ImageCompositeMasked" and node["inputs"].get("destination") == [source_resize_id, 0]
+        )
         image_to_mask = api[image_to_mask_id]
         vace = next(node for node in api.values() if node["class_type"] == "WanVaceToVideo")
         sampler = next(node for node in api.values() if node["class_type"] == "KSampler")
@@ -459,9 +478,18 @@ class DirectorReferenceTests(unittest.TestCase):
         vace_id = next(node_id for node_id, node in api.items() if node["class_type"] == "WanVaceToVideo")
 
         self.assertEqual(load_video["inputs"]["file"], "source.mp4")
-        self.assertEqual(image_to_mask["inputs"]["image"], [mask_id, 0])
+        self.assertEqual(api[repeated_mask_id]["inputs"]["image"], [mask_id, 0])
+        self.assertEqual(api[repeated_mask_id]["inputs"]["amount"], 25)
+        self.assertEqual(image_to_mask["inputs"]["image"], [repeated_mask_id, 0])
         self.assertEqual(vace["inputs"]["reference_image"], [ref_id, 0])
         self.assertEqual(vace["inputs"]["control_masks"], [image_to_mask_id, 0])
+        self.assertEqual(api[source_range_id]["inputs"]["batch_index"], 0)
+        self.assertEqual(api[source_range_id]["inputs"]["length"], 25)
+        self.assertEqual(api[source_resize_id]["inputs"]["width"], 320)
+        self.assertEqual(api[source_resize_id]["inputs"]["height"], 320)
+        self.assertEqual(api[source_resize_id]["inputs"]["crop"], "center")
+        self.assertEqual(api[source_masked_id]["inputs"]["mask"], [image_to_mask_id, 0])
+        self.assertEqual(vace["inputs"]["control_video"], [source_masked_id, 0])
         self.assertEqual(vace["inputs"]["width"], 320)
         self.assertEqual(vace["inputs"]["height"], 320)
         self.assertEqual(vace["inputs"]["length"], 25)
@@ -497,10 +525,12 @@ class DirectorReferenceTests(unittest.TestCase):
             if node["class_type"] == "LoadImage" and node["inputs"].get("image") == "mask.png"
         )
         image_to_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "ImageToMask")
+        repeated_mask_id = next(node_id for node_id, node in api.items() if node["class_type"] == "RepeatImageBatch")
 
         self.assertNotIn("reference_image", vace["inputs"])
         self.assertEqual(vace["inputs"]["control_masks"], [image_to_mask_id, 0])
-        self.assertEqual(api[image_to_mask_id]["inputs"]["image"], [mask_id, 0])
+        self.assertEqual(api[repeated_mask_id]["inputs"]["image"], [mask_id, 0])
+        self.assertEqual(api[image_to_mask_id]["inputs"]["image"], [repeated_mask_id, 0])
 
     def test_validate_inpaint_media_paths_reference_is_optional(self):
         source_video = Path(tempfile.gettempdir()) / "camera_lab_source.mp4"
@@ -572,6 +602,40 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertNotIn("reference_image", input_names)
             self.assertTrue((comfy_input / input_names["source_video"]).exists())
             self.assertTrue((comfy_input / input_names["mask_image"]).exists())
+
+    def test_history_runs_skips_done_video_runs_when_video_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            batch_dir = root / "missing_video_batch"
+            batch_dir.mkdir()
+            missing_video = batch_dir / "01" / "missing.mp4"
+            batch = {
+                "batch_id": "missing_video_batch",
+                "status": "done",
+                "runs": [
+                    {
+                        "batch_id": "missing_video_batch",
+                        "run_id": "01",
+                        "workflow_id": "ltx_director_2",
+                        "workflow_mode": "director_ref",
+                        "workflow_label": "LTX Director Reference V2",
+                        "status": "done",
+                        "video": str(missing_video),
+                        "copied": [str(missing_video)],
+                        "finished_at": 1,
+                    }
+                ],
+            }
+            (batch_dir / "batch.json").write_text(json.dumps(batch), encoding="utf-8")
+            original_run_root = server.RUN_ROOT
+            original_history_state = server.HISTORY_STATE
+            try:
+                server.RUN_ROOT = root
+                server.HISTORY_STATE = root / "_history_state.json"
+                self.assertEqual(server.history_runs(), [])
+            finally:
+                server.RUN_ROOT = original_run_root
+                server.HISTORY_STATE = original_history_state
 
     def test_stage_bernini_inputs_copies_images_and_videos(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -657,6 +721,9 @@ class DirectorReferenceTests(unittest.TestCase):
             self.assertTrue(concat_list.exists())
             self.assertIn("one.mp4", concat_list.read_text(encoding="utf-8"))
             self.assertEqual(commands[0][:5], ["ffmpeg", "-y", "-f", "concat", "-safe"])
+            self.assertNotIn("copy", commands[0])
+            self.assertIn("libx264", commands[0])
+            self.assertIn("+faststart", commands[0])
 
     def test_trim_video_clip_uses_precise_ffmpeg_range(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -996,7 +1063,7 @@ class DirectorReferenceTests(unittest.TestCase):
             "fml_runexx_guider_local": "LTX-2.3_FML2V_RuneXX_guider.local.json",
             "ia2v_extendcrop": "ltx23_nag_ia2v_extendcrop_general.json",
             "flf_ia2v": "ltx23_flf_ia2v_nag_extend.json",
-            "ltx_director_reference_mvp": "ltx_director_reference_mvp.json",
+            "ltx_director_2": "ltx_director_2.json",
             "bernini_t2v": "wan22_bernini_t2v.ui.json",
             "bernini_t2i": "wan22_bernini_t2i.ui.json",
             "bernini_i2v": "wan22_bernini_i2v.ui.json",
@@ -1147,7 +1214,8 @@ class DirectorReferenceTests(unittest.TestCase):
 
         timeline = server.director_timeline_from_payload(payload, fps=24)
 
-        self.assertEqual(timeline["local_prompts"], "visual guide")
+        self.assertEqual(timeline["local_prompts"], "")
+        self.assertEqual(timeline["segment_lengths"], "36")
         self.assertEqual(timeline["segments"][0]["image_path"], "fixtures/keyframe.png")
         self.assertEqual(timeline["segments"][0]["start_frame"], 0)
         guide_segments = server.director_reference_timeline_segments(timeline, {}, {1: "keyframe.png"})
@@ -1205,6 +1273,37 @@ class DirectorReferenceTests(unittest.TestCase):
         self.assertEqual(guide_segments[2]["imageFile"], "end.png")
         self.assertEqual(guide_segments[2]["start"], 72)
 
+    def test_director_timeline_respects_explicit_duration_after_last_segment(self):
+        payload = {
+            "timeline_segments": [
+                {
+                    "id": "img_start",
+                    "type": "image",
+                    "prompt": "first image prompt",
+                    "duration": 1.0,
+                    "start": 0,
+                    "image_path": "fixtures/start.png",
+                    "strength": 0.8,
+                },
+                {
+                    "id": "img_end",
+                    "type": "image",
+                    "prompt": "final image prompt",
+                    "duration": 1.0,
+                    "start": 3.0,
+                    "image_path": "fixtures/end.png",
+                    "strength": 0.6,
+                },
+            ],
+            "duration": 6.0,
+        }
+
+        timeline = server.director_timeline_from_payload(payload, fps=24)
+
+        self.assertEqual(timeline["duration_frames"], 144)
+        self.assertEqual(timeline["local_prompts"], "first image prompt | final image prompt")
+        self.assertEqual(timeline["segment_lengths"], "72,72")
+
     def test_director_timeline_audio_segments_are_independent_from_image_segments(self):
         payload = {
             "timeline_segments": [
@@ -1234,15 +1333,60 @@ class DirectorReferenceTests(unittest.TestCase):
                     "start": 36,
                     "length": 60,
                     "trimStart": 12,
+                    "volume": 1.0,
                 }
             ],
         )
 
-    def test_director_global_reference_images_are_encoded_as_global_guides(self):
+    def test_director_retake_timeline_does_not_segment_global_prompt(self):
+        timeline = server.director_timeline_from_payload(
+            {
+                "duration": 6,
+                "global_prompt": "keep the existing scene continuous",
+                "retake_mode": True,
+                "retake_video": {
+                    "video_path": "tasks/camera_lab_uploads/videos/base.mp4",
+                    "file_name": "base.mp4",
+                    "duration": 6,
+                },
+                "retake_start": 2,
+                "retake_length": 1.5,
+                "retake_prompt": "replace the middle action",
+            },
+            fps=24,
+        )
+
+        self.assertEqual(timeline["local_prompts"], "")
+        self.assertEqual(timeline["segment_lengths"], "")
+        self.assertEqual(timeline["retake_start"], 48)
+        self.assertEqual(timeline["retake_length"], 36)
+        self.assertEqual(timeline["retake_prompt"], "replace the middle action")
+
+    def test_director_retake_prompt_summary_uses_retake_prompt_for_output_display(self):
+        prompt = server.build_director_prompt_summary({
+            "global_prompt": "keep the existing scene continuous",
+            "retake_mode": True,
+            "retake_video": {"video_path": "tasks/camera_lab_uploads/videos/base.mp4"},
+            "retake_start": 2,
+            "retake_length": 1.5,
+            "retake_prompt": "replace the middle action",
+        })
+
+        self.assertEqual(prompt, "replace the middle action")
+
+    def test_director_default_empty_timeline_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "add a segment, guide, or retake video"):
+            server.build_director_prompt_summary({
+                "global_prompt": "A continuous cinematic video with coherent subject identity, consistent lighting, natural motion, and smooth visual continuity across the full timeline.",
+                "timeline_segments": [],
+                "motion_segments": [],
+            })
+
+    def test_director_v2_global_reference_images_are_placeholder_only(self):
         run = {
             "batch_id": "dry",
             "run_id": "01_director",
-            "workflow_id": "ltx_director_reference_mvp",
+            "workflow_id": "ltx_director_2",
             "global_prompt": "same character",
             "segments": [
                 {
@@ -1262,17 +1406,26 @@ class DirectorReferenceTests(unittest.TestCase):
             "negative_prompt": "",
         }
         original_refs = server.copy_director_reference_images
-        original_timeline = server.copy_director_timeline_images
+        original_timeline = server.copy_director_timeline_media
         original_workflow_to_api = server.workflow_to_api
-        original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
-        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: [
-            "dry_reference_01.png",
-            "dry_reference_02.png",
-        ]
-        server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
+        original_object_info = server.object_info
+        original_workflow_path = server.DIRECTOR_V2_WORKFLOW_PATH
+        server.copy_director_reference_images = lambda *_args, **_kwargs: self.fail(
+            "Block 0 must not stage global reference images"
+        )
+        server.copy_director_timeline_media = lambda _run, _timeline, _width, _height: {1: {"type": "image", "name": "dry_timeline.png"}}
+        server.object_info = lambda: {
+            "LTXDirector": {
+                "input": {
+                    "required": {
+                        "global_reference_images": ["STRING"],
+                        "global_reference_strength": ["FLOAT"],
+                    }
+                }
+            }
+        }
         server.workflow_to_api = lambda _workflow: {
-            "3": {"class_type": "VAELoader", "inputs": {}},
-            "46": {
+            "131": {
                 "class_type": "LTXDirector",
                 "inputs": {
                     "global_prompt": "",
@@ -1285,60 +1438,44 @@ class DirectorReferenceTests(unittest.TestCase):
                     "frame_rate": 0,
                     "custom_width": 0,
                     "custom_height": 0,
-                },
-            },
-            "58": {"class_type": "LTXDirectorGuide", "inputs": {}},
-            "77": {
-                "class_type": "CFGGuider",
-                "inputs": {
-                    "model": ["46", 0],
-                    "positive": ["58", 0],
-                    "negative": ["58", 1],
-                    "cfg": 1.0,
+                    "global_reference_images": "stale",
+                    "global_reference_strength": 1.0,
                 },
             },
         }
         with tempfile.TemporaryDirectory() as tmp:
-            server.DIRECTOR_WORKFLOW_PATH = Path(tmp) / "director.json"
-            server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            server.DIRECTOR_V2_WORKFLOW_PATH = Path(tmp) / "director.json"
+            server.DIRECTOR_V2_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
             try:
-                api = server.build_ltx_director_reference_api(run)
+                api = server.build_ltx_director_v2_api(run)
             finally:
                 server.copy_director_reference_images = original_refs
-                server.copy_director_timeline_images = original_timeline
+                server.copy_director_timeline_media = original_timeline
                 server.workflow_to_api = original_workflow_to_api
-                server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
+                server.object_info = original_object_info
+                server.DIRECTOR_V2_WORKFLOW_PATH = original_workflow_path
 
-        director_inputs = api["46"]["inputs"]
+        director_inputs = api["131"]["inputs"]
         timeline = json.loads(director_inputs["timeline_data"])
         self.assertEqual(len(timeline["segments"]), 1)
         self.assertEqual(timeline["segments"][0]["id"], "camera-lab-segment-1")
         self.assertEqual(timeline["segments"][0]["imageFile"], "dry_timeline.png")
         self.assertEqual(timeline["segments"][0]["strength"], 0.75)
         self.assertEqual(director_inputs["guide_strength"], "0.75")
-        self.assertEqual(api["9001"]["class_type"], "LTXVAddGuideMulti")
-        self.assertEqual(api["9001"]["inputs"]["num_guides"], "2")
-        self.assertEqual(api["9001"]["inputs"]["num_guides.image_1"], ["9002", 0])
-        self.assertEqual(api["9001"]["inputs"]["num_guides.image_2"], ["9003", 0])
-        self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_1"], 0)
-        self.assertEqual(api["9001"]["inputs"]["num_guides.frame_idx_2"], 0)
-        self.assertEqual(api["9001"]["inputs"]["num_guides.strength_1"], 0.35)
-        self.assertEqual(api["9001"]["inputs"]["num_guides.strength_2"], 0.35)
-        self.assertEqual(api["9002"]["inputs"]["image"], "dry_reference_01.png")
-        self.assertEqual(api["9003"]["inputs"]["image"], "dry_reference_02.png")
-        self.assertEqual(api["77"]["inputs"]["positive"], ["9001", 0])
-        self.assertEqual(api["77"]["inputs"]["negative"], ["9001", 1])
+        self.assertEqual(director_inputs["global_reference_images"], "")
+        self.assertEqual(director_inputs["global_reference_strength"], 0.0)
+        self.assertFalse(any(node["class_type"] == "LTXVAddGuideMulti" for node in api.values()))
 
     def test_director_build_api_includes_independent_audio_segments(self):
         original_input = server.COMFY_INPUT
-        original_refs = server.copy_director_reference_images
         original_timeline = server.copy_director_timeline_images
         original_workflow_to_api = server.workflow_to_api
-        original_workflow_path = server.DIRECTOR_WORKFLOW_PATH
-        server.copy_director_reference_images = lambda _run, _timeline, _width, _height: []
+        original_object_info = server.object_info
+        original_workflow_path = server.DIRECTOR_V2_WORKFLOW_PATH
         server.copy_director_timeline_images = lambda _run, _timeline, _width, _height: {1: "dry_timeline.png"}
+        server.object_info = lambda: {"LTXDirector": {"input": {"required": {}}}}
         server.workflow_to_api = lambda _workflow: {
-            "46": {
+            "131": {
                 "class_type": "LTXDirector",
                 "inputs": {
                     "global_prompt": "",
@@ -1363,12 +1500,12 @@ class DirectorReferenceTests(unittest.TestCase):
             audio = tmp_path / "line.wav"
             audio.write_bytes(b"audio")
             server.COMFY_INPUT = tmp_path / "comfy_input"
-            server.DIRECTOR_WORKFLOW_PATH = tmp_path / "director.json"
-            server.DIRECTOR_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
+            server.DIRECTOR_V2_WORKFLOW_PATH = tmp_path / "director.json"
+            server.DIRECTOR_V2_WORKFLOW_PATH.write_text("{}", encoding="utf-8")
             run = {
                 "batch_id": "dry",
                 "run_id": "01_director",
-                "workflow_id": "ltx_director_reference_mvp",
+                "workflow_id": "ltx_director_2",
                 "global_prompt": "",
                 "segments": [
                     {
@@ -1398,17 +1535,17 @@ class DirectorReferenceTests(unittest.TestCase):
                 "negative_prompt": "",
             }
             try:
-                api = server.build_ltx_director_reference_api(run)
+                api = server.build_ltx_director_v2_api(run)
                 copied = server.COMFY_INPUT / "01_director_segaudio_01_line.wav"
                 copied_bytes = copied.read_bytes()
             finally:
                 server.COMFY_INPUT = original_input
-                server.copy_director_reference_images = original_refs
                 server.copy_director_timeline_images = original_timeline
                 server.workflow_to_api = original_workflow_to_api
-                server.DIRECTOR_WORKFLOW_PATH = original_workflow_path
+                server.object_info = original_object_info
+                server.DIRECTOR_V2_WORKFLOW_PATH = original_workflow_path
 
-        director_inputs = api["46"]["inputs"]
+        director_inputs = api["131"]["inputs"]
         timeline = json.loads(director_inputs["timeline_data"])
         self.assertTrue(director_inputs["use_custom_audio"])
         self.assertEqual(
