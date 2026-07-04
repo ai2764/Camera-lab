@@ -609,12 +609,13 @@ test("motion result cards expand output videos with matching output types", asyn
   ]));
   expect(guidePaths).not.toContain("tasks/camera_lab_runs/motion_text_multi/01/guide_temp.mp4");
 
-  const firstSkeletonCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "text multi output" }).first();
-  await expect(firstSkeletonCard.locator(".use-skeleton-run")).toHaveText("Use Skeleton");
+  const firstGuideCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "text multi output" }).first();
+  await expect(firstGuideCard.locator(".use-prompt-run")).toHaveText("Use Motion");
+  await expect(firstGuideCard.locator(".use-skeleton-run")).toHaveCount(0);
   await page.evaluate(() => {
     state.motionRefPath = "tasks/camera_lab_uploads/images/ref.png";
   });
-  await firstSkeletonCard.locator(".use-skeleton-run").click();
+  await firstGuideCard.locator(".use-prompt-run").click();
   await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide_a\.mp4/);
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide_a.mp4");

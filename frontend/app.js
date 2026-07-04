@@ -3936,39 +3936,6 @@ function motionDisplayRun(run) {
   };
 }
 
-function motionSkeletonVideo(run) {
-  if (!isMotionRun(run) || motionRunKind(run) !== "text") return "";
-  if (run.guide_video) return run.guide_video;
-  if (run.video && !motionFinalVideo(run)) return run.video;
-  return "";
-}
-
-function useMotionSkeleton(run) {
-  const skeletonVideo = motionSkeletonVideo(run);
-  if (!skeletonVideo) return;
-  setWorkspace("motion", { syncWorkflow: false });
-  if (run.prompt) setMotionPromptValue(run.prompt);
-  setInputIfPresent("motionDuration", run.duration);
-  setInputIfPresent("motionSeed", run.seed);
-  setInputIfPresent("motionScailSeed", run.seed);
-  restoreMotionSize(run);
-  restoreMotionGuide({ ...run, guide_video: skeletonVideo });
-  clearMotionResult();
-  setMotionSubtab("scail");
-  $("motionStatus").textContent = "Skeleton loaded for SCAIL2.";
-  updateMotionRunAvailability();
-}
-
-function renderMotionSkeletonButton(run) {
-  if (!motionSkeletonVideo(run)) return null;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "use-skeleton-run";
-  button.textContent = "Use Skeleton";
-  button.addEventListener("click", () => useMotionSkeleton(run));
-  return button;
-}
-
 function motionOutputPath(record) {
   if (!record) return "";
   if (typeof record === "string") return record;
@@ -4329,11 +4296,7 @@ function updateRunCard(card, run) {
   card.querySelector(".preview-run").disabled = !run.video;
   card.querySelector(".last-frame-run").disabled = !run.video;
   const actions = card.querySelector(".result-text-actions");
-  const existingSkeletonButton = actions.querySelector(".use-skeleton-run");
-  if (existingSkeletonButton) existingSkeletonButton.remove();
-  const skeletonButton = renderMotionSkeletonButton(run);
   const existingEditMenu = actions.querySelector(".result-video-edit");
-  if (skeletonButton) actions.insertBefore(skeletonButton, existingEditMenu || null);
   const editMenuKey = [
     run.video || "",
     run.duration || "",
@@ -4789,7 +4752,7 @@ function useMotionRun(run) {
   restoreMotionSize(run);
   restoreMotionGuide(run);
   const finalVideo = motionFinalVideo(run);
-  setMotionSubtab(finalVideo ? "scail" : "text");
+  setMotionSubtab("scail");
   if (finalVideo) {
     restoreMotionReference(run);
     const result = $("motionResult");
@@ -4799,7 +4762,7 @@ function useMotionRun(run) {
     $("motionStatus").textContent = `Setup restored from ${run.batch_id || "result"}`;
   } else {
     clearMotionResult();
-    $("motionStatus").textContent = `Motion guide loaded from ${run.batch_id || "result"}`;
+    $("motionStatus").textContent = `Motion guide loaded for SCAIL2 from ${run.batch_id || "result"}`;
   }
   updateMotionRunAvailability();
 }
