@@ -570,7 +570,7 @@ Current dropdown mapping:
 
 ## Director Reference Notes
 
-Director currently uses `LTX Director 2` from `workflows/app/ltx_director_2.json`. The older `ltx_director_reference_mvp.json` file is retained as a legacy/reference workflow, but it is not the primary Director UI target.
+Director uses `LTX Director 2` from `workflows/app/ltx_director_2.json`. The older `ltx_director_reference_mvp.json` (v1 MVP) has been retired and removed.
 
 ### Global reference status
 
