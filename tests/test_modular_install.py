@@ -14,12 +14,13 @@ def test_module_registry_contains_user_facing_workspaces():
     assert len(MODULES) == 5
 
 
-def test_director_profiles_include_v1_and_v2_models():
+def test_director_profile_is_v2_drop_in():
     director = get_module("director")
     profile_ids = {profile.id for profile in director.model_profiles}
-    assert {"director-v1-ltx23-fp8", "director-v2-distilled-fp8"} <= profile_ids
+    assert profile_ids == {"director-v2-distilled-fp8"}  # v1 retired with the MVP workflow
     v2 = next(profile for profile in director.model_profiles if profile.id == "director-v2-distilled-fp8")
-    assert v2.compatibility == "workflow_variant"
+    assert v2.compatibility == "drop_in"
+    assert v2.compatible_workflows == ("ltx_director_2.json",)
     assert any(
         model.folder == "diffusion_models"
         and model.name == "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"
@@ -97,12 +98,11 @@ def test_model_visibility_normalizes_path_separators():
 def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
     director = get_module("director")
     visibility = ComfyVisibility(
-        nodes=frozenset({"LTXDirector", "LTXDirectorGuide"}),
+        nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
         models={
-            "checkpoints": frozenset({"ltx-2.3-22b-dev-fp8.safetensors"}),
+            "diffusion_models": frozenset({"ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"}),
             "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
             "vae": frozenset({"LTX23_audio_vae_bf16.safetensors", "LTX23_video_vae_bf16.safetensors", "taeltx2_3.safetensors"}),
-            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
             "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
         },
         source="test",
@@ -111,7 +111,7 @@ def test_resolver_marks_director_ready_when_drop_in_profile_is_visible():
     status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
 
     assert status.ready is True
-    assert status.profile == "director-v1-ltx23-fp8"
+    assert status.profile == "director-v2-distilled-fp8"
     assert status.recommendation == "recommended"
     assert status.missing == ()
 
@@ -139,28 +139,6 @@ def test_resolver_selects_workflow_variant_when_it_is_the_only_ready_profile():
     assert status.recommendation == "recommended"
 
 
-def test_resolver_does_not_treat_unbundled_workflow_variant_as_ready():
-    # Director v2 has no bundled compatible workflow, so a fully-visible v2 must not flip the
-    # module to ready; it falls back to the drop-in v1 profile and surfaces v2 as a warning.
-    director = get_module("director")
-    visibility = ComfyVisibility(
-        nodes=frozenset({"LTXDirector", "LTXDirectorGuide", "LTXDirectorCropGuides"}),
-        models={
-            "diffusion_models": frozenset({"ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"}),
-            "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
-            "vae": frozenset({"LTX23_audio_vae_bf16.safetensors", "LTX23_video_vae_bf16.safetensors", "taeltx2_3.safetensors"}),
-            "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
-        },
-        source="test",
-    )
-
-    status = resolve_module(director, HardwareProfile(vram_gb=24), visibility)
-
-    assert status.ready is False
-    assert status.profile == "director-v1-ltx23-fp8"
-    assert any("director-v2-distilled-fp8" in warning for warning in status.warnings)
-
-
 def test_resolver_reports_risky_when_hardware_is_below_profile():
     camera = get_module("camera")
     visibility = ComfyVisibility(
@@ -186,7 +164,7 @@ def test_workflow_sources_can_filter_by_module():
 
     assert len(sources) == 1
     assert sources[0][0] == "app"
-    assert sources[0][2] == ("ltx_director_reference_mvp.json",)
+    assert sources[0][2] == ("ltx_director_2.json",)
 
 
 def test_workflow_variant_profiles_are_visible_for_installer_guidance():

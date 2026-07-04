@@ -98,8 +98,8 @@ def test_storage_plan_counts_drop_in_profiles_only():
 
     plan = build_storage_plan(selected_modules(["camera", "director"]))
 
-    assert [profile.id for profile in plan.profiles] == ["camera-ltx23-fp8", "director-v1-ltx23-fp8"]
-    assert plan.required_gb == 81
+    assert [profile.id for profile in plan.profiles] == ["camera-ltx23-fp8", "director-v2-distilled-fp8"]
+    assert plan.required_gb == 75
     assert all(profile.compatibility == "drop_in" for profile in plan.profiles)
 
 
@@ -125,10 +125,9 @@ def test_storage_plan_ignores_profiles_visible_to_comfy_object_info():
     visibility = ComfyVisibility(
         nodes=frozenset(),
         models={
-            "checkpoints": frozenset({"ltx-2.3-22b-dev-fp8.safetensors"}),
+            "diffusion_models": frozenset({"ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"}),
             "latent_upscale_models": frozenset({"ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}),
             "vae": frozenset({"LTX23_audio_vae_bf16.safetensors", "LTX23_video_vae_bf16.safetensors", "taeltx2_3.safetensors"}),
-            "loras": frozenset({"ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"}),
             "text_encoders": frozenset({"gemma_3_12B_it_fp4_mixed.safetensors", "ltx-2.3_text_projection_bf16.safetensors"}),
         },
         source="test",
@@ -159,8 +158,8 @@ def test_storage_plan_reports_low_space_with_headroom():
     )
 
     assert plan.available_gb == 50
-    assert plan.required_gb == 42
-    assert plan.required_with_headroom_gb == 62
+    assert plan.required_gb == 36
+    assert plan.required_with_headroom_gb == 56
     assert plan.ok is False
 
 
@@ -212,7 +211,7 @@ def test_missing_downloadable_models_skip_visible_models(tmp_path):
             "visibility": visible_models_for_profiles(
                 {
                     "camera-ltx23-fp8",
-                    "director-v1-ltx23-fp8",
+                    "director-v2-distilled-fp8",
                     "edit-bernini-fp8",
                     "edit-vace14-fp16",
                     "motion-scail2-wan14-fp8",
@@ -271,7 +270,7 @@ def test_installer_storage_reaction_for_machine_profiles(case):
         {
             "name": "rtx4090_director_ready_recommended",
             "hardware": HardwareProfile(gpu_name="NVIDIA GeForce RTX 4090", vram_gb=24),
-            "visibility": visible_models_for_profiles({"director-v1-ltx23-fp8"}),
+            "visibility": visible_models_for_profiles({"director-v2-distilled-fp8"}),
             "expected_ready": True,
             "expected_recommendation": "recommended",
             "expected_warning_text": None,
@@ -279,20 +278,10 @@ def test_installer_storage_reaction_for_machine_profiles(case):
         {
             "name": "rtx3060_8gb_director_ready_but_risky",
             "hardware": HardwareProfile(gpu_name="NVIDIA GeForce RTX 3060", vram_gb=8),
-            "visibility": visible_models_for_profiles({"director-v1-ltx23-fp8"}),
+            "visibility": visible_models_for_profiles({"director-v2-distilled-fp8"}),
             "expected_ready": True,
             "expected_recommendation": "risky",
             "expected_warning_text": "8 GiB VRAM",
-        },
-        {
-            # v2 is a workflow_variant with no bundled compatible workflow, so it must not flip
-            # the module to ready; the module falls back to the drop-in v1 it still lacks.
-            "name": "rtx4090_director_v2_only_not_ready_falls_back_to_v1",
-            "hardware": HardwareProfile(gpu_name="NVIDIA GeForce RTX 4090", vram_gb=24),
-            "visibility": visible_models_for_profiles({"director-v2-distilled-fp8"}),
-            "expected_ready": False,
-            "expected_recommendation": "available-with-downloads",
-            "expected_warning_text": "director-v2-distilled-fp8",
         },
     ],
     ids=lambda case: case["name"],
@@ -315,11 +304,11 @@ def test_director_reaction_matrix_for_nvidia_8gb_or_larger_gpus(case_id, gpu_nam
     status = resolve_module(
         get_module("director"),
         HardwareProfile(gpu_name=gpu_name, vram_gb=vram_gb),
-        visible_models_for_profiles({"director-v1-ltx23-fp8"}),
+        visible_models_for_profiles({"director-v2-distilled-fp8"}),
     )
 
     assert status.ready is True
-    assert status.profile == "director-v1-ltx23-fp8"
+    assert status.profile == "director-v2-distilled-fp8"
     assert status.recommendation == expected_recommendation
     if expected_recommendation == "risky":
         assert any(f"{vram_gb} GiB VRAM" in warning for warning in status.warnings)
