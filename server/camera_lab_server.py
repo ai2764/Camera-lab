@@ -108,12 +108,16 @@ TTP_TOOLSET_ROOT = COMFY_CONFIG["ttp_toolset"]
 LTX23_CHECKPOINT = "ltx-2.3-22b-dev-fp8.safetensors"
 LTX23_TEXT_ENCODER = "gemma_3_12B_it_fp4_mixed.safetensors"
 LTX23_UPSCALER = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
-DIRECTOR_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_reference_mvp.json"
+DIRECTOR_V2_WORKFLOW_PATH = APP_WORKFLOW_ROOT / "ltx_director_2.json"
 HYMOTION_GUIDE_TEMPLATE = APP_WORKFLOW_ROOT / "hymotion_guide.api.json"
 SCAIL_VIDEO_TEMPLATE = APP_WORKFLOW_ROOT / "scail2_video.api.json"
 PHOTOGRAPHY_WORKFLOW_NAME = "Photography_LTX-2.3_ICLoRA_Union_Control_Canny.local.json"
 PHOTOGRAPHY_WORKFLOW_TEMPLATE = ROOT / "workflows" / "experimental" / PHOTOGRAPHY_WORKFLOW_NAME
 PHOTOGRAPHY_WORKFLOW_PATH = WORKFLOW_ROOT / PHOTOGRAPHY_WORKFLOW_NAME
+DIRECTOR_DEFAULT_GLOBAL_PROMPT = (
+    "A continuous cinematic video with coherent subject identity, consistent lighting, "
+    "natural motion, and smooth visual continuity across the full timeline."
+)
 
 
 def tts_env_path(value: str | Path) -> Path:
@@ -337,11 +341,11 @@ WORKFLOWS = [
         "disable_image_crop": True,
     },
     {
-        "id": "ltx_director_reference_mvp",
-        "label": "LTX Director Reference MVP",
+        "id": "ltx_director_2",
+        "label": "LTX Director 2",
         "mode": "director_ref",
-        "path": str(DIRECTOR_WORKFLOW_PATH),
-        "builder": "ltx_director_reference_mvp",
+        "path": str(DIRECTOR_V2_WORKFLOW_PATH),
+        "builder": "ltx_director_2",
     },
     {
         "id": "bernini_t2v",
@@ -650,6 +654,29 @@ MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
         ("LTXAVTextEncoderLoader", "text_encoder_name"), ("LTXAVTextEncoderLoader", "clip_name"),
     ],
 }
+
+
+def director_ic_loras() -> list[str]:
+    """IC-LoRA options the LTXDirectorGuide node accepts, filtered to IC-LoRA
+    weights with "None" first. Returns ["None"] when ComfyUI or the node is
+    unavailable so the Director IC-LoRA dropdown always has a safe default."""
+    try:
+        node = object_info().get("LTXDirectorGuide", {})
+        inputs = node.get("input", {}) or {}
+        required = inputs.get("required", {}) or {}
+        optional = inputs.get("optional", {}) or {}
+        entry = required.get("ic_lora_name") or optional.get("ic_lora_name")
+    except Exception:
+        entry = None
+    options: list[str] = []
+    if isinstance(entry, list) and entry and isinstance(entry[0], list):
+        options = [str(item) for item in entry[0]]
+    ic = [
+        name
+        for name in options
+        if name != "None" and any(token in name.lower() for token in ("ic-lora", "iclora", "ic_lora", "edit_anything", "editanything"))
+    ]
+    return ["None", *ic]
 
 
 def available_models() -> dict[str, set[str]]:
@@ -1039,6 +1066,9 @@ def kj_dynamic_inputs(node: dict, nodes_by_id: dict[int, dict], links: dict[int,
 
 
 def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> dict[str, Any]:
+    retake_mode = bool(payload.get("retake_mode") or payload.get("retakeMode"))
+    retake_video_raw = payload.get("retake_video") or payload.get("retakeVideo") or {}
+    retake_video = retake_video_raw if isinstance(retake_video_raw, dict) else {}
     raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segments: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_segments, start=1):
@@ -1050,15 +1080,30 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         if start_frame is None and start_seconds is not None:
             start_frame = round(float(start_seconds) * fps)
         role = ""
-        seg_type = str(raw.get("type") or ("image" if str(raw.get("image_path") or "").strip() else "text")).strip() or "text"
-        if seg_type not in {"image", "text"}:
-            seg_type = "image"
         image_path = str(raw.get("image_path") or "").strip()
-        if not prompt and not image_path:
+        video_path = str(raw.get("video_path") or "").strip()
+        seg_type = str(raw.get("type") or ("video" if video_path else ("image" if image_path else "text"))).strip() or "text"
+        if video_path:
+            seg_type = "video"
+        elif image_path:
+            seg_type = "image"
+        elif seg_type not in {"text"}:
+            seg_type = "text"
+        if seg_type not in {"image", "video", "text"}:
+            seg_type = "text"
+        legacy_visual_placeholder = seg_type in {"image", "video"} and is_director_visual_guide_placeholder(prompt)
+        if legacy_visual_placeholder:
+            prompt = ""
+        if not prompt and not image_path and not video_path:
             continue
-        if not prompt:
-            prompt = "visual guide"
-        strength = max(0.0, min(10.0, float(raw.get("strength") or 0.0)))
+        raw_strength = raw.get("strength")
+        if raw_strength in {None, ""}:
+            strength = 1.0 if seg_type in {"image", "video"} else 0.0
+        else:
+            strength = max(0.0, min(10.0, float(raw_strength)))
+            if legacy_visual_placeholder and abs(strength - 0.65) < 0.0001:
+                strength = 1.0
+        trim_start = raw.get("trimStart", raw.get("trim_start", 0))
         sequential_start = sum(s["frames"] for s in segments)
         guide_frame = int(raw.get("guide_frame") if raw.get("guide_frame") is not None else (start_frame if start_frame is not None else sequential_start))
         segments.append(
@@ -1070,13 +1115,15 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "frames": frames,
                 "reference": role,
                 "image_path": image_path,
+                "video_path": video_path,
                 "audio_path": str(raw.get("audio_path") or "").strip(),
                 "guide_frame": max(0, guide_frame),
                 "strength": strength,
                 "start_frame": max(0, int(start_frame if start_frame is not None else sequential_start)),
+                "trimStart": max(0, int(trim_start or 0)),
             }
         )
-    if not segments:
+    if not segments and not retake_mode:
         segments = [
             {
                 "prompt": str(payload.get("prompt") or "A continuous cinematic shot.").strip(),
@@ -1084,6 +1131,7 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
                 "frames": max(1, round(float(payload.get("duration") or 4.0) * fps)),
                 "reference": "",
                 "image_path": "",
+                "video_path": "",
                 "audio_path": "",
                 "guide_frame": 0,
                 "strength": 0.0,
@@ -1091,15 +1139,35 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
             }
         ]
     duration_frames = sum(segment["frames"] for segment in segments)
+    retake_video_duration = retake_video.get("videoDurationFrames") or retake_video.get("duration_frames")
+    if retake_video_duration is None and retake_video.get("duration") is not None:
+        retake_video_duration = round(float(retake_video.get("duration") or 0) * fps)
+    if retake_mode and retake_video_duration is not None:
+        duration_frames = max(duration_frames, max(1, int(retake_video_duration or 1)))
+    explicit_duration_frames = 0
+    if payload.get("duration_frames") is not None:
+        explicit_duration_frames = max(0, int(payload.get("duration_frames") or 0))
+    elif payload.get("duration") is not None:
+        explicit_duration_frames = max(0, round(float(payload.get("duration") or 0) * fps))
+    if explicit_duration_frames:
+        duration_frames = max(duration_frames, explicit_duration_frames)
     if payload.get("timeline_segments"):
         duration_frames = max(duration_frames, max(segment["start_frame"] + segment["frames"] for segment in segments))
     audio_segments = director_audio_segments_from_payload(payload, fps=fps)
+    motion_segments = director_motion_segments_from_payload(payload, fps=fps)
+    if motion_segments:
+        duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in motion_segments))
     if audio_segments:
         duration_frames = max(duration_frames, max(segment["start"] + segment["length"] for segment in audio_segments))
     duration_seconds = round(duration_frames / fps, 3)
-    local_prompts, segment_lengths = director_prompt_segments_from_timeline(segments, duration_frames)
+    if retake_mode:
+        local_prompts, segment_lengths = director_prompt_segments_from_retake(payload, duration_frames, fps=fps)
+    else:
+        local_prompts, segment_lengths = director_prompt_segments_from_timeline(segments, duration_frames)
+    retake_start = max(0, round(float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0) * fps))
+    retake_length = max(1, round(float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0) * fps))
     return {
-        "global_prompt": str(payload.get("global_prompt") or "").strip(),
+        "global_prompt": normalize_director_global_prompt(payload.get("global_prompt")),
         "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
         "local_prompts": local_prompts,
         "segment_lengths": segment_lengths,
@@ -1108,6 +1176,17 @@ def director_timeline_from_payload(payload: dict[str, Any], fps: int = 24) -> di
         "fps": fps,
         "segments": segments,
         "audio_segments": audio_segments,
+        "motion_segments": motion_segments,
+        "retake_mode": retake_mode,
+        "retake_video": {
+            "video_path": str(retake_video.get("video_path") or retake_video.get("imageFile") or "").strip(),
+            "file_name": str(retake_video.get("file_name") or retake_video.get("fileName") or "").strip(),
+            "duration_frames": max(1, int(retake_video_duration or duration_frames or 1)),
+        } if retake_mode else {},
+        "retake_start": min(retake_start, max(0, duration_frames - 1)),
+        "retake_length": max(1, min(retake_length, max(1, duration_frames - retake_start))),
+        "retake_prompt": str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip(),
+        "retake_strength": max(0.0, min(1.0, float(payload.get("retake_strength", payload.get("retakeStrength", 1.0)) or 1.0))),
         "guide_frames": [],
         "guide_strengths": [],
         "guide_roles": [],
@@ -1128,9 +1207,57 @@ def director_audio_segments_from_payload(payload: dict[str, Any], fps: int = 24)
         if length_frames is None:
             length_frames = round(max(0.25, float(raw.get("duration") or 1.0)) * fps)
         trim_start = raw.get("trimStart", raw.get("trim_start", 0))
-        segments.append({
+        raw_volume = raw.get("volume", 1.0)
+        volume = 1.0 if raw_volume is None else max(0.0, min(4.0, float(raw_volume)))
+        segment = {
             "id": str(raw.get("id") or f"camera-lab-audio-{index}"),
             "audio_path": audio_path,
+            "start": max(0, int(start_frame)),
+            "length": max(1, int(length_frames)),
+            "trimStart": max(0, int(trim_start or 0)),
+            "volume": volume,
+        }
+        source = str(raw.get("source") or "").strip()
+        if source == "video":
+            segment["source"] = source
+        segments.append(segment)
+    return segments
+
+
+def stage_director_audio(src: Path, dst: Path, volume: float = 1.0, runner: Any = subprocess.run) -> None:
+    """Stage one director audio clip into ComfyUI input, scaled by `volume`
+    (1.0 = unchanged). Gained clips are re-rendered audio-only via ffmpeg so a
+    video source contributes just its scaled audio track; the LTXDirector node
+    then sums the already-scaled clips."""
+    if abs(float(volume) - 1.0) < 1e-3:
+        shutil.copy2(src, dst)
+        return
+    runner(
+        ["ffmpeg", "-y", "-i", str(src), "-vn", "-filter:a", f"volume={float(volume):.3f}", str(dst)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def director_motion_segments_from_payload(payload: dict[str, Any], fps: int = 24) -> list[dict[str, Any]]:
+    raw_segments = payload.get("motion_segments") or payload.get("motionSegments") or []
+    segments: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_segments, start=1):
+        video_path = str(raw.get("video_path") or raw.get("videoFile") or raw.get("file") or "").strip()
+        if not video_path:
+            continue
+        start_frame = raw.get("start_frame")
+        if start_frame is None:
+            start_frame = round(float(raw.get("start") or 0) * fps)
+        length_frames = raw.get("length")
+        if length_frames is None:
+            length_frames = round(max(0.25, float(raw.get("duration") or 1.0)) * fps)
+        trim_start = raw.get("trimStart", raw.get("trim_start", 0))
+        segments.append({
+            "id": str(raw.get("id") or f"camera-lab-motion-{index}"),
+            "type": "motion_video",
+            "video_path": video_path,
             "start": max(0, int(start_frame)),
             "length": max(1, int(length_frames)),
             "trimStart": max(0, int(trim_start or 0)),
@@ -1167,6 +1294,14 @@ def director_prompt_segments_from_timeline(segments: list[dict[str, Any]], durat
     return " | ".join(prompts), ",".join(str(length) for length in lengths)
 
 
+def director_prompt_segments_from_retake(payload: dict[str, Any], duration_frames: int, fps: int = 24) -> tuple[str, str]:
+    # Retake is driven by native timeline_data fields. Supplying normal
+    # local_prompts/segment_lengths here makes LTXDirector treat the full video
+    # as a normal segmented generation, so preserved regions follow the global
+    # prompt instead of staying frozen.
+    return "", ""
+
+
 def normalize_reference_image_paths(refs: Any) -> list[str]:
     if isinstance(refs, list):
         return [str(path) for path in refs if str(path or "").strip()]
@@ -1201,9 +1336,23 @@ def copy_director_reference_images(run: dict[str, Any], timeline: dict[str, Any]
 
 
 def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> dict[int, str]:
+    media = copy_director_timeline_media(run, timeline, width, height)
+    return {index: item["name"] for index, item in media.items() if item.get("type") == "image"}
+
+
+def copy_director_timeline_media(run: dict[str, Any], timeline: dict[str, Any], width: int, height: int) -> dict[int, dict[str, str]]:
     COMFY_INPUT.mkdir(parents=True, exist_ok=True)
-    input_names: dict[int, str] = {}
+    input_names: dict[int, dict[str, str]] = {}
     for index, segment in enumerate(timeline["segments"], start=1):
+        raw_video_path = segment.get("video_path")
+        if raw_video_path:
+            src = Path(str(raw_video_path))
+            if not src.exists():
+                continue
+            name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_timeline_{index:02d}{src.suffix or '.mp4'}"
+            shutil.copy2(src, COMFY_INPUT / name)
+            input_names[index] = {"type": "video", "name": name}
+            continue
         raw_path = segment.get("image_path")
         if not raw_path:
             continue
@@ -1214,14 +1363,14 @@ def copy_director_timeline_images(run: dict[str, Any], timeline: dict[str, Any],
         resize_cover(src, frame, width=width, height=height)
         name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_timeline_{index:02d}.png"
         shutil.copy2(frame, COMFY_INPUT / name)
-        input_names[index] = name
+        input_names[index] = {"type": "image", "name": name}
     return input_names
 
 
 def director_reference_timeline_segments(
     timeline: dict[str, Any],
     _global_input_names: Any,
-    timeline_input_names: dict[int, str],
+    timeline_input_names: dict[int, Any],
 ) -> list[dict[str, Any]]:
     segments = []
     for index, segment in enumerate(timeline["segments"], start=1):
@@ -1236,9 +1385,16 @@ def director_reference_timeline_segments(
             "prompt": segment.get("prompt") or "",
         }
         if seg_type != "text" and index in timeline_input_names:
-            item["type"] = "image"
-            item["imageFile"] = timeline_input_names[index]
-            item["strength"] = float(segment.get("strength") or 0.7)
+            media = timeline_input_names[index]
+            if isinstance(media, dict):
+                item["type"] = "video" if media.get("type") == "video" else "image"
+                item["imageFile"] = media.get("name") or ""
+                if item["type"] == "video":
+                    item["trimStart"] = int(segment.get("trimStart") or 0)
+            else:
+                item["type"] = "image"
+                item["imageFile"] = media
+            item["strength"] = float(segment["strength"]) if segment.get("strength") not in {None, ""} else 1.0
         segments.append(item)
     return segments
 
@@ -1265,8 +1421,14 @@ def director_timeline_audio_segments(run: dict[str, Any], timeline: dict[str, An
         src = Path(str(raw_path))
         if not src.exists():
             raise FileNotFoundError(f"Director audio segment file is missing: {src}")
-        name = f"{run['run_id']}_segaudio_{index:02d}_{safe_filename(src.name)}"
-        shutil.copy2(src, COMFY_INPUT / name)
+        raw_volume = segment.get("volume", 1.0)
+        volume = 1.0 if raw_volume is None else float(raw_volume)
+        gained = abs(volume - 1.0) >= 1e-3
+        # Gained clips are re-rendered as audio-only WAV; at unity gain keep the
+        # source container so an unscaled video source still decodes natively.
+        ext = ".wav" if gained else (src.suffix or ".wav")
+        name = f"{run['run_id']}_segaudio_{index:02d}_{safe_filename(src.stem)}{ext}"
+        stage_director_audio(src, COMFY_INPUT / name, volume)
         audio_segments.append({
             "audioFile": name,
             "fileName": src.name,
@@ -1277,37 +1439,115 @@ def director_timeline_audio_segments(run: dict[str, Any], timeline: dict[str, An
     return audio_segments
 
 
-def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
-    workflow_json = json.loads(DIRECTOR_WORKFLOW_PATH.read_text(encoding="utf-8"))
+def copy_director_motion_segments(run: dict[str, Any], motion_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    copied: list[dict[str, Any]] = []
+    for index, segment in enumerate(motion_segments, start=1):
+        raw_path = segment.get("video_path")
+        if not raw_path:
+            continue
+        src = Path(str(raw_path))
+        if not src.exists():
+            continue
+        name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_ic_video_{index:02d}{src.suffix or '.mp4'}"
+        shutil.copy2(src, COMFY_INPUT / name)
+        copied.append({
+            "id": segment.get("id") or f"camera-lab-motion-{index}",
+            "type": "motion_video",
+            "label": f"IC video {index}",
+            "start": int(segment["start"]),
+            "length": int(segment["length"]),
+            "videoFile": name,
+            "trimStart": int(segment.get("trimStart") or 0),
+        })
+    return copied
+
+
+def copy_director_retake_video(run: dict[str, Any], retake_video: dict[str, Any]) -> str:
+    raw_path = retake_video.get("video_path") or retake_video.get("imageFile")
+    if not raw_path:
+        return ""
+    src = Path(str(raw_path))
+    if not src.exists():
+        return ""
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    name = f"{safe_filename(str(run['batch_id']))}_{safe_filename(str(run['run_id']))}_retake_base{src.suffix or '.mp4'}"
+    shutil.copy2(src, COMFY_INPUT / name)
+    return name
+
+
+def build_ltx_director_v2_api(run: dict[str, Any]) -> dict[str, dict]:
+    workflow_json = json.loads(DIRECTOR_V2_WORKFLOW_PATH.read_text(encoding="utf-8"))
     api = workflow_to_api(workflow_json)
     timeline = director_timeline_from_payload(run, fps=24)
     width = int(run["width"])
     height = int(run["height"])
-    reference_input_names = copy_director_reference_images(run, timeline, width, height)
-    timeline_input_names = copy_director_timeline_images(run, timeline, width, height)
+    timeline_input_names = copy_director_timeline_media(run, timeline, width, height)
 
-    director = api.get("46")
-    if not director or director["class_type"] != "LTXDirector":
-        raise RuntimeError("Director workflow does not contain expected LTXDirector node 46")
-    director["inputs"]["global_prompt"] = timeline["global_prompt"]
+    director = next((node for node in api.values() if node.get("class_type") == "LTXDirector"), None)
+    if not director:
+        raise RuntimeError("Director v2 workflow does not contain an LTXDirector node")
+    retake_conditioning_prompt = ""
+    if timeline.get("retake_mode"):
+        retake_conditioning_prompt = str(timeline.get("retake_prompt") or "").strip() or "retake video"
+    director["inputs"]["global_prompt"] = retake_conditioning_prompt if timeline.get("retake_mode") else timeline["global_prompt"]
+    director["inputs"]["start_second"] = 0
+    director["inputs"]["end_second"] = timeline["duration_seconds"]
     director["inputs"]["duration_frames"] = timeline["duration_frames"]
     director["inputs"]["duration_seconds"] = timeline["duration_seconds"]
-    guide_segments = director_reference_timeline_segments(timeline, reference_input_names, timeline_input_names)
+    director["inputs"]["start_frame"] = 0
+    director["inputs"]["end_frame"] = timeline["duration_frames"]
+    # Block 0 placeholder: keep reference_images accepted but do not stage or
+    # wire global references until the Ingredients/IC-LoRA plan.
+    guide_segments = director_reference_timeline_segments(timeline, [], timeline_input_names)
     audio_segments = director_timeline_audio_segments(run, timeline)
-    director["inputs"]["timeline_data"] = json.dumps({"segments": guide_segments, "audioSegments": audio_segments}, ensure_ascii=False)
-    if audio_segments:
+    motion_segments = copy_director_motion_segments(run, timeline.get("motion_segments") or [])
+    timeline_data = {"segments": guide_segments, "audioSegments": audio_segments}
+    if motion_segments:
+        timeline_data["motionSegments"] = motion_segments
+    if timeline.get("retake_mode"):
+        retake_video = timeline.get("retake_video") or {}
+        retake_file = copy_director_retake_video(run, retake_video)
+        timeline_data.update({
+            "retakeMode": True,
+            "retakeStart": int(timeline.get("retake_start") or 0),
+            "retakeLength": int(timeline.get("retake_length") or 1),
+            "retakePrompt": timeline.get("retake_prompt") or "",
+            "retakeStrength": float(timeline.get("retake_strength") or 1.0),
+            "retakeVideo": {
+                "fileName": retake_video.get("file_name") or Path(str(retake_video.get("video_path") or "")).name,
+                "imageFile": retake_file,
+                "videoDurationFrames": int(retake_video.get("duration_frames") or timeline["duration_frames"]),
+            },
+            "retake_global_prompt": retake_conditioning_prompt,
+        })
+    director["inputs"]["timeline_data"] = json.dumps(timeline_data, ensure_ascii=False)
+    director["inputs"]["overrideAudio"] = False
+    director["inputs"]["inpaint_audio"] = bool(run.get("inpaint_audio", True))
+    director["inputs"]["use_custom_audio"] = False
+    if audio_segments or timeline.get("retake_mode"):
         director["inputs"]["use_custom_audio"] = True
     director["inputs"]["local_prompts"] = timeline["local_prompts"]
     director["inputs"]["segment_lengths"] = timeline["segment_lengths"]
     director["inputs"]["guide_strength"] = ",".join(
-        str(segment["strength"]) for segment in guide_segments if segment.get("type") == "image" and "strength" in segment
+        str(segment["strength"]) for segment in guide_segments if segment.get("type") != "text" and "strength" in segment
     )
     director["inputs"]["frame_rate"] = timeline["fps"]
     director["inputs"]["custom_width"] = width
     director["inputs"]["custom_height"] = height
+    director["inputs"]["display_mode"] = "seconds"
     director["inputs"]["resize_method"] = "maintain aspect ratio"
     director["inputs"]["divisible_by"] = 32
     director["inputs"]["img_compression"] = 18
+
+    # IC-LoRA selection: drive both LTXDirectorGuide sampling stages. "None" keeps
+    # the IC reference track inert (model input is already wired in the workflow).
+    ic_lora_name = str(run.get("ic_lora_name") or "None")
+    ic_lora_strength = max(0.0, min(2.0, float(run.get("ic_lora_strength") or 1.0)))
+    for node in api.values():
+        if node.get("class_type") == "LTXDirectorGuide":
+            node["inputs"]["ic_lora_name"] = ic_lora_name
+            node["inputs"]["ic_lora_strength"] = ic_lora_strength
 
     node_info = object_info().get("LTXDirector", {})
     declared_inputs = node_info.get("input", {}) or {}
@@ -1329,9 +1569,6 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
     # doesn't use that path — it injects references via LTXVAddGuideMulti. Strip
     # the loader chain so empty-filename LoadImages don't fail ComfyUI validation.
     strip_director_image_loader_chain(api)
-    # Always take the fallback path (LTXVAddGuideMulti) so camera-lab runs the
-    # same way it did before LTXDirector grew native global-reference inputs.
-    insert_director_global_reference_guides(api, reference_input_names, timeline)
 
     for node in api.values():
         if "filename_prefix" in node["inputs"]:
@@ -1339,7 +1576,7 @@ def build_ltx_director_reference_api(run: dict[str, Any]) -> dict[str, dict]:
         if "noise_seed" in node["inputs"]:
             node["inputs"]["noise_seed"] = run["seed"]
     patch_model_names(api, run)
-    patch_ltx23_local_loras(api)
+    # v2 uses the pre-merged distilled UNET, with no separate LoRA patch.
     # Timeline audio uses the LTXDirector native audioSegments above; fall back to
     # the single whole-video custom-audio patch only when no per-shot audio is set.
     if not audio_segments:
@@ -2061,6 +2298,60 @@ def next_api_node_id(api: Mapping[str, Any]) -> str:
     return str(max(numeric + [0]) + 1)
 
 
+def add_inpaint_control_video_nodes(
+    api: dict,
+    source_frames: list[Any],
+    control_mask: list[Any],
+    width: int,
+    height: int,
+    length: int,
+) -> list[Any]:
+    frame_batch_id = next_api_node_id(api)
+    api[frame_batch_id] = {
+        "class_type": "ImageFromBatch",
+        "inputs": {"image": source_frames, "batch_index": 0, "length": length},
+        "_meta": {"title": "Camera Lab inpaint source frame range"},
+    }
+    scaled_id = next_api_node_id(api)
+    api[scaled_id] = {
+        "class_type": "ImageScale",
+        "inputs": {
+            "image": [frame_batch_id, 0],
+            "upscale_method": "lanczos",
+            "width": width,
+            "height": height,
+            "crop": "center",
+        },
+        "_meta": {"title": "Camera Lab inpaint source resize"},
+    }
+    inverted_mask_id = next_api_node_id(api)
+    api[inverted_mask_id] = {
+        "class_type": "InvertMask",
+        "inputs": {"mask": control_mask},
+        "_meta": {"title": "Camera Lab inverted inpaint mask"},
+    }
+    mask_image_id = next_api_node_id(api)
+    api[mask_image_id] = {
+        "class_type": "MaskToImage",
+        "inputs": {"mask": [inverted_mask_id, 0]},
+        "_meta": {"title": "Camera Lab inpaint mask fill image"},
+    }
+    masked_video_id = next_api_node_id(api)
+    api[masked_video_id] = {
+        "class_type": "ImageCompositeMasked",
+        "inputs": {
+            "destination": [scaled_id, 0],
+            "source": [mask_image_id, 0],
+            "mask": control_mask,
+            "x": 0,
+            "y": 0,
+            "resize_source": True,
+        },
+        "_meta": {"title": "Camera Lab masked inpaint control video"},
+    }
+    return [masked_video_id, 0]
+
+
 def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None:
     length = inpaint_frame_length(run.get("duration"))
     width = int(run["width"])
@@ -2110,12 +2401,22 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
         "inputs": {"image": input_names["mask_image"]},
         "_meta": {"title": "Camera Lab painted mask"},
     }
+    repeated_mask_id = next_api_node_id(api)
+    api[repeated_mask_id] = {
+        "class_type": "RepeatImageBatch",
+        "inputs": {"image": [mask_id, 0], "amount": length},
+        "_meta": {"title": "Camera Lab repeated inpaint mask"},
+    }
     image_to_mask_id = next_api_node_id(api)
     api[image_to_mask_id] = {
         "class_type": "ImageToMask",
-        "inputs": {"image": [mask_id, 0], "channel": "red"},
+        "inputs": {"image": [repeated_mask_id, 0], "channel": "red"},
         "_meta": {"title": "Camera Lab mask to VACE"},
     }
+
+    control_video: list[Any] | None = None
+    if source_frames:
+        control_video = add_inpaint_control_video_nodes(api, source_frames, [image_to_mask_id, 0], width, height, length)
 
     for node in api.values():
         if node.get("class_type") != "WanVaceToVideo":
@@ -2130,13 +2431,16 @@ def patch_inpaint_api(api: dict, run: dict, input_names: dict[str, str]) -> None
         else:
             inputs.pop("reference_image", None)
         inputs["control_masks"] = [image_to_mask_id, 0]
-        if source_frames:
-            inputs["control_video"] = source_frames
+        if control_video:
+            inputs["control_video"] = control_video
         break
     else:
         raise RuntimeError("inpaint workflow is missing WanVaceToVideo")
 
     for node_id, node in list(api.items()):
+        title = str(node.get("_meta", {}).get("title") or "")
+        if title.startswith("Camera Lab"):
+            continue
         if node.get("class_type") in {"SAM3_Detect", "ResizeImageMaskNode", "GrowMask", "ImageCompositeMasked", "MaskPreview", "PreviewImage"}:
             api.pop(node_id, None)
 
@@ -2261,9 +2565,13 @@ def workflow_status(workflow: dict) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"available": False, "reason": str(exc)}
-    if not workflow.get("builder") or workflow.get("builder") == "ltx_director_reference_mvp":
+    if not workflow.get("builder"):
         data = workflow_to_api(data)
         patch_ltx23_local_loras(data)
+        bypass_sage_attention_patches(data)
+        data = {"extra": {"prompt": data}}
+    elif workflow.get("builder") == "ltx_director_2":
+        data = workflow_to_api(data)
         bypass_sage_attention_patches(data)
         data = {"extra": {"prompt": data}}
     missing: list[str] = []
@@ -2423,6 +2731,24 @@ def extract_last_frame(video: Path, image: Path) -> None:
     )
 
 
+def extract_first_frame(video: Path, image: Path) -> None:
+    image.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-frames:v",
+            "1",
+            str(image),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def align_4k1(n: int) -> int:
     """Largest valid SCAIL length <= n with (length - 1) % 4 == 0; minimum 1."""
     if n <= 1:
@@ -2539,7 +2865,37 @@ def merge_segment_videos(
         lines.append(f"file '{safe_path}'")
     concat_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
     runner(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(output)],
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-movflags",
+            "+faststart",
+            "-avoid_negative_ts",
+            "make_zero",
+            str(output),
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -2604,6 +2960,91 @@ def trim_video_clip(
     if not output.exists():
         raise FileNotFoundError(f"trimmed video was not created: {output}")
     return output
+
+
+def stitch_retake_video(payload: Mapping[str, Any], *, runner: Any = subprocess.run) -> dict[str, Any]:
+    base_video = safe_media_path(str(payload.get("base_video_path") or payload.get("baseVideoPath") or ""))
+    edited_video = safe_media_path(str(payload.get("edited_video_path") or payload.get("editedVideoPath") or ""))
+    if base_video.suffix.lower() not in SUPPORTED_VIDEO_SUFFIXES:
+        raise ValueError("unsupported base video file type")
+    if edited_video.suffix.lower() not in SUPPORTED_VIDEO_SUFFIXES:
+        raise ValueError("unsupported edited video file type")
+    start = max(0.0, float(payload.get("start") or 0))
+    end = max(0.0, float(payload.get("end") or 0))
+    base_duration = video_duration_seconds(base_video)
+    if end <= start + 0.001:
+        raise ValueError("end must be after start")
+    if start >= base_duration:
+        raise ValueError("start is beyond the base video duration")
+    end = min(end, base_duration)
+
+    now = time.time()
+    batch_id = f"director_retake_stitch_{int(now)}_{random.randint(1000, 9999)}"
+    batch_dir = RUN_ROOT / batch_id
+    run_id = "01_stitched"
+    run_dir = batch_dir / run_id
+    work_dir = run_dir / "_parts"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    parts: list[Path] = []
+    if start > 0.001:
+        parts.append(trim_video_clip(base_video, work_dir, 0, start, runner=runner))
+    edited_duration = video_duration_seconds(edited_video)
+    if edited_duration <= 0.001:
+        raise ValueError("edited video duration is empty")
+    parts.append(trim_video_clip(edited_video, work_dir, 0, edited_duration, runner=runner))
+    if end < base_duration - 0.001:
+        parts.append(trim_video_clip(base_video, work_dir, end, base_duration, runner=runner))
+
+    output = run_dir / "director_retake_stitched.mp4"
+    merge_segment_videos(parts, output, runner=runner)
+    stitched_duration = video_duration_seconds(output)
+    prompt = str(payload.get("prompt") or payload.get("retake_prompt") or "Director retake stitch").strip() or "Director retake stitch"
+    retake_id = str(payload.get("retake_id") or payload.get("retakeId") or "").strip()
+    edit_mode = str(payload.get("edit_mode") or payload.get("editMode") or "").strip()
+    edit_run_key = str(payload.get("edit_run_key") or payload.get("editRunKey") or "").strip()
+    variant_name = "+".join(part for part in [retake_id, edit_mode] if part) or "retake"
+    run = {
+        "batch_id": batch_id,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "workflow_id": "ltx_director_2",
+        "workflow_mode": "director_ref",
+        "workflow_label": "LTX Director Reference V2",
+        "camera_move": "director_ref",
+        "video": str(output),
+        "copied": [str(output)],
+        "duration": round(stitched_duration, 3),
+        "variant_name": variant_name,
+        "prompt": prompt,
+        "status": "done",
+        "queued_at": now,
+        "started_at": now,
+        "finished_at": now,
+        "scores": {},
+        "notes": "Auto-stitched retake edit",
+        "retake_stitch": {
+            "retake_id": retake_id,
+            "edit_run_key": edit_run_key,
+            "base_video": str(base_video),
+            "edited_video": str(edited_video),
+            "edit_mode": edit_mode,
+            "start": round(start, 3),
+            "end": round(end, 3),
+        },
+    }
+    batch = {
+        "batch_id": batch_id,
+        "batch_dir": str(batch_dir),
+        "status": "done",
+        "queued_at": now,
+        "finished_at": now,
+        "runs": [run],
+    }
+    BATCHES[batch_id] = batch
+    write_batch(batch)
+    return {"batch": batch, "run": run}
 
 
 def preserve_video_audio(
@@ -3568,13 +4009,13 @@ def run_batch_worker(batch_id: str) -> None:
 
             if workflow.get("builder") == "ltx23_ttp_flf":
                 api = build_ltx23_ttp_flf_api(run, input_names)
-            elif workflow.get("builder") == "ltx_director_reference_mvp":
+            elif workflow.get("builder") == "ltx_director_2":
                 run["director_timeline"] = director_timeline_from_payload(run, fps=24)
                 (run_dir / "director_timeline.json").write_text(
                     json.dumps(run["director_timeline"], ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                api = build_ltx_director_reference_api(run)
+                api = build_ltx_director_v2_api(run)
             else:
                 workflow_json = json.loads(Path(workflow["path"]).read_text(encoding="utf-8"))
                 api = workflow_to_api(workflow_json)
@@ -4329,6 +4770,7 @@ class Handler(BaseHTTPRequestHandler):
                         "motion_rewrite_prompt_format": MOTION_REWRITE_PROMPT_FORMAT,
                         "comfy": comfy,
                         "casting": casting_status(),
+                        "director": {"ic_loras": director_ic_loras()},
                     }
                 )
             if parsed.path == "/api/casting/library":
@@ -4365,6 +4807,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_upload_video()
             if self.path == "/api/trim-video":
                 return self.handle_trim_video()
+            if self.path == "/api/stitch-retake-video":
+                return self.handle_stitch_retake_video()
             if self.path.startswith("/api/scail-drive-video"):
                 return self.handle_3dmotion_drive_video()
             if self.path.startswith("/api/3dmotion-recording"):
@@ -4489,10 +4933,15 @@ class Handler(BaseHTTPRequestHandler):
         reference_images = {}
         director_segments = payload.get("timeline_segments") or payload.get("segments") or []
         director_audio_segments = payload.get("audio_segments") or []
+        director_motion_segments = payload.get("motion_segments") or []
+        director_retake_mode = bool(payload.get("retake_mode") or payload.get("retakeMode"))
+        director_retake_video = payload.get("retake_video") or payload.get("retakeVideo") or {}
         if workflow["mode"] == "director_ref":
             reference_images = validate_reference_images(payload.get("reference_images") or {})
             director_segments = validate_director_segments(payload.get("timeline_segments") or payload.get("segments") or [])
             director_audio_segments = validate_director_audio_segments(payload.get("audio_segments") or [])
+            director_motion_segments = validate_director_motion_segments(payload.get("motion_segments") or [])
+            director_retake_video = validate_director_retake_video(director_retake_video)
         seed = validate_seed(payload.get("seed"))
         split_options = bernini_split_options(workflow["mode"], payload)
         batch_id = f"camera_lab_{int(time.time())}_{random.randint(1000, 9999)}"
@@ -4528,11 +4977,21 @@ class Handler(BaseHTTPRequestHandler):
                     "seed": seed,
                     "variant_name": variant["name"],
                     "prompt": variant["prompt"],
-                    "global_prompt": payload.get("global_prompt", ""),
+                    "global_prompt": normalize_director_global_prompt(payload.get("global_prompt")),
                     "global_reference_strength": max(0.0, min(1.0, float(payload.get("global_reference_strength") or 0.35))),
+                    "ic_lora_name": payload.get("ic_lora_name") or payload.get("icLoraName") or "None",
+                    "ic_lora_strength": max(0.0, min(2.0, float(payload.get("ic_lora_strength", payload.get("icLoraStrength", 1.0)) or 1.0))),
                     "bernini_ref_max_size": max(16, min(8192, int(float(payload.get("bernini_ref_max_size") or 848)))),
                     "segments": director_segments,
                     "audio_segments": director_audio_segments,
+                    "motion_segments": director_motion_segments,
+                    "retake_mode": director_retake_mode,
+                    "retake_video": director_retake_video,
+                    "retake_start": float(payload.get("retake_start", payload.get("retakeStart", 0)) or 0),
+                    "retake_length": float(payload.get("retake_length", payload.get("retakeLength", 0)) or 0),
+                    "retake_prompt": payload.get("retake_prompt", payload.get("retakePrompt", "")) or "",
+                    "retake_strength": float(payload.get("retake_strength", payload.get("retakeStrength", 1.0)) or 1.0),
+                    "retake_context": payload.get("retake_context") or payload.get("retakeContext") or {},
                     "reference_images": reference_images,
                     "negative_prompt": payload.get("negative_prompt") or (INPAINT_DEFAULT_NEGATIVE if is_inpaint_mode(workflow["mode"]) else DEFAULT_NEGATIVE),
                     "status": "queued",
@@ -4693,7 +5152,15 @@ class Handler(BaseHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
-        self.send_json({"path": str(path), "name": name})
+        poster = path.with_name(f"{path.stem}_first_frame.jpg")
+        try:
+            extract_first_frame(path, poster)
+        except Exception:
+            poster = None
+        response = {"path": str(path), "name": name}
+        if poster and poster.exists():
+            response["poster_path"] = str(poster)
+        self.send_json(response)
 
     def handle_upload_video(self) -> None:
         content_type = self.headers.get("Content-Type", "")
@@ -4744,7 +5211,14 @@ class Handler(BaseHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
-        self.send_json({"path": str(path), "name": name})
+        response = {"path": str(path), "name": name}
+        try:
+            duration = video_duration_seconds(path)
+            if duration > 0:
+                response["duration"] = duration
+        except Exception:
+            pass
+        self.send_json(response)
 
     def handle_trim_video(self) -> None:
         payload = self.read_json()
@@ -4756,6 +5230,10 @@ class Handler(BaseHTTPRequestHandler):
         output = trim_video_clip(source, UPLOAD_ROOT / "videos" / "clips", start, end)
         duration = video_duration_seconds(output)
         self.send_json({"path": str(output), "name": output.name, "duration": duration})
+
+    def handle_stitch_retake_video(self) -> None:
+        payload = self.read_json()
+        self.send_json(stitch_retake_video(payload))
 
     def handle_upload_image(self) -> None:
         payload = self.read_json()
@@ -5185,6 +5663,8 @@ def history_runs(limit: int = 30) -> list[dict[str, Any]]:
             key = history_key(run)
             if key in hidden:
                 continue
+            if run_done_video_missing(run):
+                continue
             item = dict(run)
             item["history_key"] = key
             item["pinned"] = key in pinned
@@ -5199,6 +5679,15 @@ def history_runs(limit: int = 30) -> list[dict[str, Any]]:
             runs.append(item)
     runs.sort(key=lambda run: (0 if run.get("pinned") else 1, -(run.get("sort_time") or 0)))
     return runs[: max(1, min(limit, 200))]
+
+
+def run_done_video_missing(run: Mapping[str, Any]) -> bool:
+    if run.get("status") not in {"done", "guide_done"}:
+        return False
+    video = str(run.get("video") or "").strip()
+    if not video:
+        return False
+    return not Path(video).exists()
 
 
 def history_key(run: dict[str, Any]) -> str:
@@ -5253,16 +5742,54 @@ def validate_seed(value: Any) -> int:
     return seed
 
 
+def is_default_director_global_prompt(value: str) -> bool:
+    return " ".join(value.split()).lower() == " ".join(DIRECTOR_DEFAULT_GLOBAL_PROMPT.split()).lower()
+
+
+def is_director_visual_guide_placeholder(value: str) -> bool:
+    return " ".join(str(value or "").split()).lower() == "visual guide"
+
+
+def normalize_director_global_prompt(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text and is_default_director_global_prompt(text) else text
+
+
 def build_director_prompt_summary(payload: dict[str, Any]) -> str:
-    global_prompt = str(payload.get("global_prompt") or "").strip()
+    raw_global_prompt = str(payload.get("global_prompt") or "").strip()
+    global_prompt = normalize_director_global_prompt(raw_global_prompt)
+    if bool(payload.get("retake_mode") or payload.get("retakeMode")):
+        retake_prompt = str(payload.get("retake_prompt", payload.get("retakePrompt", "")) or "").strip()
+        retake_video = payload.get("retake_video") or payload.get("retakeVideo") or {}
+        has_retake_video = isinstance(retake_video, dict) and bool(
+            str(retake_video.get("video_path") or retake_video.get("imageFile") or "").strip()
+        )
+        if retake_prompt or has_retake_video:
+            return retake_prompt or "retake video"
+    raw_segments = payload.get("timeline_segments") or payload.get("segments") or []
     segment_prompts = [
         str(segment.get("prompt") or "").strip()
-        for segment in (payload.get("timeline_segments") or payload.get("segments") or [])
+        for segment in raw_segments
         if str(segment.get("prompt") or "").strip()
     ]
-    if not global_prompt and not segment_prompts:
-        raise ValueError("director workflow requires a global prompt or at least one segment prompt")
-    return "\n\n".join([part for part in [global_prompt, " | ".join(segment_prompts)] if part])
+    real_segment_prompts = [
+        prompt for prompt in segment_prompts if not is_director_visual_guide_placeholder(prompt)
+    ]
+    has_visual_guide = any(
+        str(segment.get("image_path") or segment.get("video_path") or "").strip()
+        for segment in raw_segments
+    )
+    has_ic_video = any(
+        str(segment.get("video_path") or segment.get("videoFile") or segment.get("file") or "").strip()
+        for segment in (payload.get("motion_segments") or payload.get("motionSegments") or [])
+    )
+    if not global_prompt and not real_segment_prompts:
+        if has_visual_guide or has_ic_video:
+            return "visual guide"
+        if raw_global_prompt and is_default_director_global_prompt(raw_global_prompt):
+            raise ValueError("director workflow requires actual content: add a segment, guide, or retake video")
+        raise ValueError("director workflow requires a global prompt, segment prompt, or visual guide")
+    return "\n\n".join([part for part in [global_prompt, " | ".join(real_segment_prompts)] if part])
 
 
 def validate_reference_images(raw: Any) -> list[str]:
@@ -5279,6 +5806,11 @@ def validate_director_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]
             item["image_path"] = str(safe_media_path(image_path))
         else:
             item["image_path"] = ""
+        video_path = str(item.get("video_path") or "").strip()
+        if video_path:
+            item["video_path"] = str(safe_media_path(video_path))
+        else:
+            item["video_path"] = ""
         audio_path = str(item.get("audio_path") or "").strip()
         if audio_path:
             item["audio_path"] = str(safe_media_path(audio_path))
@@ -5299,6 +5831,33 @@ def validate_director_audio_segments(raw: list[dict[str, Any]]) -> list[dict[str
             continue
         segments.append(item)
     return segments
+
+
+def validate_director_motion_segments(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for segment in raw:
+        item = dict(segment)
+        video_path = str(item.get("video_path") or item.get("videoFile") or item.get("file") or "").strip()
+        if video_path:
+            item["video_path"] = str(safe_media_path(video_path))
+        else:
+            continue
+        item["type"] = "motion_video"
+        segments.append(item)
+    return segments
+
+
+def validate_director_retake_video(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    item = dict(raw)
+    video_path = str(item.get("video_path") or item.get("imageFile") or "").strip()
+    if video_path:
+        item["video_path"] = str(safe_media_path(video_path))
+    else:
+        item["video_path"] = ""
+    item["file_name"] = str(item.get("file_name") or item.get("fileName") or Path(video_path).name).strip()
+    return item
 
 
 def verify_dropdown_workflows() -> list[str]:
