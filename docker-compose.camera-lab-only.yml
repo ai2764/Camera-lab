@@ -1,0 +1,34 @@
+# camera-lab-only mode: run ONLY the lightweight camera-lab server and point it
+# at an EXISTING ComfyUI you already run on the host (with your models + nodes).
+# No comfyui image, no model mounts — your existing ComfyUI provides all of that.
+#
+# Requirements:
+#   - Your ComfyUI must listen on 0.0.0.0 (start it with `--listen`), so the
+#     container can reach it via host.docker.internal (a 127.0.0.1-only bind is
+#     NOT reachable from the container).
+#   - Set COMFY_INPUT_DIR / COMFY_OUTPUT_DIR to that ComfyUI's input/ and output/
+#     dirs — camera-lab writes staged media straight into input/ on disk.
+#
+# Usage:
+#   cp docker/compose.camera-lab-only.env.example docker/compose.camera-lab-only.env
+#   # edit that file, then:
+#   docker compose -f docker-compose.camera-lab-only.yml --env-file docker/compose.camera-lab-only.env up -d --build
+services:
+  camera-lab:
+    build:
+      context: .
+      dockerfile: docker/camera-lab.Dockerfile
+    environment:
+      COMFYUI_URL: ${COMFYUI_URL:-http://host.docker.internal:8188}
+      COMFYUI_ROOT: /opt/ComfyUI
+      LLM_URL: ${LLM_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${COMFY_INPUT_DIR:?set COMFY_INPUT_DIR to your ComfyUI input dir}:/opt/ComfyUI/input
+      - ${COMFY_OUTPUT_DIR:?set COMFY_OUTPUT_DIR to your ComfyUI output dir}:/opt/ComfyUI/output
+      - ./tasks:/app/tasks
+    ports:
+      - "${CAMERA_LAB_PORT:-8000}:8000"

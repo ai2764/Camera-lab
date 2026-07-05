@@ -47,3 +47,7 @@ Thumbs.db
 .idea/
 
 .env.bak*
+
+# user-specific docker compose env (paths/secrets)
+docker/compose.env
+docker/compose.camera-lab-only.env
