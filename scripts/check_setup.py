@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import sys
 import urllib.error
 from pathlib import Path
@@ -38,6 +39,13 @@ except ModuleNotFoundError:
     from scripts.camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
 
 
+def env_config_present() -> bool:
+    """True if a .env file exists OR the key config is supplied via the environment (container)."""
+    if ENV_PATH.exists():
+        return True
+    return bool(os.environ.get("COMFYUI_URL") or os.environ.get("COMFYUI_ROOT"))
+
+
 def add_check(checks: list[bool], name: str, ok: bool, detail: object) -> None:
     status = "OK" if ok else "MISSING"
     print(f"[{status}] {name} - {detail}")
@@ -66,7 +74,12 @@ def main() -> int:
     comfy_root = comfy_root_from_env() or Path("ComfyUI")
     comfy_url = comfy_url_from_env()
 
-    add_check(checks, ".env", ENV_PATH.exists(), "copy .env.example to .env and edit COMFYUI_ROOT if this is missing")
+    add_check(
+        checks,
+        ".env / env config",
+        env_config_present(),
+        "provide COMFYUI_URL/COMFYUI_ROOT via .env or the container environment",
+    )
     add_check(checks, ".env.example", ENV_EXAMPLE_PATH.exists(), ENV_EXAMPLE_PATH)
     add_check(checks, "Python", sys.version_info >= (3, 10), sys.version.split()[0])
     pillow_ok = importlib.util.find_spec("PIL") is not None
