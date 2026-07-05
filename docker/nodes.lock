@@ -1,0 +1,8 @@
+# dir<TAB>repo_url<TAB>commit  (ComfyUI custom nodes bundled into the comfyui image)
+ComfyUI-GGUF	https://github.com/city96/ComfyUI-GGUF	6ea2651e7df66d7585f6ffee804b20e92fb38b8a
+WhatDreamsCost-ComfyUI	https://github.com/ai2764/WhatDreamsCost-ComfyUI	9467c48f6a2d972ab1496864f0068bd62b40c06d
+comfyui-kjnodes	https://github.com/kijai/ComfyUI-KJNodes	e27a505b3ba6ce42687fe00500deda103d9d6071
+comfyui_essentials	https://github.com/cubiq/ComfyUI_essentials	9d9f4bedfc9f0321c19faf71855e228c93bd0dc9
+rgthree-comfy	https://github.com/rgthree/rgthree-comfy	27b4f4cdcf3b127c29d5d8135ac1536ecbd4c383
+ComfyUI-VideoHelperSuite	https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite	4ee72c0
+ComfyUI-HY-Motion1	https://github.com/jtydhr88/ComfyUI-HY-Motion1	1342cd8
