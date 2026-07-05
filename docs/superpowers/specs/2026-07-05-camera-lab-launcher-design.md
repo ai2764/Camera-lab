@@ -63,7 +63,8 @@ launch.py
      with hardware, comfy-reachable flag, and per-module `{ready, profile, feasible, recommended_quant, missing}`.
    - `print_assessment(assessment)` — the human-readable feasibility + model-recommendation report.
    - `choose_mode(assessment) -> mode` — interactive prompts (have comfy? want docker?) with a
-     recommended default derived from the assessment; supports non-interactive `--mode <id>` and `--yes`.
+     recommended default derived from the assessment; `--mode <id>` skips the prompts (an explicit
+     mode is inherently non-interactive).
    - `launch(mode, ...)` — maps mode → command and runs it (subprocess), inheriting stdio.
    - Pure helpers (unit-testable): `recommended_mode(has_comfy: bool, want_docker: bool) -> str`
      and `feasibility_for(profile, vram_gb) -> str` and `mode_command(mode, env_file) -> list[str]`.
@@ -106,7 +107,8 @@ launch.py
   "start Docker Desktop" message, exit non-zero.
 - `no-docker` / `cam-lab-only-docker` chosen but no ComfyUI was reachable → warn that comfy must
   be started first (and for `cam-lab-only`, that it must listen on `0.0.0.0`).
-- Non-interactive use: `--mode`, `--yes`, `--assess-only` flags so it can run unattended / in CI.
+- Non-interactive use: `--mode <id>` (skip prompts, launch that mode) and `--assess-only`
+  (print the assessment and exit without launching) so it can run unattended / in CI.
 
 ## Testing
 
