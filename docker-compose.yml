@@ -1,0 +1,46 @@
+services:
+  comfyui:
+    build:
+      context: .
+      dockerfile: docker/comfyui.Dockerfile
+    volumes:
+      - ${MODELS_DIR:?set MODELS_DIR in docker/compose.env}:/opt/ComfyUI/models:ro
+      - comfy_input:/opt/ComfyUI/input
+      - comfy_output:/opt/ComfyUI/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8188/object_info', timeout=5); sys.exit(0)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  camera-lab:
+    build:
+      context: .
+      dockerfile: docker/camera-lab.Dockerfile
+    depends_on:
+      comfyui:
+        condition: service_healthy
+    environment:
+      COMFYUI_URL: http://comfyui:8188
+      COMFYUI_ROOT: /opt/ComfyUI
+      LLM_URL: ${LLM_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    volumes:
+      - comfy_input:/opt/ComfyUI/input
+      - comfy_output:/opt/ComfyUI/output
+      - ./tasks:/app/tasks
+    ports:
+      - "${CAMERA_LAB_PORT:-8000}:8000"
+
+volumes:
+  comfy_input:
+  comfy_output:
