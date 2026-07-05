@@ -1,6 +1,7 @@
 import pytest
 
 from scripts.launch import MODES, feasibility_for, mode_command, recommended_mode
+from scripts.launch import assess, probe_comfy
 
 
 def test_recommended_mode_matrix():
@@ -65,3 +66,50 @@ def test_mode_command_maps_each_mode():
     assert all(m in MODES for m in ("no-docker", "full-docker", "comfy-only-docker", "cam-lab-only-docker"))
     with pytest.raises(ValueError):
         mode_command("bogus")
+
+
+class _FakeHW:
+    gpu_name = "RTX 4090"
+    vram_gb = 24
+    os_name = "Linux"
+    warnings = ()
+
+
+def test_probe_comfy_returns_first_reachable():
+    calls = []
+
+    def opener(url, timeout=0):
+        calls.append(url)
+        if "8188" in url:
+            import io
+            import json
+
+            return io.BytesIO(json.dumps({"UNETLoader": {}}).encode())
+        raise OSError("refused")
+
+    base, oi = probe_comfy(
+        ["http://127.0.0.1:8000/object_info", "http://127.0.0.1:8188/object_info"],
+        opener=opener,
+    )
+    assert base == "http://127.0.0.1:8188"
+    assert oi == {"UNETLoader": {}}
+
+
+def test_probe_comfy_none_when_all_refused():
+    def opener(url, timeout=0):
+        raise OSError("refused")
+
+    assert probe_comfy(["http://127.0.0.1:8188/object_info"], opener=opener) == (None, None)
+
+
+def test_assess_reports_modules():
+    a = assess(_FakeHW(), object_info={"UNETLoader": {}})
+    assert a["has_comfy"] is True
+    assert isinstance(a["modules"], list) and a["modules"]
+    row = a["modules"][0]
+    assert set(row) == {"id", "ready", "profile", "feasibility", "missing"}
+
+
+def test_assess_no_comfy():
+    a = assess(_FakeHW(), object_info=None)
+    assert a["has_comfy"] is False
