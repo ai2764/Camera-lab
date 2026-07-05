@@ -25,8 +25,11 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt
 
 # Bundle pinned custom nodes from nodes.lock, installing each node's requirements.
+# Use bash for this RUN so ANSI-C quoting ($'\t') is a real tab (default /bin/sh
+# is dash, which treats $'\t' as the literal string "$\t" and breaks the parse).
 COPY docker/nodes.lock /tmp/nodes.lock
-RUN set -eux; \
+SHELL ["/bin/bash", "-c"]
+RUN set -euxo pipefail; \
     while IFS=$'\t' read -r dir repo commit; do \
       case "$dir" in ''|\#*) continue;; esac; \
       git clone "$repo" "custom_nodes/$dir"; \
