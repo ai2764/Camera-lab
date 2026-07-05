@@ -1,0 +1,13 @@
+.git
+.gitignore
+tasks/
+node_modules/
+**/__pycache__/
+*.pyc
+.superpowers/
+docs/superpowers/
+tts/models/
+tts/cosyvoice
+models/
+*.mp4
+*.wav
