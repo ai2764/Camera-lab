@@ -2660,7 +2660,9 @@ def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> 
                 filename = item.get("filename")
                 if not filename:
                     continue
-                subfolder = item.get("subfolder", "")
+                # ComfyUI on Windows reports subfolders with backslashes; normalize
+                # so a Linux camera-lab container (comfy on a Windows host) can join them.
+                subfolder = item.get("subfolder", "").replace("\\", "/")
                 src_root = output_root if item.get("type", "output") == "output" else input_root
                 src = src_root / subfolder / filename
                 if src.exists():
