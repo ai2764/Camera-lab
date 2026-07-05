@@ -1,7 +1,10 @@
 """Camera Lab launcher: assess hardware, recommend, and start a deployment mode."""
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -145,3 +148,65 @@ def print_assessment(assessment) -> None:
         if module["missing"]:
             line += f" missing={len(module['missing'])}"
         print(line)
+
+
+def _yes(input_fn, prompt, default):
+    suffix = " [Y/n] " if default else " [y/N] "
+    answer = input_fn(prompt + suffix).strip().lower()
+    if not answer:
+        return default
+    return answer.startswith("y")
+
+
+def choose_mode(assessment, input_fn=input) -> str:
+    has_comfy = _yes(input_fn, "Do you already have a working ComfyUI?", bool(assessment.get("has_comfy")))
+    want_docker = _yes(input_fn, "Run with Docker?", not has_comfy)
+    mode = recommended_mode(has_comfy, want_docker)
+    if mode == "none":
+        print("No ComfyUI and no Docker: install ComfyUI first, or re-run and choose a Docker mode.")
+    return mode
+
+
+def _docker_available(runner) -> bool:
+    if runner is subprocess.run and shutil.which("docker") is None:
+        return False
+    try:
+        return runner(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return False
+
+
+def launch(mode, runner=subprocess.run) -> int:
+    if mode == "none":
+        return 1
+    if mode != "no-docker" and not _docker_available(runner):
+        print("Docker is not available/running. Start Docker Desktop and retry.", file=sys.stderr)
+        return 1
+    for command in mode_command(mode):
+        result = runner(command)
+        if result.returncode != 0:
+            print(f"Command failed ({result.returncode}): {' '.join(command)}", file=sys.stderr)
+            return result.returncode
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Assess hardware and launch Camera Lab.")
+    parser.add_argument("--mode", choices=MODES, help="Skip prompts and launch this mode.")
+    parser.add_argument("--assess-only", action="store_true", help="Print the assessment and exit.")
+    args = parser.parse_args(argv)
+
+    hardware = detect_hardware(repo_root=ROOT, comfy_root=ROOT)
+    _base, object_info = probe_comfy(
+        ["http://127.0.0.1:8188/object_info", "http://127.0.0.1:8000/object_info"]
+    )
+    assessment = assess(hardware, object_info)
+    print_assessment(assessment)
+    if args.assess_only:
+        return 0
+    mode = args.mode or choose_mode(assessment)
+    return launch(mode)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

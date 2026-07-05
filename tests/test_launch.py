@@ -2,6 +2,7 @@ import pytest
 
 from scripts.launch import MODES, feasibility_for, mode_command, recommended_mode
 from scripts.launch import assess, probe_comfy
+from scripts.launch import choose_mode, launch, main
 
 
 def test_recommended_mode_matrix():
@@ -113,3 +114,37 @@ def test_assess_reports_modules():
 def test_assess_no_comfy():
     a = assess(_FakeHW(), object_info=None)
     assert a["has_comfy"] is False
+
+
+def test_choose_mode_uses_answers():
+    answers = iter(["y", "n"])
+    assert choose_mode({"has_comfy": True}, input_fn=lambda _: next(answers)) == "no-docker"
+
+
+def test_launch_runs_commands_and_reports_exit():
+    ran = []
+
+    class R:
+        def __init__(self, code):
+            self.returncode = code
+
+    def runner(cmd, **kw):
+        ran.append(cmd)
+        return R(0)
+
+    rc = launch("full-docker", runner=runner)
+    assert rc == 0
+    assert ran and ran[0][0] == "docker"
+
+
+def test_assess_only_launches_nothing(monkeypatch, capsys):
+    monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
+    monkeypatch.setattr(
+        "scripts.launch.detect_hardware",
+        lambda **k: type("H", (), {"gpu_name": None, "vram_gb": None, "os_name": "Linux", "warnings": ()})(),
+    )
+    called = []
+    monkeypatch.setattr("scripts.launch.launch", lambda *a, **k: called.append(a))
+    rc = main(["--assess-only"])
+    assert rc == 0
+    assert called == []
