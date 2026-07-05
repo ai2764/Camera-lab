@@ -6,8 +6,13 @@ ARG TORCH_INDEX=https://download.pytorch.org/whl/cu124
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3.12 python3.12-venv python3-pip git ca-certificates \
+      software-properties-common ca-certificates gnupg curl git \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      python3.12 python3.12-venv python3.12-dev \
+      ffmpeg libgl1 libglib2.0-0 \
     && ln -sf /usr/bin/python3.12 /usr/local/bin/python \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
