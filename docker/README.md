@@ -41,3 +41,26 @@ docker compose --env-file docker/compose.env up -d --build
 - Casting / CosyVoice TTS (planned later).
 - Automatic model downloading beyond models that already carry a `source_url`.
 - LLM runs externally: point `LLM_URL` at your own endpoint.
+
+## Launcher (recommended entry point)
+
+Instead of picking a compose file by hand, run the launcher on the host. It
+detects your GPU/VRAM, tells you which modules are feasible and what your ComfyUI
+is missing, then starts the right mode:
+
+```bash
+python scripts/launch.py
+python scripts/launch.py --assess-only
+python scripts/launch.py --mode full-docker
+```
+
+Modes:
+
+- `no-docker` - native camera-lab against your existing ComfyUI.
+- `full-docker` - ComfyUI + camera-lab, both in containers.
+- `comfy-only-docker` - ComfyUI in a container, camera-lab native.
+- `cam-lab-only-docker` - camera-lab in a container against your existing ComfyUI
+  (that ComfyUI must listen on `0.0.0.0`, via `--listen`).
+
+The launcher only recommends models (which quant fits your VRAM, what is
+missing); it never downloads them.
