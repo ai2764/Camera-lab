@@ -286,6 +286,27 @@ git commit -m "feat: docker node-set helpers and pinned nodes.lock"
 - Produces: an image that on run launches ComfyUI on `0.0.0.0:8188` with all bundled nodes loaded,
   and whose entrypoint fails fast with a legible message when the GPU is not visible.
 
+**Base-image coverage (confirmed during Task 1):** `BerniniConditioning` (all `wan22_bernini_*`
+workflows) and the LTX core nodes (`LTXVConditioning`, `EmptyLTXVLatentVideo`, …) are **built-in
+`comfy_extras`** (`nodes_bernini.py`, `nodes_lt*.py`) present in upstream `comfyanonymous/ComfyUI`
+at the pinned commit `2f4c4e983c...`. So the base clone covers them — no custom node is needed for
+Bernini/LTX, and `ComfyUI-LTXVideo` is correctly absent from `nodes.lock` (its extra classes are
+unused by these workflows). Do NOT add a fork/patch for Bernini.
+
+- [ ] **Step 0: Vendor `workflow_compat_nodes` into the repo**
+
+`GetNode`/`SetNode` (used across the workflows) are provided by `workflow_compat_nodes`, which lives
+only in the reference install (no upstream git). Vendor it into this repo so the Dockerfile can copy
+it in:
+
+```bash
+cp -r ~/dev/ComfyUI-scail/custom_nodes/workflow_compat_nodes custom_nodes/workflow_compat_nodes
+git add custom_nodes/workflow_compat_nodes
+```
+
+Verify it registers `GetNode` and `SetNode` (grep its `NODE_CLASS_MAPPINGS`). Commit it with this
+task. (The Dockerfile's conditional COPY block then finds it under `custom_nodes/`.)
+
 - [ ] **Step 1: Write the GPU-preflight entrypoint**
 
 Create `docker/entrypoint-comfyui.sh`:
