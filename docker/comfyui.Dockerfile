@@ -31,6 +31,7 @@ COPY docker/nodes.lock /tmp/nodes.lock
 SHELL ["/bin/bash", "-c"]
 RUN set -euxo pipefail; \
     while IFS=$'\t' read -r dir repo commit; do \
+      dir="${dir%$'\r'}"; repo="${repo%$'\r'}"; commit="${commit%$'\r'}"; \
       case "$dir" in ''|\#*) continue;; esac; \
       git clone "$repo" "custom_nodes/$dir"; \
       git -C "custom_nodes/$dir" checkout "$commit"; \
