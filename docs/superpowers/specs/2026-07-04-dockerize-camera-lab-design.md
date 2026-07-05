@@ -26,11 +26,19 @@ ComfyUI (and its fragile dependency tree) is never modified.
 - **In:** two-service `docker compose` (camera-lab + comfyui); comfyui image bakes a pinned
   ComfyUI + all custom nodes referenced by any bundled `workflows/app/*.json`; host models
   directory bind-mounted; host `tasks/` bind-mounted for run outputs/uploads; GPU on the
-  comfyui service; a GPU/CUDA preflight with a clear message; a node-availability smoke test.
+  comfyui service; a GPU/CUDA preflight with a clear message; a node-availability smoke test;
+  a **container-side setup/assessment command** (reusing the modular-installer's hardware detect
+  + resolver readiness + missing-model report + VRAM→quant recommendation) that runs against the
+  mounted models and detected GPU — **minus** the env-setup steps (pip/npm/node/workflow-copy)
+  which the image now owns; best-effort download of only the models that **already** carry a
+  `source_url`.
 - **Out (deferred):** Casting / CosyVoice TTS (separate heavy env — later). LLM dialogue
   analysis stays **external** (an env var points at the user's existing OpenAI-compatible
   endpoint — LM Studio / Ollama / cloud). Baking models into images. Second motion-only
-  ComfyUI instance (single comfyui service hosts all nodes).
+  ComfyUI instance (single comfyui service hosts all nodes). **Filling in model `source_url`s
+  + gated/consent (HF-token) download handling is its own follow-up spec** (it enhances the
+  shared `modules.py` model registry and benefits the native installer too); the Docker
+  assessment command inherits it automatically once it lands.
 
 ## Decisions (from brainstorming)
 
@@ -42,6 +50,9 @@ ComfyUI (and its fragile dependency tree) is never modified.
    models. No Casting/TTS. LLM external.
 4. **Structure:** two-service compose (comfyui = GPU; camera-lab = CPU).
 5. **Node set:** bundle every custom node used by any current `workflows/app/*.json`.
+6. **Assessment/provisioning:** the installer's assessment half survives as a container-side
+   `check_setup` command + live `/api/config` UI readiness; v1 downloads only models that already
+   have a `source_url`. Filling URLs + gated/consent download is a **separate follow-up spec**.
 
 ## Architecture
 
@@ -123,6 +134,27 @@ required models + custom nodes) and reconcile it with an actual scan:
 4. Pin each to a specific commit in `docker/nodes.lock` so node class names match what Camera
    Lab's builders expect. **This pinning is where "works today, breaks tomorrow" risk lives.**
 
+### Setup & assessment in the Docker world
+
+The old `install_camera_lab.py` did two jobs; Docker splits them:
+
+- **Environment/deps/nodes/workflows** → fully replaced by the images. No pip/npm/node-install/
+  workflow-copy for the user.
+- **Hardware/VRAM/storage assessment + model provisioning** → still needed, and relocated to a
+  **container-side assessment command**, e.g. `docker compose run --rm camera-lab python
+  scripts/check_setup.py`. It reuses the existing modular-installer pieces (`hardware.py`
+  detect, `resolver.py` readiness / `_profile_eligible`, `missing_downloadable_models`, the
+  VRAM→GGUF quant ladder) but **skips** the pip/npm/node/workflow-copy steps. Running inside the
+  comfyui-adjacent context, it sees the mounted `models/` and the container's GPU, and reports:
+  which modules are ready, which required models are missing (and where to drop them), and the
+  recommended quant for the detected VRAM.
+- **Live readiness in the UI:** once the stack is up, `/api/config` `modules` already surfaces
+  per-module readiness in the frontend, so the user also sees status without a separate command.
+- **Model download in v1:** best-effort only — the assessment command downloads models that
+  already carry a `source_url` into the mounted volume; everything else is reported as "provide
+  manually". Comprehensive URL coverage + gated/consent (HF-token) download is the separate
+  follow-up spec noted in Scope.
+
 ### Data flow
 
 `docker compose up` → comfyui boots (loads nodes, becomes healthy) → camera-lab boots, waits
@@ -154,6 +186,9 @@ models → outputs land in the shared `comfy_output` volume → camera-lab serve
   user hits it.
 - **Wiring test:** `docker compose up`; poll camera-lab `/api/config`; assert `comfy.ok` is true
   (camera-lab reached the comfyui service over the network).
+- **Assessment command:** `docker compose run --rm camera-lab python scripts/check_setup.py`
+  runs to completion inside the container, detects the GPU, and reports module readiness +
+  missing models against the mounted `models/` without error.
 - **Manual GPU smoke:** one real generation (needs GPU + a mounted model) — manual / gated,
   not in automated CI.
 
