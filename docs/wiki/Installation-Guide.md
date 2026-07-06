@@ -52,6 +52,15 @@ Docker downloads:
 - Windows/macOS: <https://www.docker.com/products/docker-desktop/>
 - Linux Docker Engine: <https://docs.docker.com/engine/install/>
 
+> [!WARNING]
+> If you already have a working native ComfyUI setup, do not casually install
+> new custom nodes, replace Python packages, or rewrite model/workflow folders
+> inside that same ComfyUI just to try Camera Lab. A workflow that works today
+> can break when node versions, Python dependencies, model paths, or workflow
+> JSON expectations change. The safest first path for an existing ComfyUI user
+> is `no-docker`, which connects Camera Lab to your current ComfyUI without
+> trying to replace it.
+
 ## Choose An Install Path
 
 ![Camera Lab install path overview](images/install-path-overview.svg)
@@ -118,6 +127,11 @@ What you trade away:
 If you already have a stable ComfyUI install and Docker is unfamiliar, native
 ComfyUI plus native Camera Lab is usually the happiest first path.
 
+Dockerized ComfyUI is isolated from your native ComfyUI, which helps protect a
+working local setup from dependency changes. The trade-off is that Dockerized
+ComfyUI is a separate environment with its own custom nodes and dependency
+versions, so it may behave differently from your native ComfyUI.
+
 ## Check What Camera Lab Sees
 
 Run:
@@ -156,6 +170,11 @@ subfolders. Docker mounts it inside the ComfyUI container at:
 ![Existing ComfyUI plus native Camera Lab](images/install-no-docker-friendly.png)
 
 Use this path if you already have ComfyUI installed and running.
+
+> [!TIP]
+> This is the least invasive path for an existing ComfyUI setup. It does not
+> install another ComfyUI or change your custom nodes; it only connects Camera
+> Lab to the ComfyUI URL and folders you configure.
 
 1. Start ComfyUI.
 2. Make sure it is reachable at `http://127.0.0.1:8000`.
