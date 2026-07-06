@@ -26,22 +26,42 @@ from typing import Any, Mapping, MutableMapping
 
 from PIL import Image, ImageDraw
 
-from server.workflow_graph import (
-    build_link_map,
-    expand_subgraphs,
-    expand_subgraphs_recursive,
-    fill_widget_inputs_from_object_info,
-    inline_set_get_nodes,
-    is_widget_input,
-    kj_dynamic_inputs,
-    nodes_by_id,
-    replace_node_input_link,
-    resolve_link,
-    set_object_info_provider as set_workflow_object_info_provider,
-    workflow_has_subgraph_nodes,
-    workflow_subgraph_ids,
-    workflow_to_api,
+try:
+    from server.workflow_graph import (
+        build_link_map,
+        expand_subgraphs,
+        expand_subgraphs_recursive,
+        fill_widget_inputs_from_object_info,
+        inline_set_get_nodes,
+        is_widget_input,
+        kj_dynamic_inputs,
+        nodes_by_id,
+        replace_node_input_link,
+        resolve_link,
+        set_object_info_provider as set_workflow_object_info_provider,
+        workflow_has_subgraph_nodes,
+        workflow_subgraph_ids,
+        workflow_to_api,
 )
+except ModuleNotFoundError as exc:
+    if exc.name != "server":
+        raise
+    from workflow_graph import (
+        build_link_map,
+        expand_subgraphs,
+        expand_subgraphs_recursive,
+        fill_widget_inputs_from_object_info,
+        inline_set_get_nodes,
+        is_widget_input,
+        kj_dynamic_inputs,
+        nodes_by_id,
+        replace_node_input_link,
+        resolve_link,
+        set_object_info_provider as set_workflow_object_info_provider,
+        workflow_has_subgraph_nodes,
+        workflow_subgraph_ids,
+        workflow_to_api,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
