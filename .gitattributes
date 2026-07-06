@@ -1,0 +1,2 @@
+docker/nodes.lock text eol=lf
+docker/entrypoint-*.sh text eol=lf

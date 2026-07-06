@@ -26,6 +26,7 @@ def main() -> int:
     parser.add_argument("--install-playwright-browser", action="store_true", help="Install Playwright Chromium.")
     parser.add_argument("--skip-workflow-install", action="store_true", help="Do not install workflows into ComfyUI.")
     parser.add_argument("--include-experimental-workflows", action="store_true", help="Also install workflows/experimental.")
+    parser.add_argument("--modules", help="Comma-separated module ids to install workflows for.")
     args = parser.parse_args()
 
     if not ENV_PATH.exists():
@@ -55,8 +56,9 @@ def main() -> int:
 
     load_env()
     comfy_root = comfy_root_from_env()
+    module_ids = [item.strip() for item in args.modules.split(",") if item.strip()] if args.modules else None
     if not args.skip_workflow_install and comfy_root and comfy_root.exists():
-        install_workflows(include_experimental=args.include_experimental_workflows)
+        install_workflows(include_experimental=args.include_experimental_workflows, module_ids=module_ids)
     elif not args.skip_workflow_install:
         print("COMFYUI_ROOT is not configured or does not exist. Skipping workflow install.", file=sys.stderr)
 

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">How Camera Lab talks to ComfyUI</title>
+  <desc id="desc">A diagram showing browser requests to Camera Lab, Camera Lab staging files into ComfyUI input, submitting workflow prompts to the ComfyUI API, polling for outputs, and showing results back in the browser.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .section { font: 700 17px Arial, sans-serif; fill: #0f172a; }
+      .label { font: 700 15px Arial, sans-serif; fill: #0f172a; }
+      .body { font: 13px Arial, sans-serif; fill: #334155; }
+      .num { font: 700 13px Arial, sans-serif; fill: #ffffff; }
+      .browser { fill: #e0f2fe; stroke: #0284c7; stroke-width: 2; }
+      .server { fill: #dbeafe; stroke: #2563eb; stroke-width: 2; }
+      .comfy { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; }
+      .folder { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+      .result { fill: #f3e8ff; stroke: #9333ea; stroke-width: 2; }
+      .line { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .fileline { stroke: #d97706; stroke-width: 3; fill: none; marker-end: url(#arrowOrange); stroke-dasharray: 7 6; }
+      .api { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrowBlue); }
+      .badge { fill: #0f172a; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="980" height="520" rx="24"/>
+  <text x="40" y="48" class="title">How Camera Lab talks to ComfyUI</text>
+  <text x="40" y="78" class="body">Camera Lab is the friendly web app. ComfyUI is the generation engine. They communicate through files and HTTP API calls.</text>
+
+  <rect x="55" y="130" width="170" height="86" rx="16" class="browser"/>
+  <text x="98" y="164" class="label">Browser</text>
+  <text x="82" y="188" class="body">You click Generate</text>
+
+  <rect x="300" y="112" width="210" height="122" rx="18" class="server"/>
+  <text x="340" y="146" class="label">Camera Lab</text>
+  <text x="326" y="170" class="body">validates inputs</text>
+  <text x="326" y="190" class="body">patches workflow JSON</text>
+  <text x="326" y="210" class="body">tracks run history</text>
+
+  <rect x="605" y="100" width="250" height="146" rx="18" class="comfy"/>
+  <text x="690" y="134" class="label">ComfyUI</text>
+  <text x="642" y="158" class="body">loads models and nodes</text>
+  <text x="642" y="178" class="body">runs the workflow graph</text>
+  <text x="642" y="198" class="body">writes output media</text>
+
+  <rect x="320" y="320" width="170" height="72" rx="16" class="folder"/>
+  <text x="358" y="351" class="label">Input files</text>
+  <text x="340" y="374" class="body">ComfyUI/input</text>
+
+  <rect x="640" y="320" width="170" height="72" rx="16" class="result"/>
+  <text x="676" y="351" class="label">Outputs</text>
+  <text x="662" y="374" class="body">ComfyUI/output</text>
+
+  <path d="M225 173 L300 173" class="line"/>
+  <circle cx="258" cy="173" r="13" class="badge"/><text x="254" y="178" class="num">1</text>
+
+  <path d="M405 234 L405 320" class="fileline"/>
+  <circle cx="405" cy="276" r="13" class="badge"/><text x="401" y="281" class="num">2</text>
+
+  <path d="M510 157 C555 135 570 135 605 157" class="api"/>
+  <circle cx="555" cy="144" r="13" class="badge"/><text x="551" y="149" class="num">3</text>
+  <text x="525" y="119" class="body">POST /prompt</text>
+
+  <path d="M605 198 C565 225 548 225 510 198" class="api"/>
+  <circle cx="555" cy="218" r="13" class="badge"/><text x="551" y="223" class="num">4</text>
+  <text x="520" y="244" class="body">poll status</text>
+
+  <path d="M730 246 L730 320" class="fileline"/>
+  <circle cx="730" cy="284" r="13" class="badge"/><text x="726" y="289" class="num">5</text>
+
+  <path d="M640 356 L490 356" class="line"/>
+  <path d="M320 356 C220 355 170 275 140 216" class="line"/>
+  <circle cx="245" cy="342" r="13" class="badge"/><text x="241" y="347" class="num">6</text>
+
+  <text x="65" y="450" class="section">What this means for setup</text>
+  <text x="65" y="476" class="body">Camera Lab must know two things: the ComfyUI API URL and the ComfyUI input/output folder it should stage files into.</text>
+</svg>

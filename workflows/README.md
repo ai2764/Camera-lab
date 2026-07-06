@@ -22,7 +22,6 @@ This folder contains ComfyUI workflow files that are useful for Camera Lab setup
 - `ltx23_nag_ia2v_extendcrop_general.json`: `LTX 2.3 IA2V`
 - `ltx23_flf_ia2v_nag_extend.json`: `LTX 2.3 FLF IA2V (2 images + audio)`
 - `ltx_director_2.json`: `LTX Director 2`
-- `ltx_director_reference_mvp.json`: legacy Director reference workflow
 - `wan22_bernini_t2v.ui.json`: `WAN2.2 Bernini T2V`
 - `wan22_bernini_t2i.ui.json`: `WAN2.2 Bernini T2I`
 - `wan22_bernini_i2v.ui.json`: `WAN2.2 Bernini I2V`
