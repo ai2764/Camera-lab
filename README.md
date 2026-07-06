@@ -49,6 +49,17 @@ Beginner rule of thumb:
 
 Full setup instructions are in the [Installation Guide](docs/wiki/Installation-Guide.md).
 
+## Windows Without Python
+
+If Python is not installed, start from the repository root with:
+
+```powershell
+.\install_camera_lab.ps1
+```
+
+This bootstrap uses `winget` to install Python 3.12, then runs the Camera Lab
+installer.
+
 ## Quick Commands
 
 Assess your machine:
