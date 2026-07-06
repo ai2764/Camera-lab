@@ -196,3 +196,16 @@ def test_main_warns_when_native_modes_need_existing_comfy(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ComfyUI was not detected" in output
     assert "0.0.0.0" in output
+
+
+def test_modelref_has_page_url_and_hf_page_helper():
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    from camera_lab_setup.modules import ModelRef, _hf_page
+
+    # positional construction (no page_url) still works
+    r = ModelRef("vae", "x.safetensors", "https://example/resolve/main/x")
+    assert r.page_url == ""
+    r2 = ModelRef("vae", "x.safetensors", page_url="https://huggingface.co/org/repo")
+    assert r2.page_url == "https://huggingface.co/org/repo"
+    assert _hf_page("Lightricks/LTX-Video") == "https://huggingface.co/Lightricks/LTX-Video"

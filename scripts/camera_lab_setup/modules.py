@@ -8,11 +8,16 @@ def _hf(repo: str, path: str) -> str:
     return f"https://huggingface.co/{repo}/resolve/main/{path}"
 
 
+def _hf_page(repo: str) -> str:
+    return f"https://huggingface.co/{repo}"
+
+
 @dataclass(frozen=True)
 class ModelRef:
     folder: str
     name: str
     source_url: str = ""
+    page_url: str = ""
 
 
 @dataclass(frozen=True)
