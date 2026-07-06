@@ -100,6 +100,10 @@ This is why setup must get two things right:
 - `COMFYUI_URL`: where the ComfyUI API is listening.
 - `COMFYUI_ROOT`: the folder whose `input` and `output` directories Camera Lab should use.
 
+The ports in this guide are examples. If your ComfyUI is not running on `8000`
+or `8188`, replace the example port with your actual ComfyUI port everywhere
+you set `COMFYUI_URL` or `COMFY_PORT`.
+
 ## Docker ComfyUI Trade-Offs
 
 ![Docker ComfyUI trade-offs](images/docker-comfyui-tradeoffs.svg)
@@ -177,7 +181,15 @@ Use this path if you already have ComfyUI installed and running.
 > Lab to the ComfyUI URL and folders you configure.
 
 1. Start ComfyUI.
-2. Make sure it is reachable at `http://127.0.0.1:8000`.
+2. Make sure it is reachable in your browser. Common examples are:
+
+   ```text
+   http://127.0.0.1:8188
+   http://127.0.0.1:8000
+   ```
+
+   If your ComfyUI uses another port, use that port instead.
+
 3. Create `.env` if it does not exist:
 
    ```powershell
@@ -188,7 +200,13 @@ Use this path if you already have ComfyUI installed and running.
 
    ```text
    COMFYUI_ROOT=C:\path\to\your\ComfyUI
-   COMFYUI_URL=http://127.0.0.1:8000
+   COMFYUI_URL=http://127.0.0.1:<your-comfy-port>
+   ```
+
+   Example:
+
+   ```text
+   COMFYUI_URL=http://127.0.0.1:8188
    ```
 
 5. Install repo dependencies and workflows:
@@ -218,10 +236,11 @@ Use this path if you already have ComfyUI installed and running.
 Use this path if you want Camera Lab in Docker but want to keep using your
 existing ComfyUI.
 
-1. Start ComfyUI with network listening enabled:
+1. Start ComfyUI with network listening enabled. Replace `8188` with your
+   ComfyUI port if you use a different one:
 
    ```powershell
-   python main.py --listen 0.0.0.0 --port 8000
+   python main.py --listen 0.0.0.0 --port 8188
    ```
 
 2. Copy the Camera Lab Docker env file:
@@ -233,7 +252,13 @@ existing ComfyUI.
 3. Edit `docker/compose.camera-lab-only.env`. On Docker Desktop, the ComfyUI URL is often:
 
    ```text
-   COMFYUI_URL=http://host.docker.internal:8000
+   COMFYUI_URL=http://host.docker.internal:<your-comfy-port>
+   ```
+
+   Example:
+
+   ```text
+   COMFYUI_URL=http://host.docker.internal:8188
    ```
 
 4. Preview:
@@ -272,6 +297,10 @@ native ComfyUI, prefer `no-docker` first.
    COMFY_DATA_DIR=.\comfy-data
    COMFY_PORT=8188
    ```
+
+   If port `8188` is already in use, set `COMFY_PORT` to another free host
+   port, such as `9199`. Camera Lab will connect to that host port
+   automatically in this mode.
 
    `MODELS_DIR` must point to a host folder that contains ComfyUI model
    subfolders like `checkpoints`, `diffusion_models`, `text_encoders`, `vae`,
@@ -349,8 +378,8 @@ best when you want isolation more than maximum simplicity.
 ### ComfyUI Was Not Detected
 
 - Start ComfyUI first.
-- Check that `COMFYUI_URL` is correct.
-- For `cam-lab-only-docker`, start ComfyUI with `--listen 0.0.0.0` and use a container-reachable URL such as `http://host.docker.internal:8000`.
+- Check that `COMFYUI_URL` uses your actual ComfyUI port, such as `http://127.0.0.1:8188`.
+- For `cam-lab-only-docker`, start ComfyUI with `--listen 0.0.0.0` and use a container-reachable URL such as `http://host.docker.internal:<your-comfy-port>`.
 
 ### MODELS_DIR Is Missing Or Does Not Exist
 

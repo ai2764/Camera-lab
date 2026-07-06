@@ -415,8 +415,10 @@ def _warn_if_missing_comfy(mode, assessment) -> None:
         return
     if mode == "cam-lab-only-docker":
         print("Warning: ComfyUI was not detected; cam-lab-only-docker needs your ComfyUI listening on 0.0.0.0.")
+        print("If your ComfyUI uses a custom port, set COMFYUI_URL=http://host.docker.internal:<your-comfy-port> in docker/compose.camera-lab-only.env.")
     else:
         print("Warning: ComfyUI was not detected; no-docker needs an existing local ComfyUI.")
+        print("If your ComfyUI uses a custom port, set COMFYUI_URL=http://127.0.0.1:<your-comfy-port> in .env.")
 
 
 def main(argv=None) -> int:
