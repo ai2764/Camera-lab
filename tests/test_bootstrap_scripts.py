@@ -28,6 +28,25 @@ def test_batch_bootstrap_delegates_to_powershell_entrypoint():
     assert "ExecutionPolicy Bypass" in text
 
 
+def test_legacy_windows_bootstrap_delegates_to_renamed_entrypoint():
+    script = ROOT / "install_camera_lab.ps1"
+
+    text = script.read_text(encoding="utf-8")
+
+    assert "setup_windows_python.ps1" in text
+    assert "renamed" in text
+    assert "ValueFromRemainingArguments" in text
+
+
+def test_legacy_batch_bootstrap_delegates_to_renamed_entrypoint():
+    script = ROOT / "install_camera_lab.bat"
+
+    text = script.read_text(encoding="utf-8")
+
+    assert "install_camera_lab.ps1" in text
+    assert "ExecutionPolicy Bypass" in text
+
+
 def test_readme_mentions_python_free_windows_bootstrap():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
 
