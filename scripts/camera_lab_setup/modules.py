@@ -52,8 +52,10 @@ class CameraLabModule:
 
 
 LTX23_TEXT_MODELS = (
-    ModelRef("text_encoders", "gemma_3_12B_it_fp4_mixed.safetensors"),
-    ModelRef("text_encoders", "ltx-2.3_text_projection_bf16.safetensors"),
+    ModelRef("text_encoders", "gemma_3_12B_it_fp4_mixed.safetensors",
+             page_url=_hf_page("Comfy-Org/ltx-2")),
+    ModelRef("text_encoders", "ltx-2.3_text_projection_bf16.safetensors",
+             page_url=_hf_page("Kijai/LTX2.3_comfy")),
 )
 
 # Verified in Task 1. Gemma file + connectors path confirmed against the real repos.
@@ -167,9 +169,12 @@ MODULES: tuple[CameraLabModule, ...] = (
                 id="camera-ltx23-fp8",
                 label="LTX 2.3 FP8",
                 required_models=(
-                    ModelRef("checkpoints", "ltx-2.3-22b-dev-fp8.safetensors"),
-                    ModelRef("loras", "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors"),
-                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
+                    ModelRef("checkpoints", "ltx-2.3-22b-dev-fp8.safetensors",
+                             page_url=_hf_page("Lightricks/LTX-2.3-fp8")),
+                    ModelRef("loras", "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors",
+                             page_url=_hf_page("TenStrip/LTX2.3_Distilled_Lora_1.1_Experiments")),
+                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+                             page_url=_hf_page("Lightricks/LTX-2.3")),
                     *LTX23_TEXT_MODELS,
                 ),
                 min_vram_gb=16,
@@ -200,11 +205,16 @@ MODULES: tuple[CameraLabModule, ...] = (
                 label="Director v2 Distilled FP8",
                 required_nodes=("LTXDirectorCropGuides",),
                 required_models=(
-                    ModelRef("diffusion_models", "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"),
-                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
-                    ModelRef("vae", "LTX23_audio_vae_bf16.safetensors"),
-                    ModelRef("vae", "LTX23_video_vae_bf16.safetensors"),
-                    ModelRef("vae", "taeltx2_3.safetensors"),
+                    ModelRef("diffusion_models", "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+                             page_url=_hf_page("Kijai/LTX2.3_comfy")),
+                    ModelRef("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+                             page_url=_hf_page("Lightricks/LTX-2.3")),
+                    ModelRef("vae", "LTX23_audio_vae_bf16.safetensors",
+                             page_url=_hf_page("Kijai/LTX2.3_comfy")),
+                    ModelRef("vae", "LTX23_video_vae_bf16.safetensors",
+                             page_url=_hf_page("Kijai/LTX2.3_comfy")),
+                    ModelRef("vae", "taeltx2_3.safetensors",
+                             page_url=_hf_page("Kijai/LTX2.3_comfy")),
                     *LTX23_TEXT_MODELS,
                 ),
                 min_vram_gb=16,
