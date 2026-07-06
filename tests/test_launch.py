@@ -255,3 +255,21 @@ def test_model_guide_rows_present_none_when_no_comfy():
     rows = model_guide_rows({"has_comfy": False, "modules": [{"id": "edit", "profile": "edit-x", "missing": []}]}, modules=mods)
     assert rows[0]["present"] is None
     assert rows[0]["page_url"] == ""
+
+
+from scripts.launch import print_model_guide
+
+
+def test_print_model_guide_tags_and_paths(capsys, monkeypatch):
+    rows = [
+        {"module": "camera", "name": "a", "folder": "checkpoints", "install_path": "models/checkpoints/a", "page_url": "https://huggingface.co/org/repo", "present": False},
+        {"module": "camera", "name": "b", "folder": "vae", "install_path": "models/vae/b", "page_url": "", "present": None},
+    ]
+    monkeypatch.setattr("scripts.launch.model_guide_rows", lambda assessment, modules=None: rows)
+    print_model_guide({"has_comfy": True, "modules": []})
+    out = capsys.readouterr().out
+    assert "camera:" in out
+    assert "[missing] models/checkpoints/a" in out
+    assert "https://huggingface.co/org/repo" in out
+    assert "[needed] models/vae/b" in out
+    assert "no public source" in out

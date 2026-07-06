@@ -184,6 +184,25 @@ def print_assessment(assessment) -> None:
         print(line)
 
 
+def print_model_guide(assessment) -> None:
+    rows = model_guide_rows(assessment)
+    print("Model guide (download each missing file and place it at the listed path):")
+    current = None
+    for row in rows:
+        if row["module"] != current:
+            current = row["module"]
+            print(f"  {current}:")
+        if row["present"] is True:
+            tag = "[ok]     "
+        elif row["present"] is False:
+            tag = "[missing]"
+        else:
+            tag = "[needed]"
+        print(f"    {tag} {row['install_path']}")
+        source = row["page_url"] or "no public source - obtain manually"
+        print(f"             {source}")
+
+
 def _read_env_file(path: Path) -> dict[str, str]:
     values = {}
     if not path.exists():
@@ -281,6 +300,7 @@ def main(argv=None) -> int:
     )
     assessment = assess(hardware, object_info)
     print_assessment(assessment)
+    print_model_guide(assessment)
     if args.assess_only:
         return 0
     mode = args.mode or choose_mode(assessment)
