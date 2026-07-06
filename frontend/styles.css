@@ -75,6 +75,20 @@ button, input, select, textarea {
   font-weight: 700;
 }
 
+.workspace-tab.module-unavailable,
+.workspace-tab:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+  filter: grayscale(.8);
+}
+
+.workspace-tab.module-unavailable.active,
+.workspace-tab:disabled.active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
 .bernini-panel {
   display: grid;
   gap: 12px;

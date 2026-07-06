@@ -13,6 +13,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+try:
+    from camera_lab_setup.modules import selected_modules
+except ModuleNotFoundError:
+    from scripts.camera_lab_setup.modules import selected_modules
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TASKS_DIR = REPO_ROOT / "tasks"
@@ -62,14 +67,26 @@ def installed_workflow_root(comfy_root: Path) -> Path:
     return comfy_root / "user" / "default" / "workflows" / "camera-lab"
 
 
-def workflow_sources(include_experimental: bool = False) -> list[tuple[str, Path]]:
-    sources = [("app", REPO_ROOT / "workflows" / "app")]
+def workflow_sources(
+    include_experimental: bool = False,
+    module_ids: list[str] | tuple[str, ...] | None = None,
+) -> list[tuple[str, Path, tuple[str, ...] | None]]:
+    if module_ids is None:
+        sources: list[tuple[str, Path, tuple[str, ...] | None]] = [("app", REPO_ROOT / "workflows" / "app", None)]
+    else:
+        names: list[str] = []
+        for module in selected_modules(module_ids):
+            names.extend(module.workflows)
+        sources = [("app", REPO_ROOT / "workflows" / "app", tuple(dict.fromkeys(names)))]
     if include_experimental:
-        sources.append(("experimental", REPO_ROOT / "workflows" / "experimental"))
+        sources.append(("experimental", REPO_ROOT / "workflows" / "experimental", None))
     return sources
 
 
-def install_workflows(include_experimental: bool = False) -> int:
+def install_workflows(
+    include_experimental: bool = False,
+    module_ids: list[str] | tuple[str, ...] | None = None,
+) -> int:
     load_env()
     comfy_root = comfy_root_from_env()
     if not comfy_root:
@@ -81,12 +98,16 @@ def install_workflows(include_experimental: bool = False) -> int:
     target_root.mkdir(parents=True, exist_ok=True)
 
     copied = 0
-    for name, source in workflow_sources(include_experimental):
+    for name, source, allowed_names in workflow_sources(include_experimental, module_ids=module_ids):
         if not source.exists():
             continue
         target = target_root / name
         target.mkdir(parents=True, exist_ok=True)
-        for workflow in sorted(source.glob("*.json")):
+        workflows = sorted(source.glob("*.json"))
+        if allowed_names is not None:
+            allowed = set(allowed_names)
+            workflows = [workflow for workflow in workflows if workflow.name in allowed]
+        for workflow in workflows:
             shutil.copy2(workflow, target / workflow.name)
             copied += 1
             print(f"Installed {name}/{workflow.name}")

@@ -1,0 +1,27 @@
+# ComfyUI in a container (GPU), camera-lab runs natively on the host and connects
+# to http://127.0.0.1:${COMFY_PORT}. Start it, then run scripts/start_camera_lab.py
+# with COMFYUI_ROOT pointed at COMFY_DATA_DIR.
+services:
+  comfyui:
+    build:
+      context: .
+      dockerfile: docker/comfyui.Dockerfile
+    volumes:
+      - ${MODELS_DIR:?set MODELS_DIR in docker/compose.comfy-only.env}:/opt/ComfyUI/models:ro
+      - ${COMFY_DATA_DIR:?set COMFY_DATA_DIR}/input:/opt/ComfyUI/input
+      - ${COMFY_DATA_DIR:?set COMFY_DATA_DIR}/output:/opt/ComfyUI/output
+    ports:
+      - "${COMFY_PORT:-8188}:8188"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8188/object_info', timeout=5); sys.exit(0)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
