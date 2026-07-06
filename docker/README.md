@@ -44,13 +44,15 @@ docker compose --env-file docker/compose.env up -d --build
 
 ## Launcher (recommended entry point)
 
-Instead of picking a compose file by hand, run the launcher on the host. It
-detects your GPU/VRAM, tells you which modules are feasible and what your ComfyUI
-is missing, then starts the right mode:
+Instead of picking a compose file by hand, run the launcher on the host. The full
+beginner walkthrough is in the main [README](../README.md#beginner-installation-guide).
+The launcher detects your GPU/VRAM, tells you which modules are feasible and what
+your ComfyUI is missing, then starts the right mode:
 
 ```bash
 python scripts/launch.py
 python scripts/launch.py --assess-only
+python scripts/launch.py --dry-run --mode full-docker
 python scripts/launch.py --mode full-docker
 ```
 

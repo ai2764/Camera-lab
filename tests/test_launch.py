@@ -2,7 +2,7 @@ import pytest
 
 from scripts.launch import MODES, feasibility_for, mode_command, recommended_mode
 from scripts.launch import assess, probe_comfy
-from scripts.launch import choose_mode, launch, main
+from scripts.launch import choose_mode, dry_run, launch, main, preflight
 
 
 def test_recommended_mode_matrix():
@@ -117,8 +117,8 @@ def test_assess_no_comfy():
 
 
 def test_choose_mode_uses_answers():
-    answers = iter(["y", "n"])
-    assert choose_mode({"has_comfy": True}, input_fn=lambda _: next(answers)) == "no-docker"
+    answers = iter(["3"])
+    assert choose_mode({"has_comfy": False}, input_fn=lambda _: next(answers)) == "comfy-only-docker"
 
 
 def test_choose_mode_uses_defaults_on_eof():
@@ -126,6 +126,17 @@ def test_choose_mode_uses_defaults_on_eof():
         raise EOFError
 
     assert choose_mode({"has_comfy": True}, input_fn=input_fn) == "no-docker"
+
+
+def test_choose_mode_prints_all_install_options(capsys):
+    assert choose_mode({"has_comfy": False}, input_fn=lambda _: "") == "full-docker"
+
+    output = capsys.readouterr().out
+    assert "1. Existing ComfyUI + native Camera Lab" in output
+    assert "2. Existing ComfyUI + Docker Camera Lab" in output
+    assert "3. Docker ComfyUI + native Camera Lab" in output
+    assert "4. Docker ComfyUI + Docker Camera Lab" in output
+    assert "(recommended)" in output
 
 
 def test_launch_runs_commands_and_reports_exit():
@@ -170,6 +181,63 @@ def test_comfy_only_launch_passes_container_comfy_env_to_native_command(monkeypa
     assert native_env["COMFYUI_ROOT"] == "C:/camera-lab/comfy-data"
 
 
+def test_dry_run_prints_commands_and_comfy_only_env(monkeypatch, tmp_path, capsys):
+    docker_dir = tmp_path / "docker"
+    docker_dir.mkdir()
+    (docker_dir / "compose.comfy-only.env").write_text("COMFY_PORT=9199\nCOMFY_DATA_DIR=./comfy-data\n")
+    monkeypatch.setattr("scripts.launch.ROOT", tmp_path)
+
+    assert dry_run("comfy-only-docker") == 0
+
+    output = capsys.readouterr().out
+    assert "docker compose -f docker-compose.comfy-only.yml" in output
+    assert "python scripts/start_camera_lab.py --open" in output
+    assert "COMFYUI_URL=http://127.0.0.1:9199" in output
+    assert "COMFYUI_ROOT=" in output
+
+
+def test_preflight_blocks_native_mode_without_comfy():
+    assert preflight("no-docker", {"has_comfy": False}) == 1
+
+
+def test_preflight_blocks_comfy_only_missing_models_dir(monkeypatch, tmp_path):
+    docker_dir = tmp_path / "docker"
+    docker_dir.mkdir()
+    (docker_dir / "compose.comfy-only.env").write_text("MODELS_DIR=C:/does/not/exist\nCOMFY_DATA_DIR=./comfy-data\n")
+    monkeypatch.setattr("scripts.launch.ROOT", tmp_path)
+
+    assert preflight("comfy-only-docker", {"has_comfy": False}, runner=lambda *_a, **_k: type("R", (), {"returncode": 0})()) == 1
+
+
+def test_preflight_missing_env_file_prints_beginner_next_steps(monkeypatch, tmp_path, capsys):
+    (tmp_path / "docker").mkdir()
+    monkeypatch.setattr("scripts.launch.ROOT", tmp_path)
+
+    rc = preflight("full-docker", {"has_comfy": False}, runner=lambda *_a, **_k: type("R", (), {"returncode": 0})())
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "Missing Docker env file" in err
+    assert "Copy docker/compose.env.example to docker/compose.env" in err
+    assert "set MODELS_DIR" in err
+
+
+def test_preflight_missing_models_dir_prints_mount_hint(monkeypatch, tmp_path, capsys):
+    docker_dir = tmp_path / "docker"
+    docker_dir.mkdir()
+    (docker_dir / "compose.comfy-only.env").write_text("MODELS_DIR=C:/missing/models\nCOMFY_DATA_DIR=./comfy-data\n")
+    monkeypatch.setattr("scripts.launch.ROOT", tmp_path)
+
+    rc = preflight("comfy-only-docker", {"has_comfy": False}, runner=lambda *_a, **_k: type("R", (), {"returncode": 0})())
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "MODELS_DIR is missing or does not exist" in err
+    assert "C:/missing/models" in err
+    assert "/opt/ComfyUI/models" in err
+    assert "docker/compose.comfy-only.env" in err
+
+
 def test_assess_only_launches_nothing(monkeypatch, capsys):
     monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
     monkeypatch.setattr(
@@ -183,6 +251,35 @@ def test_assess_only_launches_nothing(monkeypatch, capsys):
     assert called == []
 
 
+def test_dry_run_launches_nothing(monkeypatch, capsys):
+    monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
+    monkeypatch.setattr(
+        "scripts.launch.detect_hardware",
+        lambda **k: type("H", (), {"gpu_name": None, "vram_gb": None, "os_name": "Linux", "warnings": ()})(),
+    )
+    monkeypatch.setattr("scripts.launch.choose_mode", lambda *_a, **_k: "full-docker")
+    monkeypatch.setattr("scripts.launch.preflight", lambda *_a, **_k: 0)
+    called = []
+    monkeypatch.setattr("scripts.launch.launch", lambda *a, **k: called.append(a))
+
+    assert main(["--dry-run"]) == 0
+    assert called == []
+    assert "Dry run" in capsys.readouterr().out
+
+
+def test_dry_run_bypasses_preflight(monkeypatch):
+    monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
+    monkeypatch.setattr(
+        "scripts.launch.detect_hardware",
+        lambda **k: type("H", (), {"gpu_name": None, "vram_gb": None, "os_name": "Linux", "warnings": ()})(),
+    )
+    called = []
+    monkeypatch.setattr("scripts.launch.preflight", lambda *a, **k: called.append(a) or 1)
+
+    assert main(["--dry-run", "--mode", "full-docker"]) == 0
+    assert called == []
+
+
 def test_main_warns_when_native_modes_need_existing_comfy(monkeypatch, capsys):
     monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
     monkeypatch.setattr(
@@ -191,7 +288,7 @@ def test_main_warns_when_native_modes_need_existing_comfy(monkeypatch, capsys):
     )
     monkeypatch.setattr("scripts.launch.launch", lambda *_a, **_k: 0)
 
-    assert main(["--mode", "cam-lab-only-docker"]) == 0
+    assert main(["--mode", "cam-lab-only-docker"]) == 1
 
     output = capsys.readouterr().out
     assert "ComfyUI was not detected" in output
@@ -269,6 +366,7 @@ def test_print_model_guide_tags_and_paths(capsys, monkeypatch):
     print_model_guide({"has_comfy": True, "modules": []})
     out = capsys.readouterr().out
     assert "camera:" in out
+    assert "relative to your ComfyUI models folder" in out
     assert "[missing] models/checkpoints/a" in out
     assert "https://huggingface.co/org/repo" in out
     assert "[needed] models/vae/b" in out

@@ -59,6 +59,339 @@ flowchart TB
 - **Casting** turns scripts into dialogue lines, assigns character voices and emotions, generates voice clips with CosyVoice when available, and keeps the voice library usable even when optional analysis or TTS services are offline.
 - **Motion** drives the SCAIL-2 video model to animate a reference character from a guide pose video. It has three tools: **Text to Motion** (HY-Motion turns a text prompt into a pose video), **SCAIL2** (renders a pose video onto a reference character), and **3D Motion** (poses a rigged 3D character in the browser, then feeds that as the guide).
 
+## Beginner Installation Guide
+
+The easiest way to start is the launcher:
+
+```powershell
+python scripts/launch.py
+```
+
+The launcher checks your GPU, VRAM, ComfyUI connection, module readiness, and model visibility. It does **not** download models, install ComfyUI, or change your existing ComfyUI installation.
+
+### What Is Docker?
+
+Docker is an app that runs software in isolated containers. A container is like a small, packaged environment for an app and its dependencies. Camera Lab can use Docker so ComfyUI and/or Camera Lab run without being mixed into your normal Python environment.
+
+You do **not** need Docker if you already have ComfyUI installed and you are comfortable running Camera Lab directly with Python. In that case, choose:
+
+```text
+Existing ComfyUI + native Camera Lab
+```
+
+You may want Docker if:
+
+- You do not have ComfyUI installed yet.
+- You want Camera Lab or ComfyUI isolated from your normal Python setup.
+- You are comfortable installing Docker Desktop and letting Docker manage containers.
+
+If the word "Docker" is new to you, the simplest path is usually:
+
+1. Install ComfyUI normally using the official ComfyUI instructions.
+2. Use Camera Lab's `Existing ComfyUI + native Camera Lab` mode.
+
+If you still want the all-in-one container path, install Docker Desktop first:
+
+- Windows/macOS: <https://www.docker.com/products/docker-desktop/>
+- Linux Docker Engine: <https://docs.docker.com/engine/install/>
+
+If you are not sure what will happen, run a safe dry run first:
+
+```powershell
+python scripts/launch.py --assess-only
+python scripts/launch.py --dry-run
+```
+
+`--assess-only` only prints the hardware/module/model report. `--dry-run` prints the commands it would run without starting Docker or Camera Lab.
+
+### Step 1: Choose Your Install Path
+
+Camera Lab supports four install paths:
+
+| Your situation | What runs natively | What runs in Docker | Launcher mode |
+|---|---|---|---|
+| You already have ComfyUI and want the simplest setup | ComfyUI + Camera Lab | Nothing | `no-docker` |
+| You already have ComfyUI but want Camera Lab isolated | ComfyUI | Camera Lab | `cam-lab-only-docker` |
+| You do not have ComfyUI but want Camera Lab native | Camera Lab | ComfyUI | `comfy-only-docker` |
+| You do not have ComfyUI and want everything isolated | Nothing | ComfyUI + Camera Lab | `full-docker` |
+
+For beginners:
+
+- If you already use ComfyUI, start with `no-docker`.
+- If you do not have ComfyUI, start with `full-docker`.
+- Use `comfy-only-docker` only if you specifically want ComfyUI in Docker but Camera Lab running directly on your machine.
+- Use `cam-lab-only-docker` only if your existing ComfyUI is already reachable from Docker. Your ComfyUI must listen on `0.0.0.0`, usually by starting it with `--listen`.
+
+### Step 2: Check What Camera Lab Sees
+
+Run:
+
+```powershell
+python scripts/launch.py --assess-only
+```
+
+You should see something like:
+
+```text
+Hardware: GPU=NVIDIA GeForce RTX 4090, VRAM=24 GiB, OS=Windows
+ComfyUI detected: yes
+Modules:
+  camera   ready=True  feasibility=fits
+  director ready=True  feasibility=fits
+```
+
+The model guide uses these tags:
+
+- `[ok]`: ComfyUI can already see the model.
+- `[missing]`: ComfyUI is running, but this model is missing.
+- `[needed]`: ComfyUI was not detected, so Camera Lab can only show what will be needed later.
+
+Model paths are shown relative to your ComfyUI models folder. For example:
+
+```text
+models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors
+```
+
+means:
+
+```text
+<your ComfyUI folder>/models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors
+```
+
+For Docker modes, `MODELS_DIR` is the host folder that contains those model subfolders. Docker mounts it inside the ComfyUI container at:
+
+```text
+/opt/ComfyUI/models
+```
+
+### Step 3A: Existing ComfyUI + Native Camera Lab
+
+Use this path if you already have ComfyUI installed and running.
+
+1. Start ComfyUI.
+2. Make sure it is reachable at the URL Camera Lab will use, usually:
+
+   ```text
+   http://127.0.0.1:8000
+   ```
+
+3. Create `.env` if it does not exist:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+4. Edit `.env`:
+
+   ```text
+   COMFYUI_ROOT=C:\path\to\your\ComfyUI
+   COMFYUI_URL=http://127.0.0.1:8000
+   ```
+
+5. Install repo dependencies and workflows:
+
+   ```powershell
+   python scripts/agent_setup.py
+   python scripts/install_workflows.py
+   python scripts/check_setup.py
+   ```
+
+6. Preview the launch:
+
+   ```powershell
+   python scripts/launch.py --dry-run --mode no-docker
+   ```
+
+7. Start Camera Lab:
+
+   ```powershell
+   python scripts/launch.py --mode no-docker
+   ```
+
+### Step 3B: Existing ComfyUI + Docker Camera Lab
+
+Use this path if you want Camera Lab in Docker but want to keep using your existing ComfyUI.
+
+1. Start ComfyUI with network listening enabled:
+
+   ```powershell
+   python main.py --listen 0.0.0.0 --port 8000
+   ```
+
+2. Copy the Camera Lab Docker env file:
+
+   ```powershell
+   Copy-Item docker\compose.camera-lab-only.env.example docker\compose.camera-lab-only.env
+   ```
+
+3. Edit `docker/compose.camera-lab-only.env`.
+
+   Set the ComfyUI URL to an address the container can reach. On Docker Desktop, this is often:
+
+   ```text
+   COMFYUI_URL=http://host.docker.internal:8000
+   ```
+
+4. Preview the launch:
+
+   ```powershell
+   python scripts/launch.py --dry-run --mode cam-lab-only-docker
+   ```
+
+5. Start Camera Lab:
+
+   ```powershell
+   python scripts/launch.py --mode cam-lab-only-docker
+   ```
+
+### Step 3C: Docker ComfyUI + Native Camera Lab
+
+Use this path if you do not have ComfyUI installed, but you want Camera Lab to run directly on your machine.
+
+1. Copy the ComfyUI Docker env file:
+
+   ```powershell
+   Copy-Item docker\compose.comfy-only.env.example docker\compose.comfy-only.env
+   ```
+
+2. Edit `docker/compose.comfy-only.env`:
+
+   ```text
+   MODELS_DIR=C:\path\to\your\ComfyUI\models
+   COMFY_DATA_DIR=.\comfy-data
+   COMFY_PORT=8188
+   ```
+
+   `MODELS_DIR` must point to a host folder that contains ComfyUI model subfolders like `checkpoints`, `diffusion_models`, `text_encoders`, `vae`, and `loras`.
+
+   `COMFY_DATA_DIR` is where the containerized ComfyUI reads inputs and writes outputs:
+
+   ```text
+   COMFY_DATA_DIR/input  -> /opt/ComfyUI/input
+   COMFY_DATA_DIR/output -> /opt/ComfyUI/output
+   ```
+
+   The launcher also passes this same `COMFY_DATA_DIR` to native Camera Lab as `COMFYUI_ROOT`, so uploads land where the ComfyUI container can read them.
+
+3. Install native Camera Lab dependencies:
+
+   ```powershell
+   python scripts/agent_setup.py
+   ```
+
+4. Preview the launch:
+
+   ```powershell
+   python scripts/launch.py --dry-run --mode comfy-only-docker
+   ```
+
+   The dry run should show:
+
+   ```text
+   env COMFYUI_URL=http://127.0.0.1:8188
+   env COMFYUI_ROOT=...
+   ```
+
+5. Start ComfyUI in Docker and Camera Lab natively:
+
+   ```powershell
+   python scripts/launch.py --mode comfy-only-docker
+   ```
+
+### Step 3D: Docker ComfyUI + Docker Camera Lab
+
+Use this path if you want the most isolated setup.
+
+1. Copy the full Docker env file:
+
+   ```powershell
+   Copy-Item docker\compose.env.example docker\compose.env
+   ```
+
+2. Edit `docker/compose.env`:
+
+   ```text
+   MODELS_DIR=C:\path\to\your\ComfyUI\models
+   ```
+
+   Docker mounts this folder into the ComfyUI container at:
+
+   ```text
+   /opt/ComfyUI/models
+   ```
+
+3. Preview the launch:
+
+   ```powershell
+   python scripts/launch.py --dry-run --mode full-docker
+   ```
+
+4. Start both services:
+
+   ```powershell
+   python scripts/launch.py --mode full-docker
+   ```
+
+5. Open Camera Lab:
+
+   ```text
+   http://127.0.0.1:8000
+   ```
+
+### Step 4: Fix Common Setup Problems
+
+**ComfyUI was not detected**
+
+- Start ComfyUI first.
+- Check that `COMFYUI_URL` is correct.
+- For `cam-lab-only-docker`, start ComfyUI with `--listen 0.0.0.0` and use a container-reachable URL such as `http://host.docker.internal:8000`.
+
+**MODELS_DIR is missing or does not exist**
+
+- Edit the relevant Docker env file.
+- Set `MODELS_DIR` to the host folder that contains your ComfyUI model subfolders.
+- Do not point it at one model file; point it at the whole `models` folder.
+
+**A model is listed as missing**
+
+- Download or copy that model manually.
+- Put it at the path shown by the model guide.
+- Restart or refresh ComfyUI if it does not see the new model.
+
+**Docker is not available or not running**
+
+- Start Docker Desktop on Windows or macOS.
+- On Linux, make sure the Docker daemon is running.
+- For NVIDIA GPUs in Docker, verify GPU passthrough with:
+
+  ```powershell
+  docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+  ```
+
+**PowerShell blocks scripts**
+
+Run this once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+### Step 5: Stop Services
+
+For native Camera Lab:
+
+```powershell
+python scripts/stop_camera_lab.py
+```
+
+For Docker modes:
+
+```powershell
+docker compose --env-file docker/compose.env down
+docker compose -f docker-compose.comfy-only.yml --env-file docker/compose.comfy-only.env down
+docker compose -f docker-compose.camera-lab-only.yml --env-file docker/compose.camera-lab-only.env down
+```
+
 ## Tab Architecture
 
 Legend used in the tab diagrams:
