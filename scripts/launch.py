@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -150,9 +151,42 @@ def print_assessment(assessment) -> None:
         print(line)
 
 
+def _read_env_file(path: Path) -> dict[str, str]:
+    values = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def _comfy_only_native_env() -> dict[str, str]:
+    env_path = ROOT / "docker" / "compose.comfy-only.env"
+    if not env_path.exists():
+        env_path = ROOT / "docker" / "compose.comfy-only.env.example"
+    values = _read_env_file(env_path)
+    port = values.get("COMFY_PORT") or "8188"
+    data_dir = values.get("COMFY_DATA_DIR") or "./comfy-data"
+    data_path = Path(data_dir).expanduser()
+    if not data_path.is_absolute():
+        data_dir = str((ROOT / data_path).resolve())
+
+    env = os.environ.copy()
+    env["COMFYUI_URL"] = f"http://127.0.0.1:{port}"
+    env["COMFYUI_ROOT"] = data_dir
+    return env
+
+
 def _yes(input_fn, prompt, default):
     suffix = " [Y/n] " if default else " [y/N] "
-    answer = input_fn(prompt + suffix).strip().lower()
+    try:
+        answer = input_fn(prompt + suffix).strip().lower()
+    except EOFError:
+        return default
     if not answer:
         return default
     return answer.startswith("y")
@@ -183,11 +217,23 @@ def launch(mode, runner=subprocess.run) -> int:
         print("Docker is not available/running. Start Docker Desktop and retry.", file=sys.stderr)
         return 1
     for command in mode_command(mode):
-        result = runner(command)
+        if mode == "comfy-only-docker" and command == ["python", "scripts/start_camera_lab.py", "--open"]:
+            result = runner(command, env=_comfy_only_native_env())
+        else:
+            result = runner(command)
         if result.returncode != 0:
             print(f"Command failed ({result.returncode}): {' '.join(command)}", file=sys.stderr)
             return result.returncode
     return 0
+
+
+def _warn_if_missing_comfy(mode, assessment) -> None:
+    if assessment.get("has_comfy") or mode not in ("no-docker", "cam-lab-only-docker"):
+        return
+    if mode == "cam-lab-only-docker":
+        print("Warning: ComfyUI was not detected; cam-lab-only-docker needs your ComfyUI listening on 0.0.0.0.")
+    else:
+        print("Warning: ComfyUI was not detected; no-docker needs an existing local ComfyUI.")
 
 
 def main(argv=None) -> int:
@@ -205,6 +251,7 @@ def main(argv=None) -> int:
     if args.assess_only:
         return 0
     mode = args.mode or choose_mode(assessment)
+    _warn_if_missing_comfy(mode, assessment)
     return launch(mode)
 
 

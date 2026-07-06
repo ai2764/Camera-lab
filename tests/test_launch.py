@@ -121,6 +121,13 @@ def test_choose_mode_uses_answers():
     assert choose_mode({"has_comfy": True}, input_fn=lambda _: next(answers)) == "no-docker"
 
 
+def test_choose_mode_uses_defaults_on_eof():
+    def input_fn(_prompt):
+        raise EOFError
+
+    assert choose_mode({"has_comfy": True}, input_fn=input_fn) == "no-docker"
+
+
 def test_launch_runs_commands_and_reports_exit():
     ran = []
 
@@ -137,6 +144,32 @@ def test_launch_runs_commands_and_reports_exit():
     assert ran and ran[0][0] == "docker"
 
 
+def test_comfy_only_launch_passes_container_comfy_env_to_native_command(monkeypatch, tmp_path):
+    docker_dir = tmp_path / "docker"
+    docker_dir.mkdir()
+    (docker_dir / "compose.comfy-only.env").write_text("COMFY_PORT=9199\nCOMFY_DATA_DIR=C:/camera-lab/comfy-data\n")
+    monkeypatch.setattr("scripts.launch.ROOT", tmp_path)
+    monkeypatch.setenv("COMFYUI_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("COMFYUI_ROOT", "C:/wrong/root")
+    ran = []
+
+    class R:
+        returncode = 0
+
+    def runner(cmd, **kw):
+        ran.append((cmd, kw))
+        return R()
+
+    assert launch("comfy-only-docker", runner=runner) == 0
+    assert ran[0][0] == ["docker", "info"]
+    assert ran[1][0][0:2] == ["docker", "compose"]
+    assert "env" not in ran[1][1]
+    assert ran[2][0] == ["python", "scripts/start_camera_lab.py", "--open"]
+    native_env = ran[2][1]["env"]
+    assert native_env["COMFYUI_URL"] == "http://127.0.0.1:9199"
+    assert native_env["COMFYUI_ROOT"] == "C:/camera-lab/comfy-data"
+
+
 def test_assess_only_launches_nothing(monkeypatch, capsys):
     monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
     monkeypatch.setattr(
@@ -148,3 +181,18 @@ def test_assess_only_launches_nothing(monkeypatch, capsys):
     rc = main(["--assess-only"])
     assert rc == 0
     assert called == []
+
+
+def test_main_warns_when_native_modes_need_existing_comfy(monkeypatch, capsys):
+    monkeypatch.setattr("scripts.launch.probe_comfy", lambda *a, **k: (None, None))
+    monkeypatch.setattr(
+        "scripts.launch.detect_hardware",
+        lambda **k: type("H", (), {"gpu_name": None, "vram_gb": None, "os_name": "Linux", "warnings": ()})(),
+    )
+    monkeypatch.setattr("scripts.launch.launch", lambda *_a, **_k: 0)
+
+    assert main(["--mode", "cam-lab-only-docker"]) == 0
+
+    output = capsys.readouterr().out
+    assert "ComfyUI was not detected" in output
+    assert "0.0.0.0" in output
