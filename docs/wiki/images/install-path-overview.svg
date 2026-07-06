@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="430" viewBox="0 0 920 430" role="img" aria-labelledby="title desc">
+  <title id="title">Camera Lab installation path overview</title>
+  <desc id="desc">A friendly decision map showing four Camera Lab installation paths based on whether the user already has ComfyUI and whether they want Docker.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7fafc; }
+      .title { font: 700 26px Arial, sans-serif; fill: #102033; }
+      .subtitle { font: 15px Arial, sans-serif; fill: #415167; }
+      .question { font: 700 18px Arial, sans-serif; fill: #102033; }
+      .body { font: 14px Arial, sans-serif; fill: #2c3b4f; }
+      .mode { font: 700 15px Arial, sans-serif; fill: #102033; }
+      .pill { font: 700 12px Arial, sans-serif; fill: #ffffff; }
+      .host { fill: #dbeafe; stroke: #2563eb; stroke-width: 2; }
+      .docker { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; }
+      .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .accent { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+      .line { stroke: #94a3b8; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="920" height="430" rx="22"/>
+  <text x="40" y="48" class="title">Pick the setup that matches your machine</text>
+  <text x="40" y="75" class="subtitle">The launcher can run Camera Lab and ComfyUI either directly on your computer or inside Docker containers.</text>
+
+  <rect x="55" y="120" width="250" height="82" rx="16" class="card"/>
+  <text x="80" y="153" class="question">Do you already have ComfyUI?</text>
+  <text x="80" y="180" class="body">Start here. This decides whether</text>
+  <text x="80" y="199" class="body">Camera Lab reuses it or starts one.</text>
+
+  <path d="M305 161 C355 120 405 115 455 135" class="line"/>
+  <path d="M305 161 C355 210 405 224 455 205" class="line"/>
+
+  <rect x="455" y="95" width="185" height="88" rx="16" class="host"/>
+  <text x="485" y="127" class="mode">Yes, I have it</text>
+  <text x="485" y="151" class="body">Use existing ComfyUI</text>
+  <rect x="485" y="160" width="95" height="22" rx="11" fill="#2563eb"/>
+  <text x="500" y="176" class="pill">simplest</text>
+
+  <rect x="455" y="205" width="185" height="88" rx="16" class="docker"/>
+  <text x="485" y="237" class="mode">No ComfyUI yet</text>
+  <text x="485" y="261" class="body">Let Docker run it</text>
+  <rect x="485" y="270" width="112" height="22" rx="11" fill="#16a34a"/>
+  <text x="500" y="286" class="pill">contained</text>
+
+  <path d="M640 139 C690 112 730 108 775 116" class="line"/>
+  <path d="M640 139 C690 163 730 169 775 166" class="line"/>
+  <path d="M640 249 C690 228 730 222 775 224" class="line"/>
+  <path d="M640 249 C690 282 730 286 775 282" class="line"/>
+
+  <rect x="735" y="90" width="145" height="52" rx="14" class="card"/>
+  <text x="755" y="112" class="mode">no-docker</text>
+  <text x="755" y="132" class="body">both native</text>
+
+  <rect x="735" y="152" width="145" height="52" rx="14" class="card"/>
+  <text x="755" y="174" class="mode">cam-lab-only</text>
+  <text x="755" y="194" class="body">Camera Lab Docker</text>
+
+  <rect x="735" y="214" width="145" height="52" rx="14" class="card"/>
+  <text x="755" y="236" class="mode">comfy-only</text>
+  <text x="755" y="256" class="body">ComfyUI Docker</text>
+
+  <rect x="735" y="276" width="145" height="52" rx="14" class="card"/>
+  <text x="755" y="298" class="mode">full-docker</text>
+  <text x="755" y="318" class="body">both Docker</text>
+
+  <rect x="55" y="335" width="805" height="54" rx="16" class="accent"/>
+  <text x="82" y="365" class="question">Beginner tip:</text>
+  <text x="205" y="365" class="body">If Docker sounds unfamiliar and you already have ComfyUI, choose</text>
+  <text x="645" y="365" class="mode">no-docker</text>
+  <text x="723" y="365" class="body">first.</text>
+</svg>

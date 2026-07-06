@@ -293,6 +293,17 @@ def test_main_warns_when_native_modes_need_existing_comfy(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ComfyUI was not detected" in output
     assert "0.0.0.0" in output
+    assert "COMFYUI_URL" in output
+    assert "host.docker.internal:<your-comfy-port>" in output
+
+
+def test_preflight_missing_native_comfy_suggests_custom_port(capsys):
+    assert preflight("no-docker", {"has_comfy": False}) == 1
+
+    output = capsys.readouterr().out
+    assert "ComfyUI was not detected" in output
+    assert "COMFYUI_URL=http://127.0.0.1:<your-comfy-port>" in output
+    assert ".env" in output
 
 
 def test_modelref_has_page_url_and_hf_page_helper():
