@@ -1,4 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +39,8 @@ def test_legacy_windows_bootstrap_delegates_to_renamed_entrypoint():
 
     assert "setup_windows_python.ps1" in text
     assert "renamed" in text
-    assert "ValueFromRemainingArguments" in text
+    assert "@PSBoundParameters" in text
+    assert "ListProfiles" in text
 
 
 def test_legacy_batch_bootstrap_delegates_to_renamed_entrypoint():
@@ -45,6 +50,29 @@ def test_legacy_batch_bootstrap_delegates_to_renamed_entrypoint():
 
     assert "install_camera_lab.ps1" in text
     assert "ExecutionPolicy Bypass" in text
+
+
+def test_legacy_powershell_bootstrap_preserves_named_switches():
+    if not shutil.which("powershell"):
+        pytest.skip("PowerShell is not available")
+
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / "install_camera_lab.ps1"),
+            "-ListProfiles",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Model profiles:" in result.stdout
 
 
 def test_readme_mentions_python_free_windows_bootstrap():
