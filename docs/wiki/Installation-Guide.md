@@ -10,6 +10,8 @@ The launcher checks your GPU, VRAM, ComfyUI connection, module readiness, and
 model visibility. It does **not** download models, install ComfyUI, or change
 your existing ComfyUI installation.
 
+![Friendly Camera Lab installation overview](images/install-hero-friendly.png)
+
 Use these safe commands first:
 
 ```powershell
@@ -52,6 +54,8 @@ Docker downloads:
 
 ## Choose An Install Path
 
+![Camera Lab install path overview](images/install-path-overview.svg)
+
 Camera Lab supports four install paths:
 
 | Your situation | What runs natively | What runs in Docker | Launcher mode |
@@ -67,6 +71,52 @@ Beginner recommendations:
 - If you do not have ComfyUI, start with `full-docker`.
 - Use `comfy-only-docker` only if you specifically want ComfyUI in Docker but Camera Lab running directly on your machine.
 - Use `cam-lab-only-docker` only if your existing ComfyUI is reachable from Docker. Your ComfyUI must listen on `0.0.0.0`, usually by starting it with `--listen`.
+
+## How Camera Lab Talks To ComfyUI
+
+![How Camera Lab talks to ComfyUI](images/camera-lab-comfyui-communication.svg)
+
+Camera Lab is the web app and orchestration layer. ComfyUI is the generation
+engine. A normal run works like this:
+
+1. Your browser sends a generation request to Camera Lab.
+2. Camera Lab copies uploaded files into the ComfyUI input folder.
+3. Camera Lab patches a workflow prompt and sends it to the ComfyUI API.
+4. ComfyUI loads models and custom nodes, then runs the graph.
+5. ComfyUI writes generated media into its output folder.
+6. Camera Lab finds the output and shows it in the browser history.
+
+This is why setup must get two things right:
+
+- `COMFYUI_URL`: where the ComfyUI API is listening.
+- `COMFYUI_ROOT`: the folder whose `input` and `output` directories Camera Lab should use.
+
+## Docker ComfyUI Trade-Offs
+
+![Docker ComfyUI trade-offs](images/docker-comfyui-tradeoffs.svg)
+
+Running ComfyUI in Docker can be convenient, but it is not a free upgrade. It
+gives you a more isolated, repeatable runtime, but it also adds a container
+layer between you and ComfyUI.
+
+What you gain:
+
+- Cleaner separation from your normal Python environment.
+- A more repeatable ComfyUI runtime for Camera Lab.
+- Easier cleanup because the service is containerized.
+
+What you trade away:
+
+- Docker GPU passthrough must be configured correctly.
+- The first image build/start can take longer.
+- File paths become Docker volume mounts, not normal local paths.
+- Debugging custom nodes can be less direct than a native ComfyUI checkout.
+- You still need models on the host; Docker mounts them, it does not magically provide them.
+- If your native ComfyUI already works well, Docker may add more setup friction
+  than value.
+
+If you already have a stable ComfyUI install and Docker is unfamiliar, native
+ComfyUI plus native Camera Lab is usually the happiest first path.
 
 ## Check What Camera Lab Sees
 
@@ -102,6 +152,8 @@ subfolders. Docker mounts it inside the ComfyUI container at:
 ```
 
 ## Existing ComfyUI + Native Camera Lab
+
+![Existing ComfyUI plus native Camera Lab](images/install-no-docker-friendly.png)
 
 Use this path if you already have ComfyUI installed and running.
 
@@ -142,6 +194,8 @@ Use this path if you already have ComfyUI installed and running.
 
 ## Existing ComfyUI + Docker Camera Lab
 
+![Existing ComfyUI plus Docker Camera Lab](images/install-cam-lab-only-docker-friendly.png)
+
 Use this path if you want Camera Lab in Docker but want to keep using your
 existing ComfyUI.
 
@@ -177,8 +231,14 @@ existing ComfyUI.
 
 ## Docker ComfyUI + Native Camera Lab
 
+![Docker ComfyUI plus native Camera Lab](images/install-comfy-only-docker-friendly.png)
+
 Use this path if you do not have ComfyUI installed, but you want Camera Lab to
 run directly on your machine.
+
+This path has the same ComfyUI-in-Docker trade-offs above: GPU passthrough,
+volume mounts, and container debugging matter. If you already have a stable
+native ComfyUI, prefer `no-docker` first.
 
 1. Copy the ComfyUI Docker env file:
 
@@ -228,7 +288,12 @@ run directly on your machine.
 
 ## Docker ComfyUI + Docker Camera Lab
 
+![Docker ComfyUI plus Docker Camera Lab](images/install-full-docker-friendly.png)
+
 Use this path if you want the most isolated setup.
+
+This is the most contained path, but also the most Docker-dependent path. It is
+best when you want isolation more than maximum simplicity.
 
 1. Copy the full Docker env file:
 
@@ -305,4 +370,3 @@ docker compose --env-file docker/compose.env down
 docker compose -f docker-compose.comfy-only.yml --env-file docker/compose.comfy-only.env down
 docker compose -f docker-compose.camera-lab-only.yml --env-file docker/compose.camera-lab-only.env down
 ```
-

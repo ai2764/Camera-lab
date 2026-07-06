@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Docker ComfyUI trade-offs</title>
+  <desc id="desc">A diagram explaining that Docker ComfyUI gives isolation and repeatability but adds GPU setup, volume mapping, first build time, and debugging trade-offs.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .head { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .body { font: 14px Arial, sans-serif; fill: #334155; }
+      .small { font: 13px Arial, sans-serif; fill: #475569; }
+      .good { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; }
+      .trade { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; }
+      .neutral { fill: #e0f2fe; stroke: #0284c7; stroke-width: 2; }
+      .folder { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+      .line { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .mount { stroke: #d97706; stroke-width: 3; stroke-dasharray: 7 6; fill: none; marker-end: url(#arrowOrange); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d97706"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="980" height="520" rx="24"/>
+  <text x="40" y="48" class="title">Running ComfyUI in Docker: what you gain and what you trade</text>
+
+  <rect x="55" y="96" width="250" height="130" rx="18" class="neutral"/>
+  <text x="92" y="132" class="head">Your computer</text>
+  <text x="86" y="160" class="body">Docker Desktop / Docker Engine</text>
+  <text x="86" y="184" class="body">NVIDIA GPU passthrough</text>
+  <text x="86" y="208" class="body">Host folders for models/data</text>
+
+  <rect x="390" y="96" width="230" height="130" rx="18" class="good"/>
+  <text x="450" y="132" class="head">ComfyUI</text>
+  <text x="436" y="160" class="body">containerized runtime</text>
+  <text x="436" y="184" class="body">isolated dependencies</text>
+  <text x="436" y="208" class="body">repeatable startup</text>
+
+  <rect x="710" y="96" width="190" height="130" rx="18" class="folder"/>
+  <text x="756" y="132" class="head">Models</text>
+  <text x="740" y="160" class="body">MODELS_DIR</text>
+  <text x="740" y="184" class="body">mounted read-only</text>
+  <text x="740" y="208" class="body">/opt/ComfyUI/models</text>
+
+  <path d="M305 161 L390 161" class="line"/>
+  <path d="M710 161 L620 161" class="mount"/>
+
+  <rect x="70" y="285" width="390" height="160" rx="18" class="good"/>
+  <text x="105" y="320" class="head">Why it can be nice</text>
+  <text x="105" y="352" class="body">- Cleaner separation from your local Python setup</text>
+  <text x="105" y="378" class="body">- Easier to reproduce on another machine</text>
+  <text x="105" y="404" class="body">- Camera Lab can start a known ComfyUI stack</text>
+
+  <rect x="520" y="285" width="390" height="160" rx="18" class="trade"/>
+  <text x="555" y="320" class="head">What you give up</text>
+  <text x="555" y="352" class="body">- GPU passthrough must be configured correctly</text>
+  <text x="555" y="378" class="body">- First build/start can take longer</text>
+  <text x="555" y="404" class="body">- File paths are volume mounts, not normal local paths</text>
+  <text x="555" y="430" class="body">- Debugging custom nodes can be less direct</text>
+</svg>
