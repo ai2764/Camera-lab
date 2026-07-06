@@ -137,6 +137,39 @@ def assess(hardware, object_info):
     return {"hardware": hardware, "has_comfy": has_comfy, "modules": rows}
 
 
+def _module_by_id(modules, module_id):
+    for module in modules:
+        if module.id == module_id:
+            return module
+    return None
+
+
+def model_guide_rows(assessment, modules=MODULES):
+    rows = []
+    for entry in assessment.get("modules", []):
+        module = _module_by_id(modules, entry.get("id"))
+        if module is None:
+            continue
+        profile = _profile_by_id(module, entry.get("profile")) if entry.get("profile") else None
+        if profile is None:
+            profile = module.model_profiles[0] if module.model_profiles else None
+        required = list(getattr(profile, "required_models", ()) or ()) if profile else []
+        missing = set(entry.get("missing", []))
+        has_comfy = bool(assessment.get("has_comfy"))
+        for ref in required:
+            rows.append(
+                {
+                    "module": module.id,
+                    "name": ref.name,
+                    "folder": ref.folder,
+                    "install_path": f"models/{ref.folder}/{ref.name}",
+                    "page_url": getattr(ref, "page_url", "") or "",
+                    "present": (ref.name not in missing) if has_comfy else None,
+                }
+            )
+    return rows
+
+
 def print_assessment(assessment) -> None:
     hw = assessment["hardware"]
     print(f"Hardware: GPU={hw.gpu_name or 'unknown'}, VRAM={hw.vram_gb or 'unknown'} GiB, OS={hw.os_name}")

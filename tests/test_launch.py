@@ -209,3 +209,49 @@ def test_modelref_has_page_url_and_hf_page_helper():
     r2 = ModelRef("vae", "x.safetensors", page_url="https://huggingface.co/org/repo")
     assert r2.page_url == "https://huggingface.co/org/repo"
     assert _hf_page("Lightricks/LTX-Video") == "https://huggingface.co/Lightricks/LTX-Video"
+
+
+from scripts.launch import model_guide_rows
+
+
+def _fake_module(mid, profile_id, models):
+    class _P:
+        id = profile_id
+        required_models = models
+    class _M:
+        id = mid
+        model_profiles = [_P()]
+    return _M()
+
+
+def test_model_guide_rows_paths_and_presence():
+    class _R:
+        def __init__(self, folder, name, page):
+            self.folder, self.name, self.page_url = folder, name, page
+    mods = [
+        _fake_module("camera", "camera-ltx23-fp8", [_R("checkpoints", "a.safetensors", "https://huggingface.co/org/repo")]),
+    ]
+    assessment = {
+        "has_comfy": True,
+        "modules": [{"id": "camera", "profile": "camera-ltx23-fp8", "missing": ["a.safetensors"]}],
+    }
+    rows = model_guide_rows(assessment, modules=mods)
+    assert rows == [
+        {
+            "module": "camera",
+            "name": "a.safetensors",
+            "folder": "checkpoints",
+            "install_path": "models/checkpoints/a.safetensors",
+            "page_url": "https://huggingface.co/org/repo",
+            "present": False,
+        }
+    ]
+
+
+def test_model_guide_rows_present_none_when_no_comfy():
+    class _R:
+        folder, name, page_url = "vae", "v.safetensors", ""
+    mods = [_fake_module("edit", "edit-x", [_R()])]
+    rows = model_guide_rows({"has_comfy": False, "modules": [{"id": "edit", "profile": "edit-x", "missing": []}]}, modules=mods)
+    assert rows[0]["present"] is None
+    assert rows[0]["page_url"] == ""
