@@ -71,6 +71,8 @@ UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+MOTION_GUIDE_IMAGE_SUFFIXES = {".gif", ".webp"}
+MOTION_GUIDE_UPLOAD_SUFFIXES = VIDEO_UPLOAD_SUFFIXES | MOTION_GUIDE_IMAGE_SUFFIXES
 SUPPORTED_VIDEO_SUFFIXES = VIDEO_UPLOAD_SUFFIXES
 MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
@@ -2506,6 +2508,68 @@ def align_4k1(n: int) -> int:
     return ((n - 1) // 4) * 4 + 1
 
 
+def motion_guide_image_suffix(path: Path | str) -> bool:
+    return Path(path).suffix.lower() in MOTION_GUIDE_IMAGE_SUFFIXES
+
+
+def request_path(path: str) -> str:
+    return urllib.parse.urlparse(path).path or "/"
+
+
+def upload_video_motion_guide_flag(path: str) -> bool:
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+    return query.get("motion_guide", ["0"])[0].strip().lower() in {"1", "true", "yes"}
+
+
+def convert_motion_guide_image_to_mp4(
+    source: Path,
+    output: Path,
+    *,
+    runner: Any = subprocess.run,
+) -> Path:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = os.environ.get("FFMPEG_PATH") or "ffmpeg"
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(source),
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(output),
+    ]
+    try:
+        runner(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+        raise RuntimeError(stderr or f"ffmpeg exited with code {exc.returncode}") from exc
+    if not output.exists():
+        raise RuntimeError("ffmpeg did not produce a motion guide video")
+    return output
+
+
+def normalize_motion_guide_video(guide_video: Path, work_dir: Path) -> Path:
+    if not motion_guide_image_suffix(guide_video):
+        return guide_video
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+    return convert_motion_guide_image_to_mp4(
+        guide_video,
+        work_dir / f"{safe_filename(guide_video.stem)}_guide.mp4",
+    )
+
+
 def video_frame_count(path: Path) -> int:
     """Frame count of a video via ffprobe (ffmpeg/ffprobe already used elsewhere in this server)."""
     out = subprocess.run(
@@ -3345,6 +3409,8 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
     guide_video = safe_media_path(str(guide_path))
     if not guide_video.exists():
         raise FileNotFoundError("motion guide video is missing")
+    if motion_guide_image_suffix(guide_video):
+        guide_video = normalize_motion_guide_video(guide_video, guide_video.parent / "converted")
 
     reference_path = payload.get("reference_path") or payload.get("source_path") or ""
     if not reference_path:
@@ -3578,6 +3644,8 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     guide_video = Path(run.get("guide_video") or "")
     if not guide_video.exists():
         raise FileNotFoundError("motion guide video is missing")
+    guide_video = normalize_motion_guide_video(guide_video, run_dir / "guide_convert")
+    run["guide_video"] = str(guide_video)
 
     guide_for_scail = trim_motion_guide_video(run, guide_video, run_dir)
     if guide_for_scail != guide_video:
@@ -4541,57 +4609,58 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, status=500)
 
     def do_POST(self) -> None:
+        path = request_path(self.path)
         try:
-            if self.path == "/api/run":
+            if path == "/api/run":
                 return self.handle_run()
-            if self.path == "/api/text-to-motion":
+            if path == "/api/text-to-motion":
                 return self.handle_text_to_motion()
-            if self.path == "/api/text-to-motion-guide":
+            if path == "/api/text-to-motion-guide":
                 return self.handle_text_to_motion_guide()
-            if self.path == "/api/text-to-motion-final":
+            if path == "/api/text-to-motion-final":
                 return self.handle_text_to_motion_final()
-            if self.path == "/api/text-to-motion-video-final":
+            if path == "/api/text-to-motion-video-final":
                 return self.handle_text_to_motion_video_final()
-            if self.path == "/api/upload-audio":
+            if path == "/api/upload-audio":
                 return self.handle_upload_audio()
-            if self.path == "/api/upload-video":
+            if path == "/api/upload-video":
                 return self.handle_upload_video()
-            if self.path == "/api/trim-video":
+            if path == "/api/trim-video":
                 return self.handle_trim_video()
-            if self.path == "/api/stitch-retake-video":
+            if path == "/api/stitch-retake-video":
                 return self.handle_stitch_retake_video()
-            if self.path.startswith("/api/scail-drive-video"):
+            if path.startswith("/api/scail-drive-video"):
                 return self.handle_3dmotion_drive_video()
-            if self.path.startswith("/api/3dmotion-recording"):
+            if path.startswith("/api/3dmotion-recording"):
                 return self.handle_3dmotion_recording()
-            if self.path == "/api/upload-image":
+            if path == "/api/upload-image":
                 return self.handle_upload_image()
-            if self.path.startswith("/comfy/"):
+            if path.startswith("/comfy/"):
                 return self.proxy_comfy_request("POST", urllib.parse.urlparse(self.path))
-            if self.path == "/api/photography-subject":
+            if path == "/api/photography-subject":
                 return self.handle_photography_subject()
-            if self.path == "/api/photography-frames":
+            if path == "/api/photography-frames":
                 return self.handle_photography_frames()
-            if self.path == "/api/shot-pack":
+            if path == "/api/shot-pack":
                 return self.handle_shot_pack()
-            if self.path == "/api/history-state":
+            if path == "/api/history-state":
                 return self.handle_history_state()
-            if self.path == "/api/last-frame":
+            if path == "/api/last-frame":
                 return self.handle_last_frame()
-            if self.path == "/api/rate":
+            if path == "/api/rate":
                 return self.handle_rate()
-            if self.path == "/api/casting/analyze":
+            if path == "/api/casting/analyze":
                 return self.handle_casting_analyze()
-            if self.path == "/api/casting/tts":
+            if path == "/api/casting/tts":
                 return self.handle_casting_tts()
-            if self.path == "/api/casting/voice":
+            if path == "/api/casting/voice":
                 return self.handle_casting_voice()
-            if self.path == "/api/casting/open-archive":
+            if path == "/api/casting/open-archive":
                 return self.send_json(open_casting_archive_folder())
-            if self.path == "/api/casting/trim":
+            if path == "/api/casting/trim":
                 payload = self.read_json()
                 return self.send_json(trim_casting_clip(payload.get("file", ""), payload.get("start"), payload.get("end")))
-            if self.path == "/api/casting/delete":
+            if path == "/api/casting/delete":
                 payload = self.read_json()
                 return self.send_json(recycle_casting_clip(payload.get("file", "")))
             self.send_error(404)
@@ -4914,18 +4983,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(response)
 
     def handle_upload_video(self) -> None:
+        motion_guide = upload_video_motion_guide_flag(self.path)
         content_type = self.headers.get("Content-Type", "")
         if content_type.startswith("multipart/form-data"):
-            return self.handle_upload_video_form(content_type)
+            return self.handle_upload_video_form(content_type, motion_guide=motion_guide)
         payload = self.read_json()
         name = safe_filename(payload.get("name") or "video.mp4")
         data_url = payload.get("data") or ""
         if "," in data_url:
             data_url = data_url.split(",", 1)[1]
         raw = base64.b64decode(data_url)
-        self.save_uploaded_video(name, raw)
+        self.save_uploaded_video(name, raw, motion_guide=motion_guide)
 
-    def handle_upload_video_form(self, content_type: str) -> None:
+    def handle_upload_video_form(self, content_type: str, *, motion_guide: bool = False) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             import cgi
@@ -4950,11 +5020,12 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("video file is required")
         name = safe_filename(getattr(item, "filename", "") or "video.mp4")
         raw = item.file.read(MAX_VIDEO_UPLOAD_BYTES + 1)
-        self.save_uploaded_video(name, raw)
+        self.save_uploaded_video(name, raw, motion_guide=motion_guide)
 
-    def save_uploaded_video(self, name: str, raw: bytes) -> None:
+    def save_uploaded_video(self, name: str, raw: bytes, *, motion_guide: bool = False) -> None:
+        allowed = MOTION_GUIDE_UPLOAD_SUFFIXES if motion_guide else VIDEO_UPLOAD_SUFFIXES
         suffix = Path(name).suffix.lower()
-        if suffix not in VIDEO_UPLOAD_SUFFIXES:
+        if suffix not in allowed:
             raise ValueError("unsupported video file type")
         if len(raw) > MAX_VIDEO_UPLOAD_BYTES:
             raise ValueError("video file is too large")
@@ -4962,6 +5033,12 @@ class Handler(BaseHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
+        if motion_guide and motion_guide_image_suffix(path):
+            mp4_path = path.with_suffix(".mp4")
+            convert_motion_guide_image_to_mp4(path, mp4_path)
+            path.unlink(missing_ok=True)
+            path = mp4_path
+            name = Path(name).with_suffix(".mp4").name
         response = {"path": str(path), "name": name}
         try:
             duration = video_duration_seconds(path)

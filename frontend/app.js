@@ -166,8 +166,13 @@ async function uploadFile(path, form) {
     method: "POST",
     body: form,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (_err) {
+    if (!res.ok) throw new Error(res.statusText || "Upload failed");
+  }
+  if (!res.ok) throw new Error(data.error || res.statusText || "Upload failed");
   return data;
 }
 
@@ -6027,13 +6032,18 @@ async function startMotionFinal() {
   }
 }
 
+const MOTION_GUIDE_FILE_PATTERN = /\.(mp4|mov|m4v|webm|mkv|avi|gif|webp)$/i;
+
 async function uploadMotionGuideVideo(file) {
   if (!file) return;
+  if (!MOTION_GUIDE_FILE_PATTERN.test(file.name)) {
+    throw new Error("Unsupported guide format. Use video, GIF, or WebP.");
+  }
   $("motionGuideUploadStatus").textContent = "Uploading...";
   const form = new FormData();
   form.append("file", file, file.name);
-  const uploaded = await uploadFile("/api/upload-video", form);
-  setVideoSlot("motionGuide", uploaded.path, uploaded.name);
+  const uploaded = await uploadFile("/api/upload-video?motion_guide=1", form);
+  setVideoSlot("motionGuide", uploaded.path, uploaded.name, { duration: uploaded.duration });
 }
 
 function fillPythonFormatTemplate(template, text) {

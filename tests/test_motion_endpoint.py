@@ -627,6 +627,70 @@ def test_prepare_scail_reference_preserves_alpha_as_mask(tmp_path):
     assert mask_rgb.getpixel((1, 1)) == (255, 255, 255)
 
 
+def test_motion_guide_upload_suffixes_include_gif_and_webp():
+    assert ".gif" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".webp" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".mp4" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".gif" not in s.VIDEO_UPLOAD_SUFFIXES
+
+
+def test_upload_video_motion_guide_flag_reads_query():
+    assert s.upload_video_motion_guide_flag("/api/upload-video?motion_guide=1") is True
+    assert s.upload_video_motion_guide_flag("/api/upload-video?motion_guide=true") is True
+    assert s.upload_video_motion_guide_flag("/api/upload-video") is False
+
+
+def test_request_path_strips_query_string():
+    assert s.request_path("/api/upload-video?motion_guide=1") == "/api/upload-video"
+    assert s.request_path("/api/upload-video") == "/api/upload-video"
+
+
+def test_normalize_motion_guide_video_converts_gif(tmp_path, monkeypatch):
+    guide = tmp_path / "walk.gif"
+    guide.write_bytes(b"gif")
+    output = tmp_path / "converted" / "walk_guide.mp4"
+    calls = {}
+
+    def fake_convert(source, dest, *, runner=None):
+        calls["source"] = source
+        calls["dest"] = dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"mp4")
+        return dest
+
+    monkeypatch.setattr(s, "convert_motion_guide_image_to_mp4", fake_convert)
+
+    converted = s.normalize_motion_guide_video(guide, tmp_path / "converted")
+
+    assert converted == output
+    assert calls["source"] == guide
+
+
+def test_normalize_motion_guide_video_passthrough_for_mp4(tmp_path):
+    guide = tmp_path / "walk.mp4"
+    guide.write_bytes(b"mp4")
+    assert s.normalize_motion_guide_video(guide, tmp_path / "converted") == guide
+
+
+def test_convert_motion_guide_image_to_mp4_runs_ffmpeg(tmp_path, monkeypatch):
+    source = tmp_path / "pose.webp"
+    output = tmp_path / "pose.mp4"
+    source.write_bytes(b"webp")
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        output.write_bytes(b"mp4")
+        return None
+
+    result = s.convert_motion_guide_image_to_mp4(source, output, runner=fake_run)
+
+    assert result == output
+    assert calls["cmd"][0] == "ffmpeg"
+    assert str(source) in calls["cmd"]
+    assert str(output) in calls["cmd"]
+
+
 def test_create_motion_guide_batch_allows_missing_reference(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "RUN_ROOT", tmp_path / "runs")
     monkeypatch.setattr(s, "write_batch", lambda _batch: None)

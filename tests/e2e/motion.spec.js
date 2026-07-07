@@ -480,7 +480,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
       body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
     });
   });
-  await page.route("**/api/upload-video", async (route) => {
+  await page.route("**/api/upload-video*", async (route) => {
+    expect(route.request().url()).toContain("motion_guide=1");
     expect(route.request().headers()["content-type"]).toContain("multipart/form-data");
     expect(route.request().postDataBuffer().toString("utf8")).toContain("guide.mp4");
     await route.fulfill({
@@ -580,7 +581,7 @@ test("Motion final keeps polling after done until the preview video appears", as
       body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
     });
   });
-  await page.route("**/api/upload-video", async (route) => {
+  await page.route("**/api/upload-video*", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ path: "C:\\mock\\guide-upload.mp4", name: "guide.mp4" }),
