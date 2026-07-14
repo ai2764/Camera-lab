@@ -706,6 +706,31 @@ MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+MODEL_CONTROL_FIELDS: dict[tuple[str, str], str] = {
+    ("CheckpointLoaderSimple", "ckpt_name"): "main_model",
+    ("UNETLoader", "unet_name"): "main_model",
+    ("UnetLoaderGGUF", "unet_name"): "main_model",
+    ("LoraLoaderModelOnly", "lora_name"): "lora",
+    ("LTXDirectorGuide", "ic_lora_name"): "director_ic_lora",
+}
+
+
+def object_info_options(class_type: str, field: str) -> list[str]:
+    node = object_info().get(class_type, {})
+    inputs = node.get("input", {}) if isinstance(node, dict) else {}
+    entry = {**(inputs.get("required", {}) or {}), **(inputs.get("optional", {}) or {})}.get(field)
+    if isinstance(entry, list) and entry and isinstance(entry[0], list):
+        return [str(item) for item in entry[0]]
+    if isinstance(entry, list) and entry and isinstance(entry[0], str) and len(entry) > 1 and isinstance(entry[1], dict):
+        options = entry[1].get("options")
+        if isinstance(options, list):
+            return [str(item) for item in options]
+    return []
+
+
+def model_control_options(class_type: str, field: str) -> list[str]:
+    return object_info_options(class_type, field)
+
 
 def director_ic_loras() -> list[str]:
     """IC-LoRA options the LTXDirectorGuide node accepts, filtered to IC-LoRA
@@ -2288,6 +2313,50 @@ def ensure_model_exists(folder: str, name: str) -> None:
     regardless of where models physically live (extra_model_paths / subfolders)."""
     if model_missing(folder, name):
         print(f"Camera Lab: warning - model may be missing: models/{folder}/{name}", flush=True)
+
+
+def workflow_by_id(workflow_id: str) -> dict[str, Any]:
+    workflow = next((item for item in WORKFLOWS if item["id"] == workflow_id), None)
+    if not workflow:
+        raise ValueError(f"unknown workflow: {workflow_id}")
+    return workflow
+
+
+def build_workflow_api_for_model_controls(workflow: dict[str, Any]) -> dict[str, dict]:
+    path = Path(workflow["path"])
+    data = json.loads(path.read_text(encoding="utf-8"))
+    api = workflow_to_api(data)
+    if not workflow.get("builder"):
+        patch_ltx23_local_loras(api)
+        bypass_sage_attention_patches(api)
+    elif workflow.get("builder") == "ltx_director_2":
+        bypass_sage_attention_patches(api)
+    return api
+
+
+def workflow_model_controls(workflow_id: str) -> dict[str, Any]:
+    workflow = workflow_by_id(workflow_id)
+    api = build_workflow_api_for_model_controls(workflow)
+    controls: list[dict[str, Any]] = []
+    for node_id, node in sorted(api.items(), key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999):
+        class_type = str(node.get("class_type") or "")
+        inputs = node.get("inputs") or {}
+        for (loader_type, field), category in MODEL_CONTROL_FIELDS.items():
+            if class_type != loader_type or field not in inputs:
+                continue
+            options = model_control_options(class_type, field)
+            label = str((node.get("_meta") or {}).get("title") or "").strip() or f"{class_type} #{node_id}"
+            controls.append({
+                "id": f"{node_id}:{field}",
+                "node_id": str(node_id),
+                "class_type": class_type,
+                "label": label,
+                "field": field,
+                "category": category,
+                "value": str(inputs.get(field) or ""),
+                "options": options,
+            })
+    return {"workflow_id": workflow_id, "controls": controls}
 
 
 def workflow_status(workflow: dict) -> dict[str, Any]:
