@@ -59,6 +59,53 @@ def test_copy_outputs_uses_motion_output_root(monkeypatch, tmp_path):
     assert copied[0].read_bytes() == b"guide"
 
 
+def test_copy_output_records_preserve_bucket_and_type(monkeypatch, tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    motion_output = tmp_path / "motion_output"
+    motion_input = tmp_path / "motion_input"
+    motion_output.mkdir()
+    motion_input.mkdir()
+    (motion_output / "guide_from_images.mp4").write_bytes(b"guide")
+    (motion_output / "guide_from_gifs.mp4").write_bytes(b"gif-guide")
+    (motion_input / "preview_temp.mp4").write_bytes(b"temp")
+    monkeypatch.setattr(s, "COMFY_URL", "http://main-comfy")
+    monkeypatch.setattr(s, "MOTION_COMFY_URL", "http://motion-comfy")
+    monkeypatch.setattr(s, "COMFY_OUTPUT", tmp_path / "main_output")
+    monkeypatch.setattr(s, "MOTION_COMFY_OUTPUT", motion_output)
+    monkeypatch.setattr(s, "COMFY_INPUT", tmp_path / "main_input")
+    monkeypatch.setattr(s, "MOTION_COMFY_INPUT", motion_input)
+
+    def fake_http_json(path, payload=None, timeout=30, base_url=None):
+        assert base_url == "http://motion-comfy"
+        return {
+            "prompt-guide": {
+                "outputs": {
+                    "31": {
+                        "images": [
+                            {"filename": "guide_from_images.mp4", "subfolder": "", "type": "output"},
+                            {"filename": "preview_temp.mp4", "subfolder": "", "type": "temp"},
+                        ],
+                        "gifs": [{"filename": "guide_from_gifs.mp4", "subfolder": "", "type": "output"}],
+                    },
+                },
+            },
+        }
+
+    monkeypatch.setattr(s, "http_json", fake_http_json)
+
+    records = s.copy_output_records(run_dir, "prompt-guide", base_url="http://motion-comfy")
+
+    assert [record["path"] for record in records] == [
+        str(run_dir / "guide_from_images.mp4"),
+        str(run_dir / "preview_temp.mp4"),
+        str(run_dir / "guide_from_gifs.mp4"),
+    ]
+    assert [record["bucket"] for record in records] == ["images", "images", "gifs"]
+    assert [record["type"] for record in records] == ["output", "temp", "output"]
+    assert [record["media_type"] for record in records] == ["video", "video", "video"]
+
+
 def test_public_workflows_marks_status_errors_unavailable(monkeypatch):
     monkeypatch.setattr(s, "WORKFLOWS", [{"id": "broken", "label": "Broken", "path": "missing.json"}])
     monkeypatch.setattr(s, "workflow_status", lambda workflow: (_ for _ in ()).throw(RuntimeError("Comfy offline")))
@@ -78,6 +125,53 @@ def test_public_workflows_can_skip_status_checks(monkeypatch):
 
     assert workflows[0]["available"] is False
     assert workflows[0]["reason"] == "ComfyUI port is not reachable"
+
+
+def test_motion_guide_stage_records_all_output_videos(monkeypatch, tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    guide_a = run_dir / "motion" / "guide_a.mp4"
+    guide_b = run_dir / "motion" / "guide_b.webm"
+    temp = run_dir / "motion" / "preview_temp.mp4"
+    guide_a.parent.mkdir()
+    for path in [guide_a, guide_b, temp]:
+        path.write_bytes(path.name.encode("utf-8"))
+    run = {
+        "batch_id": "motion_test",
+        "run_id": "01_motion",
+        "run_dir": str(run_dir),
+        "prompt": "walk and wave",
+        "duration": 4.0,
+        "rewrite": False,
+        "seed": 123,
+        "cfg_scale": 5.0,
+        "width": 480,
+        "height": 832,
+        "steps": 6,
+        "pose_strength": 1.0,
+        "status": "queued",
+    }
+    monkeypatch.setattr(s, "MOTION_COMFY_URL", "http://motion-comfy")
+    monkeypatch.setattr(s, "build_hymotion_api", lambda motion_run: {"stage": "motion", "prefix": motion_run["prefix"]})
+    monkeypatch.setattr(s, "http_json", lambda *_args, **_kwargs: {"prompt_id": "prompt-guide"})
+    monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
+    monkeypatch.setattr(s, "video_frame_count", lambda path: 90)
+    monkeypatch.setattr(
+        s,
+        "copy_output_records",
+        lambda stage_dir, prompt_id, base_url=None: [
+            {"path": str(guide_a), "bucket": "images", "type": "output", "media_type": "video"},
+            {"path": str(temp), "bucket": "images", "type": "temp", "media_type": "video"},
+            {"path": str(guide_b), "bucket": "gifs", "type": "output", "media_type": "video"},
+        ],
+    )
+
+    s.run_motion_guide_stage(run)
+
+    assert run["guide_video"] == str(guide_a)
+    assert run["guide_videos"] == [str(guide_a), str(guide_b)]
+    assert [record["type"] for record in run["guide_outputs"]] == ["output", "temp", "output"]
+    assert run["copied"] == [str(guide_a), str(temp), str(guide_b)]
 
 
 def test_motion_worker_wires_guide_frame_count_into_scail_length(monkeypatch, tmp_path):
@@ -124,10 +218,11 @@ def test_motion_worker_wires_guide_frame_count_into_scail_length(monkeypatch, tm
     monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
     monkeypatch.setattr(s, "video_frame_count", lambda path: 90)
 
-    def fake_copy_outputs(stage_dir, prompt_id, base_url=None):
-        return [guide] if prompt_id == "prompt-1" else [final]
+    def fake_copy_output_records(stage_dir, prompt_id, base_url=None):
+        path = guide if prompt_id == "prompt-1" else final
+        return [{"path": str(path), "bucket": "images", "type": "output", "media_type": "video"}]
 
-    monkeypatch.setattr(s, "copy_outputs", fake_copy_outputs)
+    monkeypatch.setattr(s, "copy_output_records", fake_copy_output_records)
     monkeypatch.setattr(s.shutil, "copy2", lambda src, dst: dst.write_bytes(s.Path(src).read_bytes()))
 
     s.motion_worker(run)
@@ -180,7 +275,13 @@ def test_motion_guide_worker_stops_after_guide(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "http_json", fake_http_json)
     monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
     monkeypatch.setattr(s, "video_frame_count", lambda path: 90)
-    monkeypatch.setattr(s, "copy_outputs", lambda stage_dir, prompt_id, base_url=None: [guide])
+    monkeypatch.setattr(
+        s,
+        "copy_output_records",
+        lambda stage_dir, prompt_id, base_url=None: [
+            {"path": str(guide), "bucket": "images", "type": "output", "media_type": "video"}
+        ],
+    )
     monkeypatch.setattr(s, "write_batch", lambda _batch: None)
 
     s.motion_guide_worker(run, batch)
@@ -240,7 +341,13 @@ def test_motion_final_worker_reuses_existing_guide(monkeypatch, tmp_path):
 
     monkeypatch.setattr(s, "http_json", fake_http_json)
     monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
-    monkeypatch.setattr(s, "copy_outputs", lambda stage_dir, prompt_id, base_url=None: [final])
+    monkeypatch.setattr(
+        s,
+        "copy_output_records",
+        lambda stage_dir, prompt_id, base_url=None: [
+            {"path": str(final), "bucket": "images", "type": "output", "media_type": "video"}
+        ],
+    )
     motion_input = tmp_path / "motion_input"
     copy_dests = []
     monkeypatch.setattr(s, "MOTION_COMFY_INPUT", motion_input)
@@ -465,7 +572,13 @@ def test_run_motion_final_stage_trims_guide_before_scail(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "MOTION_COMFY_URL", "http://motion-comfy")
     monkeypatch.setattr(s, "video_frame_count", lambda path: 36 if "trim" in str(path) else 240)
     monkeypatch.setattr(s, "wait_for_completion", lambda prompt_id, run, base_url=None, timeout_s=1800: None)
-    monkeypatch.setattr(s, "copy_outputs", lambda stage_dir, prompt_id, base_url=None: [final])
+    monkeypatch.setattr(
+        s,
+        "copy_output_records",
+        lambda stage_dir, prompt_id, base_url=None: [
+            {"path": str(final), "bucket": "images", "type": "output", "media_type": "video"}
+        ],
+    )
     monkeypatch.setattr(s, "make_contact_sheet", lambda *_args, **_kwargs: None)
 
     def fake_run(cmd, **kwargs):
@@ -512,6 +625,70 @@ def test_prepare_scail_reference_preserves_alpha_as_mask(tmp_path):
     assert ref_rgb.getpixel((1, 1)) == (20, 40, 80)
     assert mask_rgb.getpixel((0, 0)) == (0, 0, 0)
     assert mask_rgb.getpixel((1, 1)) == (255, 255, 255)
+
+
+def test_motion_guide_upload_suffixes_include_gif_and_webp():
+    assert ".gif" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".webp" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".mp4" in s.MOTION_GUIDE_UPLOAD_SUFFIXES
+    assert ".gif" not in s.VIDEO_UPLOAD_SUFFIXES
+
+
+def test_upload_video_motion_guide_flag_reads_query():
+    assert s.upload_video_motion_guide_flag("/api/upload-video?motion_guide=1") is True
+    assert s.upload_video_motion_guide_flag("/api/upload-video?motion_guide=true") is True
+    assert s.upload_video_motion_guide_flag("/api/upload-video") is False
+
+
+def test_request_path_strips_query_string():
+    assert s.request_path("/api/upload-video?motion_guide=1") == "/api/upload-video"
+    assert s.request_path("/api/upload-video") == "/api/upload-video"
+
+
+def test_normalize_motion_guide_video_converts_gif(tmp_path, monkeypatch):
+    guide = tmp_path / "walk.gif"
+    guide.write_bytes(b"gif")
+    output = tmp_path / "converted" / "walk_guide.mp4"
+    calls = {}
+
+    def fake_convert(source, dest, *, runner=None):
+        calls["source"] = source
+        calls["dest"] = dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"mp4")
+        return dest
+
+    monkeypatch.setattr(s, "convert_motion_guide_image_to_mp4", fake_convert)
+
+    converted = s.normalize_motion_guide_video(guide, tmp_path / "converted")
+
+    assert converted == output
+    assert calls["source"] == guide
+
+
+def test_normalize_motion_guide_video_passthrough_for_mp4(tmp_path):
+    guide = tmp_path / "walk.mp4"
+    guide.write_bytes(b"mp4")
+    assert s.normalize_motion_guide_video(guide, tmp_path / "converted") == guide
+
+
+def test_convert_motion_guide_image_to_mp4_runs_ffmpeg(tmp_path, monkeypatch):
+    source = tmp_path / "pose.webp"
+    output = tmp_path / "pose.mp4"
+    source.write_bytes(b"webp")
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        output.write_bytes(b"mp4")
+        return None
+
+    result = s.convert_motion_guide_image_to_mp4(source, output, runner=fake_run)
+
+    assert result == output
+    assert calls["cmd"][0] == "ffmpeg"
+    assert str(source) in calls["cmd"]
+    assert str(output) in calls["cmd"]
 
 
 def test_create_motion_guide_batch_allows_missing_reference(monkeypatch, tmp_path):

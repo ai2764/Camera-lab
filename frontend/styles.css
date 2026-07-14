@@ -431,6 +431,16 @@ h3 { font-size: 16px; }
   margin-bottom: 14px;
 }
 
+.workflow-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 14px;
+}
+
+.director-model-tools {
+  margin-top: -6px;
+}
+
 label {
   display: block;
   color: var(--muted);
@@ -2519,6 +2529,43 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
   margin-top: 3px;
 }
 
+.model-switcher-panel {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.model-switcher-body {
+  display: grid;
+  gap: 16px;
+  margin: 14px 0;
+}
+
+.model-switcher-section {
+  display: grid;
+  gap: 10px;
+}
+
+.model-switcher-section h3 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.model-switcher-row {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.model-switcher-row span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.model-switcher-row select {
+  margin-top: 0;
+}
+
 .video-preview-panel {
   width: min(var(--video-preview-panel-width, 1380px), calc(100vw - 32px));
   height: min(var(--video-preview-panel-height, 860px), calc(100vh - 32px));
@@ -2967,6 +3014,12 @@ body.director-workspace-active .director-workspace-grid {
 
 body.director-workspace-active .director-timeline-shell {
   margin-top: 0;
+}
+
+.director-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 body.director-workspace-active .director-inline-results {

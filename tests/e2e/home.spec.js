@@ -13,6 +13,131 @@ test("home screen loads public Camera Lab controls", async ({ page }) => {
   await expect(page.locator("#photographyWorkspaceTab")).toBeHidden();
 });
 
+test("model switcher applies main model and lora overrides", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      json: {
+        workflow_id: "active",
+        controls: [
+          {
+            id: "317:unet_name",
+            node_id: "317",
+            class_type: "UnetLoaderGGUF",
+            label: "Base model",
+            field: "unet_name",
+            category: "main_model",
+            value: "LTX-2.3-distilled-Q4_K_S.gguf",
+            options: ["LTX-2.3-distilled-Q4_K_S.gguf", "LTX-2.3-distilled-Q8_0.gguf"],
+          },
+          {
+            id: "293:lora_name",
+            node_id: "293",
+            class_type: "LoraLoaderModelOnly",
+            label: "Distilled LoRA",
+            field: "lora_name",
+            category: "lora",
+            value: "lora-a.safetensors",
+            options: ["lora-a.safetensors", "lora-b.safetensors"],
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/run", async (route) => {
+    await route.fulfill({
+      json: {
+        batch: { batch_id: "model_switch_test", runs: [{ run_id: "01", status: "queued" }] },
+      },
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  const runRequest = page.waitForRequest("**/api/run");
+  await page.locator("#modelSwitcherBtn").click();
+  await page.locator('select[data-model-control-id="317:unet_name"]').selectOption("LTX-2.3-distilled-Q8_0.gguf");
+  await page.locator('select[data-model-control-id="293:lora_name"]').selectOption("lora-b.safetensors");
+  await page.locator("#modelSwitcherApply").click();
+  await page.evaluate(() => {
+    state.sourcePath = "tasks/camera_lab_uploads/images/source.png";
+    state.middlePath = "tasks/camera_lab_uploads/images/middle.png";
+    state.endPath = "tasks/camera_lab_uploads/images/end.png";
+  });
+  await page.locator("#runBtn").click();
+
+  const payload = JSON.parse((await runRequest).postData() || "{}");
+  expect(payload.model_overrides).toEqual({
+    "317:unet_name": "LTX-2.3-distilled-Q8_0.gguf",
+    "293:lora_name": "lora-b.safetensors",
+  });
+});
+
+test("model switcher reports non-json endpoint errors clearly", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "text/html",
+      body: "<!DOCTYPE html><title>Not Found</title>",
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  await page.locator("#modelSwitcherBtn").click();
+
+  await expect(page.locator("#modelSwitcherStatus")).toContainText("Model controls unavailable: 404 Not Found");
+});
+
+test("director workspace exposes the model switcher", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      json: {
+        workflow_id: "ltx_director_2",
+        controls: [
+          {
+            id: "35:unet_name",
+            node_id: "35",
+            class_type: "UNETLoader",
+            label: "Director base model",
+            field: "unet_name",
+            category: "main_model",
+            value: "director-a.safetensors",
+            options: ["director-a.safetensors", "director-b.safetensors"],
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/#director");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+
+  await expect(page.locator("#directorModelSwitcherBtn")).toBeVisible();
+  await page.locator("#directorModelSwitcherBtn").click();
+
+  await expect(page.locator('select[data-model-control-id="35:unet_name"]')).toBeVisible();
+});
+
+test("model switcher buttons sit below seed controls", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  const cameraSeedThenModels = await page.evaluate(() => {
+    const seed = document.getElementById("seedInput");
+    const models = document.getElementById("modelSwitcherBtn");
+    return Boolean(seed && models && seed.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(cameraSeedThenModels).toBe(true);
+
+  await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator("#directorModelSwitcherBtn")).toBeVisible();
+  const directorSeedThenModels = await page.evaluate(() => {
+    const seed = document.getElementById("directorGlobalSeedInput");
+    const models = document.getElementById("directorModelSwitcherBtn");
+    return Boolean(seed && models && seed.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(directorSeedThenModels).toBe(true);
+});
+
 test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {
@@ -553,6 +678,117 @@ test("motion results are typed and scoped by motion subtab", async ({ page }) =>
   await expect(page.locator("#motion3dResultsGrid .result-card").filter({ hasText: "3d final result" }).locator(".mode-tag")).toHaveText("3D");
 });
 
+test("motion result cards expand output videos with matching output types", async ({ page }) => {
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: [
+          {
+            batch_id: "motion_text_multi",
+            run_id: "01_text",
+            workflow_id: "text_to_motion",
+            workflow_mode: "motion_text",
+            workflow_label: "Motion Guide",
+            status: "guide_done",
+            guide_video: "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+            guide_outputs: [
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+                bucket: "images",
+                type: "output",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_temp.mp4",
+                bucket: "images",
+                type: "temp",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_text_multi/01/guide_b.webm",
+                bucket: "gifs",
+                type: "output",
+                media_type: "video",
+              },
+            ],
+            prompt: "text multi output",
+            duration: 4,
+          },
+          {
+            batch_id: "motion_scail_multi",
+            run_id: "01_scail",
+            workflow_id: "uploaded_motion_to_scail",
+            workflow_mode: "motion_scail",
+            workflow_label: "SCAIL2",
+            status: "done",
+            guide_video: "tasks/camera_lab_runs/motion_scail_multi/01/guide.mp4",
+            video: "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+            video_outputs: [
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+                bucket: "images",
+                type: "output",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_temp.mp4",
+                bucket: "images",
+                type: "temp",
+                media_type: "video",
+              },
+              {
+                path: "tasks/camera_lab_runs/motion_scail_multi/01/final_b.webm",
+                bucket: "gifs",
+                type: "output",
+                media_type: "video",
+              },
+            ],
+            prompt: "scail multi output",
+            duration: 4,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/#motion");
+  await expect(page.locator("#motionResultsGrid video")).toHaveCount(2);
+  await expect(page.locator("#motionResultsGrid .mode-tag")).toHaveText(["GUIDE", "GUIDE"]);
+  const guidePaths = await page.locator("#motionResultsGrid video").evaluateAll((videos) =>
+    videos.map((video) => new URL(video.currentSrc || video.src).searchParams.get("path")),
+  );
+  expect(guidePaths).toEqual(expect.arrayContaining([
+    "tasks/camera_lab_runs/motion_text_multi/01/guide_a.mp4",
+    "tasks/camera_lab_runs/motion_text_multi/01/guide_b.webm",
+  ]));
+  expect(guidePaths).not.toContain("tasks/camera_lab_runs/motion_text_multi/01/guide_temp.mp4");
+
+  const firstGuideCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "text multi output" }).first();
+  await expect(firstGuideCard.locator(".use-prompt-run")).toHaveText("Use Motion");
+  await expect(firstGuideCard.locator(".use-skeleton-run")).toHaveCount(0);
+  await page.evaluate(() => {
+    state.motionRefPath = "tasks/camera_lab_uploads/images/ref.png";
+  });
+  await firstGuideCard.locator(".use-prompt-run").click();
+  await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
+  await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide_a\.mp4/);
+  await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide_a.mp4");
+  await expect(page.locator("#motionRunBtn")).toBeEnabled();
+
+  await page.locator("#motionScailTab").click();
+  await expect(page.locator("#motionScailResultsGrid video")).toHaveCount(2);
+  await expect(page.locator("#motionScailResultsGrid .mode-tag")).toHaveText(["SCAIL2", "SCAIL2"]);
+  const finalPaths = await page.locator("#motionScailResultsGrid video").evaluateAll((videos) =>
+    videos.map((video) => new URL(video.currentSrc || video.src).searchParams.get("path")),
+  );
+  expect(finalPaths).toEqual(expect.arrayContaining([
+    "tasks/camera_lab_runs/motion_scail_multi/01/final_a.mp4",
+    "tasks/camera_lab_runs/motion_scail_multi/01/final_b.webm",
+  ]));
+  expect(finalPaths).not.toContain("tasks/camera_lab_runs/motion_scail_multi/01/final_temp.mp4");
+});
+
 test("delete removes motion 3d output cards from the visible panel", async ({ page }) => {
   await page.route("**/api/history?limit=200", async (route) => {
     await route.fulfill({
@@ -699,23 +935,26 @@ test("motion guide subtypes can be sent to edit video inputs", async ({ page }) 
 });
 
 test("result video edit menu only offers Bernini video input modes", async ({ page }) => {
+  const resultRun = {
+    batch_id: "batch_result_video",
+    run_id: "01_result",
+    workflow_id: "bernini_t2v",
+    workflow_mode: "bernini_t2v",
+    workflow_label: "WAN2.2 Bernini T2V",
+    status: "done",
+    video: "tasks/camera_lab_runs/batch_result_video/01_result/output.mp4",
+    prompt: "source prompt",
+    duration: 4,
+  };
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs: [resultRun] }),
+    });
+  });
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='bernini_ads2v']")).toHaveCount(1);
   await page.locator("#editWorkspaceTab").click();
-  await page.evaluate(() => {
-    mergeHistoryRuns([{
-      batch_id: "batch_result_video",
-      run_id: "01_result",
-      workflow_id: "bernini_t2v",
-      workflow_mode: "bernini_t2v",
-      workflow_label: "WAN2.2 Bernini T2V",
-      status: "done",
-      video: "tasks/camera_lab_runs/batch_result_video/01_result/output.mp4",
-      prompt: "source prompt",
-      duration: 4,
-    }], true);
-    renderScopedHistory();
-  });
 
   const card = page.locator("#resultsGrid .result-card").filter({ hasText: "source prompt" });
   await expect(card.locator(".result-video-edit-button")).toBeVisible();
@@ -797,6 +1036,23 @@ test("result video edit menu sends a video into Director Retake", async ({ page 
 });
 
 test("result video edit menu can extract a frame from the playback timeline", async ({ page }) => {
+  const resultRun = {
+    batch_id: "frame_extract_batch",
+    run_id: "01_frame_extract",
+    workflow_id: "bernini_t2v",
+    workflow_mode: "bernini_t2v",
+    workflow_label: "WAN2.2 Bernini T2V",
+    status: "done",
+    video: "tasks/camera_lab_runs/frame_extract_batch/01/output.mp4",
+    prompt: "frame extraction prompt",
+    duration: 4,
+  };
+  await page.route("**/api/history?limit=200", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs: [resultRun] }),
+    });
+  });
   await page.addInitScript(() => {
     Object.defineProperty(HTMLMediaElement.prototype, "duration", {
       configurable: true,
@@ -822,20 +1078,6 @@ test("result video edit menu can extract a frame from the playback timeline", as
   await page.goto("/");
   await expect(page.locator("#workflowSelect option[value='bernini_t2v']")).toHaveCount(1);
   await page.locator("#editWorkspaceTab").click();
-  await page.evaluate(() => {
-    mergeHistoryRuns([{
-      batch_id: "frame_extract_batch",
-      run_id: "01_frame_extract",
-      workflow_id: "bernini_t2v",
-      workflow_mode: "bernini_t2v",
-      workflow_label: "WAN2.2 Bernini T2V",
-      status: "done",
-      video: "tasks/camera_lab_runs/frame_extract_batch/01/output.mp4",
-      prompt: "frame extraction prompt",
-      duration: 4,
-    }], true);
-    renderScopedHistory();
-  });
 
   const card = page.locator("#resultsGrid .result-card").filter({ hasText: "frame extraction prompt" });
   await card.locator(".result-video-edit-button").click();

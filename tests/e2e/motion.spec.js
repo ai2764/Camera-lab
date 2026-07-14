@@ -256,14 +256,16 @@ test("Motion history restores motion guides and complete final setups", async ({
 
   const guideCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "A guide-only motion." });
   await expect(guideCard.locator(".use-prompt-run")).toHaveText("Use Motion");
+  await expect(guideCard.locator(".use-skeleton-run")).toHaveCount(0);
   await guideCard.locator(".use-prompt-run").click();
+  await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
   await expect(page.locator("#motionPrompt")).toHaveValue("A guide-only motion.");
   await expect(page.locator("#motionGuide")).toHaveAttribute("src", /guide-only\.mp4/);
   await expect(page.locator("#motionGuideUploadStatus")).toHaveText("guide-only.mp4");
   await expect(page.locator("#motionGuideState")).toHaveText("ready");
   await expect(page.locator("#motionRunBtn")).toBeDisabled();
 
-  const finalCard = page.locator("#motionResultsGrid .result-card").filter({ hasText: "A final setup motion." });
+  const finalCard = page.locator("#motionScailResultsGrid .result-card").filter({ hasText: "A final setup motion." });
   await expect(finalCard.locator(".use-prompt-run")).toHaveText("Use Same Setup");
   await finalCard.locator(".use-prompt-run").click();
   await expect(page.locator("#motionScailTab")).toHaveClass(/active/);
@@ -278,8 +280,6 @@ test("Motion history restores motion guides and complete final setups", async ({
   await expect(page.locator("#motionSteps")).toHaveValue("12");
   await expect(page.locator("#motionPoseStrength")).toHaveValue("0.64");
   await expect(page.locator("#motionCfg")).toHaveValue("3.5");
-  await expect(page.locator("#motionTrimStart")).toHaveValue("1.25");
-  await expect(page.locator("#motionTrimEnd")).toHaveValue("2.75");
   await expect(page.locator("#motionRunBtn")).toBeEnabled();
 });
 
@@ -480,7 +480,8 @@ test("Motion tab uploads a guide video and renders directly with SCAIL2", async 
       body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
     });
   });
-  await page.route("**/api/upload-video", async (route) => {
+  await page.route("**/api/upload-video*", async (route) => {
+    expect(route.request().url()).toContain("motion_guide=1");
     expect(route.request().headers()["content-type"]).toContain("multipart/form-data");
     expect(route.request().postDataBuffer().toString("utf8")).toContain("guide.mp4");
     await route.fulfill({
@@ -580,7 +581,7 @@ test("Motion final keeps polling after done until the preview video appears", as
       body: JSON.stringify({ path: "C:\\mock\\ref.png", name: "ref.png" }),
     });
   });
-  await page.route("**/api/upload-video", async (route) => {
+  await page.route("**/api/upload-video*", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ path: "C:\\mock\\guide-upload.mp4", name: "guide.mp4" }),

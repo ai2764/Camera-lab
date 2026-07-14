@@ -156,8 +156,17 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  const text = await res.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (_err) {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`.trim());
+      throw new Error("Expected JSON response");
+    }
+  }
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`.trim());
   return data;
 }
 
@@ -166,8 +175,13 @@ async function uploadFile(path, form) {
     method: "POST",
     body: form,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (_err) {
+    if (!res.ok) throw new Error(res.statusText || "Upload failed");
+  }
+  if (!res.ok) throw new Error(data.error || res.statusText || "Upload failed");
   return data;
 }
 
@@ -930,6 +944,120 @@ function updateRunButtonLabel({ force = false } = {}) {
   button.textContent = runButtonIdleText();
 }
 
+function activeWorkflowForModels() {
+  if (!state.config?.workflows?.length) return null;
+  if (state.workspace === "director") return currentDirectorWorkflow();
+  if (state.workspace === "edit") return currentEditWorkflow();
+  return currentWorkflow();
+}
+
+function workflowModelOverrides(workflowId) {
+  if (!state.modelOverrides[workflowId]) state.modelOverrides[workflowId] = {};
+  return state.modelOverrides[workflowId];
+}
+
+function attachModelOverrides(payload, workflowId) {
+  const overrides = state.modelOverrides[workflowId] || {};
+  if (Object.keys(overrides).length) payload.model_overrides = { ...overrides };
+  return payload;
+}
+
+async function openModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  const modal = $("modelSwitcherModal");
+  const status = $("modelSwitcherStatus");
+  const body = $("modelSwitcherBody");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  if (!workflow) {
+    status.textContent = "Model controls unavailable: workflow config is still loading.";
+    body.innerHTML = "";
+    return;
+  }
+  status.textContent = "Loading models...";
+  body.innerHTML = "";
+  try {
+    const data = await api(`/api/workflow-model-controls?workflow_id=${encodeURIComponent(workflow.id)}`);
+    const controls = data.controls || [];
+    state.modelControlCache[workflow.id] = controls;
+    renderModelSwitcher(workflow.id, controls);
+    status.textContent = controls.length ? "" : "No main model or LoRA controls found for this workflow.";
+  } catch (err) {
+    status.textContent = `Model controls unavailable: ${err.message}`;
+  }
+}
+
+function closeModelSwitcher() {
+  const modal = $("modelSwitcherModal");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function renderModelSwitcher(workflowId, controls) {
+  const body = $("modelSwitcherBody");
+  const overrides = workflowModelOverrides(workflowId);
+  body.innerHTML = "";
+  for (const [category, titleText] of [
+    ["main_model", "Main Model"],
+    ["lora", "LoRA"],
+    ["director_ic_lora", "Director IC-LoRA"],
+  ]) {
+    const rows = controls.filter((control) => control.category === category);
+    if (!rows.length) continue;
+    const group = document.createElement("section");
+    group.className = "model-switcher-section";
+    const title = document.createElement("h3");
+    title.textContent = titleText;
+    group.appendChild(title);
+    for (const control of rows) {
+      const row = document.createElement("label");
+      row.className = "model-switcher-row";
+      const label = document.createElement("span");
+      label.textContent = `${control.label} (${control.class_type}.${control.field})`;
+      const select = document.createElement("select");
+      select.dataset.modelControlId = control.id;
+      const value = overrides[control.id] || control.value || "";
+      for (const optionValue of control.options || []) {
+        const option = document.createElement("option");
+        option.value = optionValue;
+        option.textContent = optionValue;
+        select.appendChild(option);
+      }
+      if (value && ![...select.options].some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = `${value} (unavailable)`;
+        option.disabled = true;
+        select.prepend(option);
+      }
+      select.value = value;
+      row.append(label, select);
+      group.appendChild(row);
+    }
+    body.appendChild(group);
+  }
+}
+
+function applyModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  if (!workflow) return;
+  const controls = state.modelControlCache[workflow.id] || [];
+  const next = {};
+  for (const select of $("modelSwitcherBody").querySelectorAll("select[data-model-control-id]")) {
+    const control = controls.find((item) => item.id === select.dataset.modelControlId);
+    if (control && select.value && select.value !== control.value) next[control.id] = select.value;
+  }
+  state.modelOverrides[workflow.id] = next;
+  closeModelSwitcher();
+}
+
+function resetModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  if (!workflow) return;
+  state.modelOverrides[workflow.id] = {};
+  renderModelSwitcher(workflow.id, state.modelControlCache[workflow.id] || []);
+}
+
 function collectPayload() {
   const size = currentSize();
   const prompt = $("promptText").value.trim();
@@ -944,7 +1072,7 @@ function collectPayload() {
       const retakeVideo = normalizedDirectorRetakeVideo();
       const duration = directorRetakeTotalSeconds();
       const retakeRange = normalizedDirectorRetakeRange();
-      return {
+      return attachModelOverrides({
         workflow_id: workflow.id,
         camera_move: "director_ref",
         source_path: "",
@@ -976,7 +1104,7 @@ function collectPayload() {
         retake_length: retakeRange.length,
         retake_prompt: $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "",
         retake_strength: Math.max(0, Math.min(1, Number($("directorRetakeStrength")?.value ?? state.directorRetakeStrength) || 1)),
-      };
+      }, workflow.id);
     }
     const segments = collectDirectorSegments();
     const motionSegments = collectDirectorMotionSegments();
@@ -986,7 +1114,7 @@ function collectPayload() {
     const duration = directorOutputDurationSeconds();
     const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
     const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
-    return {
+    return attachModelOverrides({
       workflow_id: workflow.id,
       camera_move: "director_ref",
       source_path: "",
@@ -1008,7 +1136,7 @@ function collectPayload() {
       ic_lora_strength: directorIcLoraStrengthValue(),
       reference_images: collectReferenceImages(),
       audio_path: "",
-    };
+    }, workflow.id);
   }
 
   if (isBerniniWorkflow(workflow)) {
@@ -1042,7 +1170,7 @@ function collectPayload() {
     if (!isBerniniImageMode(workflow.mode)) {
       payload.duration = Number($("durationInput").value);
     }
-    return payload;
+    return attachModelOverrides(payload, workflow.id);
   }
 
   if (isInpaintWorkflow(workflow)) {
@@ -1067,10 +1195,10 @@ function collectPayload() {
     if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.inpaintSourceVideoPath)) {
       payload.retake_context = retakeContext;
     }
-    return payload;
+    return attachModelOverrides(payload, workflow.id);
   }
 
-  return {
+  return attachModelOverrides({
     workflow_id: $("workflowSelect").value,
     camera_move: $("moveSelect").value,
     source_path: state.sourcePath,
@@ -1083,7 +1211,7 @@ function collectPayload() {
     negative_prompt: $("negativePrompt").value.trim(),
     prompt,
     audio_path: state.audioPath,
-  };
+  }, workflow.id);
 }
 
 function collectReferenceImages() {
@@ -3928,12 +4056,13 @@ function upsertMotionRuns(runs, newestFirst = false) {
   for (const run of runs) {
     if (!isMotionRun(run)) continue;
     if (state.hiddenRunKeys.has(runKey(run))) continue;
-    const grid = motionResultsGridForRun(run);
-    if (!grid) continue;
-    removeMotionRunFromOtherGrids(run, grid);
-    const displayRun = motionDisplayRun(run);
-    const card = ensureRunCard(grid, displayRun, newestFirst);
-    updateRunCard(card, displayRun);
+    for (const displayRun of motionDisplayRunsForRun(run)) {
+      const grid = motionResultsGridForRun(displayRun);
+      if (!grid) continue;
+      removeMotionRunFromOtherGrids(displayRun, grid);
+      const card = ensureRunCard(grid, displayRun, newestFirst);
+      updateRunCard(card, displayRun);
+    }
   }
 }
 
@@ -3962,10 +4091,10 @@ function ensureRunCard(grid, run, newestFirst = false) {
     });
     card.querySelector(".pin-run").addEventListener("click", () => {
       const action = card.dataset.pinned === "true" ? "unpin" : "pin";
-      updateHistoryState(card.dataset.runKey, action);
+      updateHistoryState(card._run?.base_history_key || card.dataset.runKey, action);
     });
     card.querySelector(".delete-run").addEventListener("click", () => {
-      updateHistoryState(card.dataset.runKey, "delete");
+      updateHistoryState(card._run?.base_history_key || card.dataset.runKey, "delete");
     });
     if (newestFirst) grid.prepend(node);
     else grid.appendChild(node);
@@ -3980,6 +4109,99 @@ function motionDisplayRun(run) {
     motion_result_video: run.video || "",
     video: kind === "scail" ? (run.video || "") : (run.video || run.guide_video || ""),
   };
+}
+
+function motionOutputPath(record) {
+  if (!record) return "";
+  if (typeof record === "string") return record;
+  return String(record.path || record.file || record.video || "");
+}
+
+function motionOutputType(record) {
+  if (!record || typeof record === "string") return "output";
+  return String(record.type || record.comfy_type || "output");
+}
+
+function motionOutputMediaType(record) {
+  if (record && typeof record === "object" && record.media_type) return String(record.media_type);
+  const path = motionOutputPath(record);
+  return /\.(mp4|webm|mov)$/i.test(path) ? "video" : "";
+}
+
+function motionRunExplicitlyUsesGuideAsInput(run) {
+  const raw = String(run.workflow_mode || run.workflow_id || run.workflow_label || "").toLowerCase();
+  return raw.includes("scail")
+    || raw.includes("uploaded_motion_to_scail")
+    || raw.includes("motion_3d")
+    || raw.includes("3d motion")
+    || raw.includes("motion-3d");
+}
+
+function motionVideoOutputRecords(run, stage) {
+  const records = [];
+  const seen = new Set();
+  const add = (record) => {
+    const path = motionOutputPath(record);
+    if (!path || seen.has(path)) return;
+    if (motionOutputType(record) !== "output") return;
+    if (motionOutputMediaType(record) !== "video") return;
+    seen.add(path);
+    records.push(typeof record === "object" ? record : { path, type: "output", media_type: "video" });
+  };
+  if (stage === "guide") {
+    const guideOutputs = Array.isArray(run.guide_outputs) ? run.guide_outputs : [];
+    const guideVideos = Array.isArray(run.guide_videos) ? run.guide_videos : [];
+    guideOutputs.forEach(add);
+    guideVideos.forEach(add);
+    if (!guideOutputs.length && !guideVideos.length && !motionRunExplicitlyUsesGuideAsInput(run)) add(run.guide_video);
+  } else {
+    (Array.isArray(run.video_outputs) ? run.video_outputs : []).forEach(add);
+    (Array.isArray(run.videos) ? run.videos : []).forEach(add);
+    if (run.video && run.video !== run.guide_video) add(run.video);
+  }
+  return records;
+}
+
+function motionOutputDisplayRun(run, record, kind, index) {
+  const path = motionOutputPath(record);
+  const baseKey = run.base_history_key || runKey(run);
+  const isGuide = kind === "guide";
+  const workflowMode = isGuide ? "motion_text" : kind === "3d" ? "motion_3d" : "motion_scail";
+  const workflowLabel = isGuide ? "Motion Guide" : kind === "3d" ? "3D Motion" : "SCAIL2";
+  return {
+    ...run,
+    history_key: `${baseKey}:${kind}:${index + 1}`,
+    base_history_key: baseKey,
+    workflow_id: isGuide ? "text_to_motion" : kind === "3d" ? "motion_3d_to_scail" : "uploaded_motion_to_scail",
+    workflow_mode: workflowMode,
+    workflow_label: workflowLabel,
+    output_path: path,
+    output_bucket: record?.bucket || "",
+    output_type: motionOutputType(record),
+    output_media_type: "video",
+    video: path,
+    motion_result_video: isGuide ? "" : path,
+    guide_video: isGuide ? path : (run.guide_video || ""),
+  };
+}
+
+function motionDisplayRunsForRun(run) {
+  const kind = motionRunKind(run);
+  const displayRuns = [];
+  const guideRecords = motionVideoOutputRecords(run, "guide");
+  const finalRecords = motionVideoOutputRecords(run, "video");
+  guideRecords.forEach((record, index) => {
+    displayRuns.push(motionOutputDisplayRun(run, record, "guide", index));
+  });
+  finalRecords.forEach((record, index) => {
+    displayRuns.push(motionOutputDisplayRun(run, record, kind === "3d" ? "3d" : "scail", index));
+  });
+  const status = String(run.status || "").toLowerCase();
+  const waitingForFinal = ["scail", "3d"].includes(kind)
+    && !finalRecords.length
+    && ["queued", "queued_video", "guide_done", "running_video"].includes(status);
+  if (waitingForFinal || !displayRuns.length) displayRuns.push(motionDisplayRun(run));
+  return displayRuns;
 }
 
 function motionRunKind(run) {
@@ -4111,20 +4333,21 @@ function renderScopedHistory() {
   const visibleRuns = sortRunsNewestFirst(state.historyRuns.filter((run) => !state.hiddenRunKeys.has(runKey(run))));
   const directorRuns = visibleRuns.filter((run) => isDirectorRun(run));
   const motionRuns = visibleRuns.filter((run) => isMotionRun(run));
+  const motionDisplayRuns = motionRuns.flatMap(motionDisplayRunsForRun);
   const resultRuns = visibleRuns.filter((run) => !isDirectorRun(run) && !isMotionRun(run) && runBelongsInCurrentResults(run));
   syncRunGrid($("resultsGrid"), resultRuns);
   syncRunGrid($("directorResultsGrid"), directorRuns);
-  syncRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
-  syncRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
-  syncRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+  syncRunGrid($("motionResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "text"));
+  syncRunGrid($("motionScailResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "scail"));
+  syncRunGrid($("motion3dResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "3d"));
   upsertRuns(resultRuns, false);
   upsertRuns(directorRuns, false);
   upsertMotionRuns(motionRuns, false);
   orderRunGrid($("resultsGrid"), resultRuns);
   orderRunGrid($("directorResultsGrid"), directorRuns);
-  orderRunGrid($("motionResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "text").map(motionDisplayRun));
-  orderRunGrid($("motionScailResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "scail").map(motionDisplayRun));
-  orderRunGrid($("motion3dResultsGrid"), motionRuns.filter((run) => motionRunKind(run) === "3d").map(motionDisplayRun));
+  orderRunGrid($("motionResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "text"));
+  orderRunGrid($("motionScailResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "scail"));
+  orderRunGrid($("motion3dResultsGrid"), motionDisplayRuns.filter((run) => motionRunKind(run) === "3d"));
 }
 
 function syncRunGrid(grid, runs) {
@@ -4249,9 +4472,19 @@ function updateRunCard(card, run) {
   card.querySelector(".last-frame-run").disabled = !run.video;
   const actions = card.querySelector(".result-text-actions");
   const existingEditMenu = actions.querySelector(".result-video-edit");
-  if (existingEditMenu) existingEditMenu.remove();
-  const editMenu = renderResultVideoEditMenu(run);
-  if (editMenu) actions.appendChild(editMenu);
+  const editMenuKey = [
+    run.video || "",
+    run.duration || "",
+    run.workflow_id || "",
+    run.workflow_mode || "",
+    run.workflow_label || "",
+  ].join("|");
+  if (card.dataset.editMenuKey !== editMenuKey) {
+    card.dataset.editMenuKey = editMenuKey;
+    if (existingEditMenu) existingEditMenu.remove();
+    const editMenu = renderResultVideoEditMenu(run);
+    if (editMenu) actions.appendChild(editMenu);
+  }
   const pinButton = card.querySelector(".pin-run");
   pinButton.title = run.pinned ? "Unpin" : "Pin";
   pinButton.setAttribute("aria-label", run.pinned ? "Unpin" : "Pin");
@@ -4694,7 +4927,7 @@ function useMotionRun(run) {
   restoreMotionSize(run);
   restoreMotionGuide(run);
   const finalVideo = motionFinalVideo(run);
-  setMotionSubtab(finalVideo ? "scail" : "text");
+  setMotionSubtab("scail");
   if (finalVideo) {
     restoreMotionReference(run);
     const result = $("motionResult");
@@ -4704,7 +4937,7 @@ function useMotionRun(run) {
     $("motionStatus").textContent = `Setup restored from ${run.batch_id || "result"}`;
   } else {
     clearMotionResult();
-    $("motionStatus").textContent = `Motion guide loaded from ${run.batch_id || "result"}`;
+    $("motionStatus").textContent = `Motion guide loaded for SCAIL2 from ${run.batch_id || "result"}`;
   }
   updateMotionRunAvailability();
 }
@@ -5922,13 +6155,18 @@ async function startMotionFinal() {
   }
 }
 
+const MOTION_GUIDE_FILE_PATTERN = /\.(mp4|mov|m4v|webm|mkv|avi|gif|webp)$/i;
+
 async function uploadMotionGuideVideo(file) {
   if (!file) return;
+  if (!MOTION_GUIDE_FILE_PATTERN.test(file.name)) {
+    throw new Error("Unsupported guide format. Use video, GIF, or WebP.");
+  }
   $("motionGuideUploadStatus").textContent = "Uploading...";
   const form = new FormData();
   form.append("file", file, file.name);
-  const uploaded = await uploadFile("/api/upload-video", form);
-  setVideoSlot("motionGuide", uploaded.path, uploaded.name);
+  const uploaded = await uploadFile("/api/upload-video?motion_guide=1", form);
+  setVideoSlot("motionGuide", uploaded.path, uploaded.name, { duration: uploaded.duration });
 }
 
 function fillPythonFormatTemplate(template, text) {
@@ -7131,6 +7369,15 @@ $("closeCastingVoiceBtn").addEventListener("click", closeCustomVoiceModal);
 document.querySelector("[data-close-casting-voice-modal]").addEventListener("click", closeCustomVoiceModal);
 window.addEventListener("camera-lab:shot-pack-exported", (event) => importShotPackToDirector(event.detail || {}));
 $("moveSelect").addEventListener("change", resetPrompt);
+$("modelSwitcherBtn").addEventListener("click", openModelSwitcher);
+$("modelSwitcherClose").addEventListener("click", closeModelSwitcher);
+$("modelSwitcherCancel").addEventListener("click", closeModelSwitcher);
+$("modelSwitcherApply").addEventListener("click", applyModelSwitcher);
+$("modelSwitcherReset").addEventListener("click", resetModelSwitcher);
+$("modelSwitcherModal").addEventListener("click", (event) => {
+  if (event.target?.hasAttribute?.("data-close-model-switcher")) closeModelSwitcher();
+});
+$("directorModelSwitcherBtn").addEventListener("click", openModelSwitcher);
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
   state.sourcePath = "";
   $("sourceStatus").textContent = err.message;

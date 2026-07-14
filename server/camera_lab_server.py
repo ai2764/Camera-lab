@@ -71,6 +71,8 @@ UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
 SHOT_PACK_ROOT = ROOT / "tasks" / "camera_lab_shots"
 HISTORY_STATE = RUN_ROOT / "_history_state.json"
 VIDEO_UPLOAD_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+MOTION_GUIDE_IMAGE_SUFFIXES = {".gif", ".webp"}
+MOTION_GUIDE_UPLOAD_SUFFIXES = VIDEO_UPLOAD_SUFFIXES | MOTION_GUIDE_IMAGE_SUFFIXES
 SUPPORTED_VIDEO_SUFFIXES = VIDEO_UPLOAD_SUFFIXES
 MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
@@ -703,6 +705,31 @@ MODEL_FOLDER_LOADERS: dict[str, list[tuple[str, str]]] = {
         ("LTXAVTextEncoderLoader", "text_encoder_name"), ("LTXAVTextEncoderLoader", "clip_name"),
     ],
 }
+
+MODEL_CONTROL_FIELDS: dict[tuple[str, str], str] = {
+    ("CheckpointLoaderSimple", "ckpt_name"): "main_model",
+    ("UNETLoader", "unet_name"): "main_model",
+    ("UnetLoaderGGUF", "unet_name"): "main_model",
+    ("LoraLoaderModelOnly", "lora_name"): "lora",
+    ("LTXDirectorGuide", "ic_lora_name"): "director_ic_lora",
+}
+
+
+def object_info_options(class_type: str, field: str) -> list[str]:
+    node = object_info().get(class_type, {})
+    inputs = node.get("input", {}) if isinstance(node, dict) else {}
+    entry = {**(inputs.get("required", {}) or {}), **(inputs.get("optional", {}) or {})}.get(field)
+    if isinstance(entry, list) and entry and isinstance(entry[0], list):
+        return [str(item) for item in entry[0]]
+    if isinstance(entry, list) and entry and isinstance(entry[0], str) and len(entry) > 1 and isinstance(entry[1], dict):
+        options = entry[1].get("options")
+        if isinstance(options, list):
+            return [str(item) for item in options]
+    return []
+
+
+def model_control_options(class_type: str, field: str) -> list[str]:
+    return object_info_options(class_type, field)
 
 
 def director_ic_loras() -> list[str]:
@@ -2288,6 +2315,73 @@ def ensure_model_exists(folder: str, name: str) -> None:
         print(f"Camera Lab: warning - model may be missing: models/{folder}/{name}", flush=True)
 
 
+def workflow_by_id(workflow_id: str) -> dict[str, Any]:
+    workflow = next((item for item in WORKFLOWS if item["id"] == workflow_id), None)
+    if not workflow:
+        raise ValueError(f"unknown workflow: {workflow_id}")
+    return workflow
+
+
+def build_workflow_api_for_model_controls(workflow: dict[str, Any]) -> dict[str, dict]:
+    path = Path(workflow["path"])
+    data = json.loads(path.read_text(encoding="utf-8"))
+    api = workflow_to_api(data)
+    if not workflow.get("builder"):
+        patch_ltx23_local_loras(api)
+        bypass_sage_attention_patches(api)
+    elif workflow.get("builder") == "ltx_director_2":
+        bypass_sage_attention_patches(api)
+    return api
+
+
+def workflow_model_controls(workflow_id: str) -> dict[str, Any]:
+    workflow = workflow_by_id(workflow_id)
+    api = build_workflow_api_for_model_controls(workflow)
+    controls: list[dict[str, Any]] = []
+    for node_id, node in sorted(api.items(), key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999):
+        class_type = str(node.get("class_type") or "")
+        inputs = node.get("inputs") or {}
+        for (loader_type, field), category in MODEL_CONTROL_FIELDS.items():
+            if class_type != loader_type or field not in inputs:
+                continue
+            options = model_control_options(class_type, field)
+            label = str((node.get("_meta") or {}).get("title") or "").strip() or f"{class_type} #{node_id}"
+            controls.append({
+                "id": f"{node_id}:{field}",
+                "node_id": str(node_id),
+                "class_type": class_type,
+                "label": label,
+                "field": field,
+                "category": category,
+                "value": str(inputs.get(field) or ""),
+                "options": options,
+            })
+    return {"workflow_id": workflow_id, "controls": controls}
+
+
+def normalize_model_overrides(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): str(value) for key, value in raw.items() if str(value).strip()}
+
+
+def apply_model_overrides(api: dict[str, dict], workflow_id: str, overrides: dict[str, str]) -> None:
+    if not overrides:
+        return
+    controls = {item["id"]: item for item in workflow_model_controls(workflow_id)["controls"]}
+    for control_id, value in overrides.items():
+        control = controls.get(control_id)
+        if not control:
+            raise ValueError(f"unknown model override: {control_id}")
+        options = [str(item) for item in control.get("options") or []]
+        if options and value not in options:
+            raise ValueError(f"model override {control_id} value is not available: {value}")
+        node = api.get(str(control["node_id"]))
+        if not node:
+            raise ValueError(f"model override node is missing: {control_id}")
+        node.setdefault("inputs", {})[str(control["field"])] = value
+
+
 def workflow_status(workflow: dict) -> dict[str, Any]:
     avail = available_models()
     if workflow.get("builder") == "ltx23_ttp_flf":
@@ -2387,28 +2481,53 @@ def required_models(workflow: dict) -> list[tuple[str, str]]:
     return sorted(set(models))
 
 
-def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+def output_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in VIDEO_OUTPUT_SUFFIXES:
+        return "video"
+    if suffix in IMAGE_OUTPUT_SUFFIXES:
+        return "image"
+    if suffix == ".gif":
+        return "gif"
+    return "file"
+
+
+def copy_output_records(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[dict[str, str]]:
     history = http_json(f"/history/{prompt_id}", timeout=30, base_url=base_url).get(prompt_id, {})
     (run_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-    copied: list[Path] = []
+    copied: list[dict[str, str]] = []
     input_root = MOTION_COMFY_INPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_INPUT
     output_root = MOTION_COMFY_OUTPUT if (base_url or "").rstrip("/") == MOTION_COMFY_URL.rstrip("/") else COMFY_OUTPUT
     for output in history.get("outputs", {}).values():
-        for key in ("videos", "images", "gifs"):
-            for item in output.get(key, []):
+        for bucket in ("videos", "images", "gifs"):
+            for item in output.get(bucket, []):
                 filename = item.get("filename")
                 if not filename:
                     continue
                 # ComfyUI on Windows reports subfolders with backslashes; normalize
                 # so a Linux camera-lab container (comfy on a Windows host) can join them.
-                subfolder = item.get("subfolder", "").replace("\\", "/")
-                src_root = output_root if item.get("type", "output") == "output" else input_root
+                subfolder = str(item.get("subfolder", "") or "").replace("\\", "/")
+                output_type = str(item.get("type", "output") or "output")
+                src_root = output_root if output_type == "output" else input_root
                 src = src_root / subfolder / filename
                 if src.exists():
                     dst = run_dir / filename
                     shutil.copy2(src, dst)
-                    copied.append(dst)
+                    copied.append(
+                        {
+                            "path": str(dst),
+                            "filename": str(filename),
+                            "subfolder": str(subfolder),
+                            "bucket": bucket,
+                            "type": output_type,
+                            "media_type": output_media_type(dst),
+                        }
+                    )
     return copied
+
+
+def copy_outputs(run_dir: Path, prompt_id: str, base_url: str | None = None) -> list[Path]:
+    return [Path(record["path"]) for record in copy_output_records(run_dir, prompt_id, base_url)]
 
 
 def make_contact_sheet(video: Path, contact: Path, title: str) -> None:
@@ -2479,6 +2598,68 @@ def align_4k1(n: int) -> int:
     if n <= 1:
         return 1
     return ((n - 1) // 4) * 4 + 1
+
+
+def motion_guide_image_suffix(path: Path | str) -> bool:
+    return Path(path).suffix.lower() in MOTION_GUIDE_IMAGE_SUFFIXES
+
+
+def request_path(path: str) -> str:
+    return urllib.parse.urlparse(path).path or "/"
+
+
+def upload_video_motion_guide_flag(path: str) -> bool:
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+    return query.get("motion_guide", ["0"])[0].strip().lower() in {"1", "true", "yes"}
+
+
+def convert_motion_guide_image_to_mp4(
+    source: Path,
+    output: Path,
+    *,
+    runner: Any = subprocess.run,
+) -> Path:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = os.environ.get("FFMPEG_PATH") or "ffmpeg"
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(source),
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=24",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(output),
+    ]
+    try:
+        runner(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+        raise RuntimeError(stderr or f"ffmpeg exited with code {exc.returncode}") from exc
+    if not output.exists():
+        raise RuntimeError("ffmpeg did not produce a motion guide video")
+    return output
+
+
+def normalize_motion_guide_video(guide_video: Path, work_dir: Path) -> Path:
+    if not motion_guide_image_suffix(guide_video):
+        return guide_video
+    if not guide_video.exists():
+        raise FileNotFoundError("motion guide video is missing")
+    return convert_motion_guide_image_to_mp4(
+        guide_video,
+        work_dir / f"{safe_filename(guide_video.stem)}_guide.mp4",
+    )
 
 
 def video_frame_count(path: Path) -> int:
@@ -3284,6 +3465,22 @@ def first_video(copied: list[Path], stage: str) -> Path:
     return videos[0]
 
 
+def output_record_paths(records: list[dict[str, Any]]) -> list[Path]:
+    return [Path(str(record["path"])) for record in records if record.get("path")]
+
+
+def output_record_videos(records: list[dict[str, Any]]) -> list[Path]:
+    videos: list[Path] = []
+    for record in records:
+        if str(record.get("type") or "output") != "output":
+            continue
+        path = Path(str(record.get("path") or ""))
+        if not path or output_media_type(path) != "video":
+            continue
+        videos.append(path)
+    return videos
+
+
 def persist_motion_batch(batch: dict[str, Any] | None) -> None:
     if batch:
         write_batch(batch)
@@ -3304,6 +3501,8 @@ def create_motion_video_batch(payload: dict[str, Any]) -> dict[str, Any]:
     guide_video = safe_media_path(str(guide_path))
     if not guide_video.exists():
         raise FileNotFoundError("motion guide video is missing")
+    if motion_guide_image_suffix(guide_video):
+        guide_video = normalize_motion_guide_video(guide_video, guide_video.parent / "converted")
 
     reference_path = payload.get("reference_path") or payload.get("source_path") or ""
     if not reference_path:
@@ -3517,9 +3716,13 @@ def run_motion_guide_stage(run: dict[str, Any]) -> list[Path]:
     wait_for_completion(motion_prompt_id, run, base_url=MOTION_COMFY_URL)
     check_run_canceled(run)
 
-    guide_copied = copy_outputs(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
-    guide_video = first_video(guide_copied, "HY-Motion guide")
+    guide_records = copy_output_records(motion_dir, motion_prompt_id, base_url=MOTION_COMFY_URL)
+    guide_copied = output_record_paths(guide_records)
+    guide_videos = output_record_videos(guide_records)
+    guide_video = first_video(guide_videos, "HY-Motion guide")
     run["guide_video"] = str(guide_video)
+    run["guide_videos"] = [str(path) for path in guide_videos]
+    run["guide_outputs"] = guide_records
     run["scail_length"] = align_4k1(video_frame_count(guide_video))
     run["copied"] = [str(path) for path in guide_copied]
     run["status"] = "guide_done"
@@ -3533,6 +3736,8 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     guide_video = Path(run.get("guide_video") or "")
     if not guide_video.exists():
         raise FileNotFoundError("motion guide video is missing")
+    guide_video = normalize_motion_guide_video(guide_video, run_dir / "guide_convert")
+    run["guide_video"] = str(guide_video)
 
     guide_for_scail = trim_motion_guide_video(run, guide_video, run_dir)
     if guide_for_scail != guide_video:
@@ -3563,9 +3768,13 @@ def run_motion_final_stage(run: dict[str, Any]) -> list[Path]:
     wait_for_completion(video_prompt_id, run, base_url=MOTION_COMFY_URL)
     check_run_canceled(run)
 
-    final_copied = copy_outputs(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
-    final_video = first_video(final_copied, "SCAIL video")
+    final_records = copy_output_records(video_dir, video_prompt_id, base_url=MOTION_COMFY_URL)
+    final_copied = output_record_paths(final_records)
+    final_videos = output_record_videos(final_records)
+    final_video = first_video(final_videos, "SCAIL video")
     run["video"] = str(final_video)
+    run["videos"] = [str(path) for path in final_videos]
+    run["video_outputs"] = final_records
     run["copied"] = [*run.get("copied", []), *[str(path) for path in final_copied]]
     contact = run_dir / "contact.jpg"
     try:
@@ -3726,6 +3935,7 @@ def run_batch_worker(batch_id: str) -> None:
                     patch_bernini_api(api, workflow["mode"], run, input_names)
                 else:
                     patch_api(api, workflow, run, input_names)
+            apply_model_overrides(api, run["workflow_id"], normalize_model_overrides(run.get("model_overrides")))
             (run_dir / "api_prompt.json").write_text(json.dumps(api, ensure_ascii=False, indent=2), encoding="utf-8")
             (run_dir / "prompt.txt").write_text(
                 f"{run['variant_name']}\n{width}x{height}\nseed: {run['seed']}\n\n{run['prompt']}\n\nNEGATIVE:\n{run['negative_prompt']}\n",
@@ -4475,6 +4685,10 @@ class Handler(BaseHTTPRequestHandler):
                         "director": {"ic_loras": director_ic_loras()},
                     }
                 )
+            if parsed.path == "/api/workflow-model-controls":
+                query = urllib.parse.parse_qs(parsed.query)
+                workflow_id = (query.get("workflow_id") or [""])[0]
+                return self.send_json(workflow_model_controls(workflow_id))
             if parsed.path == "/api/casting/library":
                 return self.send_json({"clips": casting_library_clips()})
             if parsed.path.startswith("/api/batches/"):
@@ -4492,57 +4706,58 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, status=500)
 
     def do_POST(self) -> None:
+        path = request_path(self.path)
         try:
-            if self.path == "/api/run":
+            if path == "/api/run":
                 return self.handle_run()
-            if self.path == "/api/text-to-motion":
+            if path == "/api/text-to-motion":
                 return self.handle_text_to_motion()
-            if self.path == "/api/text-to-motion-guide":
+            if path == "/api/text-to-motion-guide":
                 return self.handle_text_to_motion_guide()
-            if self.path == "/api/text-to-motion-final":
+            if path == "/api/text-to-motion-final":
                 return self.handle_text_to_motion_final()
-            if self.path == "/api/text-to-motion-video-final":
+            if path == "/api/text-to-motion-video-final":
                 return self.handle_text_to_motion_video_final()
-            if self.path == "/api/upload-audio":
+            if path == "/api/upload-audio":
                 return self.handle_upload_audio()
-            if self.path == "/api/upload-video":
+            if path == "/api/upload-video":
                 return self.handle_upload_video()
-            if self.path == "/api/trim-video":
+            if path == "/api/trim-video":
                 return self.handle_trim_video()
-            if self.path == "/api/stitch-retake-video":
+            if path == "/api/stitch-retake-video":
                 return self.handle_stitch_retake_video()
-            if self.path.startswith("/api/scail-drive-video"):
+            if path.startswith("/api/scail-drive-video"):
                 return self.handle_3dmotion_drive_video()
-            if self.path.startswith("/api/3dmotion-recording"):
+            if path.startswith("/api/3dmotion-recording"):
                 return self.handle_3dmotion_recording()
-            if self.path == "/api/upload-image":
+            if path == "/api/upload-image":
                 return self.handle_upload_image()
-            if self.path.startswith("/comfy/"):
+            if path.startswith("/comfy/"):
                 return self.proxy_comfy_request("POST", urllib.parse.urlparse(self.path))
-            if self.path == "/api/photography-subject":
+            if path == "/api/photography-subject":
                 return self.handle_photography_subject()
-            if self.path == "/api/photography-frames":
+            if path == "/api/photography-frames":
                 return self.handle_photography_frames()
-            if self.path == "/api/shot-pack":
+            if path == "/api/shot-pack":
                 return self.handle_shot_pack()
-            if self.path == "/api/history-state":
+            if path == "/api/history-state":
                 return self.handle_history_state()
-            if self.path == "/api/last-frame":
+            if path == "/api/last-frame":
                 return self.handle_last_frame()
-            if self.path == "/api/rate":
+            if path == "/api/rate":
                 return self.handle_rate()
-            if self.path == "/api/casting/analyze":
+            if path == "/api/casting/analyze":
                 return self.handle_casting_analyze()
-            if self.path == "/api/casting/tts":
+            if path == "/api/casting/tts":
                 return self.handle_casting_tts()
-            if self.path == "/api/casting/voice":
+            if path == "/api/casting/voice":
                 return self.handle_casting_voice()
-            if self.path == "/api/casting/open-archive":
+            if path == "/api/casting/open-archive":
                 return self.send_json(open_casting_archive_folder())
-            if self.path == "/api/casting/trim":
+            if path == "/api/casting/trim":
                 payload = self.read_json()
                 return self.send_json(trim_casting_clip(payload.get("file", ""), payload.get("start"), payload.get("end")))
-            if self.path == "/api/casting/delete":
+            if path == "/api/casting/delete":
                 payload = self.read_json()
                 return self.send_json(recycle_casting_clip(payload.get("file", "")))
             self.send_error(404)
@@ -4865,18 +5080,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(response)
 
     def handle_upload_video(self) -> None:
+        motion_guide = upload_video_motion_guide_flag(self.path)
         content_type = self.headers.get("Content-Type", "")
         if content_type.startswith("multipart/form-data"):
-            return self.handle_upload_video_form(content_type)
+            return self.handle_upload_video_form(content_type, motion_guide=motion_guide)
         payload = self.read_json()
         name = safe_filename(payload.get("name") or "video.mp4")
         data_url = payload.get("data") or ""
         if "," in data_url:
             data_url = data_url.split(",", 1)[1]
         raw = base64.b64decode(data_url)
-        self.save_uploaded_video(name, raw)
+        self.save_uploaded_video(name, raw, motion_guide=motion_guide)
 
-    def handle_upload_video_form(self, content_type: str) -> None:
+    def handle_upload_video_form(self, content_type: str, *, motion_guide: bool = False) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             import cgi
@@ -4901,11 +5117,12 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("video file is required")
         name = safe_filename(getattr(item, "filename", "") or "video.mp4")
         raw = item.file.read(MAX_VIDEO_UPLOAD_BYTES + 1)
-        self.save_uploaded_video(name, raw)
+        self.save_uploaded_video(name, raw, motion_guide=motion_guide)
 
-    def save_uploaded_video(self, name: str, raw: bytes) -> None:
+    def save_uploaded_video(self, name: str, raw: bytes, *, motion_guide: bool = False) -> None:
+        allowed = MOTION_GUIDE_UPLOAD_SUFFIXES if motion_guide else VIDEO_UPLOAD_SUFFIXES
         suffix = Path(name).suffix.lower()
-        if suffix not in VIDEO_UPLOAD_SUFFIXES:
+        if suffix not in allowed:
             raise ValueError("unsupported video file type")
         if len(raw) > MAX_VIDEO_UPLOAD_BYTES:
             raise ValueError("video file is too large")
@@ -4913,6 +5130,12 @@ class Handler(BaseHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{int(time.time())}_{random.randint(1000, 9999)}_{name}"
         path.write_bytes(raw)
+        if motion_guide and motion_guide_image_suffix(path):
+            mp4_path = path.with_suffix(".mp4")
+            convert_motion_guide_image_to_mp4(path, mp4_path)
+            path.unlink(missing_ok=True)
+            path = mp4_path
+            name = Path(name).with_suffix(".mp4").name
         response = {"path": str(path), "name": name}
         try:
             duration = video_duration_seconds(path)

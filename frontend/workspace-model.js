@@ -133,6 +133,8 @@
       batchPreviewWaits: {},
       motionPreviewWaits: {},
       motionPendingCounter: 0,
+      modelOverrides: {},
+      modelControlCache: {},
       historyTimer: null,
       historyRuns: [],
       clockTimer: null,

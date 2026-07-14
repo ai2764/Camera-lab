@@ -213,6 +213,9 @@
         Seed
         <input id="seedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
       </label>
+      <div class="workflow-tools">
+        <button id="modelSwitcherBtn" type="button">Models</button>
+      </div>
 
       <label>
         Negative prompt
@@ -292,6 +295,9 @@
                       <input id="directorGlobalSeedInput" type="number" min="1" max="2147000000" step="1" placeholder="Random">
                     </label>
                   </div>
+                  <div class="workflow-tools director-model-tools">
+                    <button id="directorModelSwitcherBtn" type="button">Models</button>
+                  </div>
                   <label class="director-negative-prompt-field">
                     Negative prompt
                     <textarea id="directorNegativePrompt" rows="4"></textarea>
@@ -325,7 +331,9 @@
                   <button id="directorModeGenerateBtn" class="director-mode-tab active" type="button" role="tab" aria-selected="true">Generate</button>
                   <button id="directorModeRetakeBtn" class="director-mode-tab" type="button" role="tab" aria-selected="false">Retake</button>
                 </div>
-                <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
+                <div class="director-toolbar-actions">
+                  <button id="directorCutAtPlayheadBtn" class="director-cut-button" type="button" title="Split selected clip at playhead" aria-label="Split selected clip at playhead"></button>
+                </div>
               </div>
               <div class="director-timeline-shell">
                 <div class="director-ruler" id="directorRuler"></div>
@@ -607,10 +615,10 @@
         <div class="motion-scail-upload-strip">
           <div class="motion-upload-card">
             <label class="motion-file-field">
-              <span>Upload guide video</span>
-              <input id="motionGuideInput" type="file" accept="video/*">
+              <span>Upload guide (video, GIF, or WebP)</span>
+              <input id="motionGuideInput" type="file" accept="video/*,image/gif,image/webp,.gif,.webp">
               <span class="motion-file-control">
-                <span class="motion-file-button">Choose video</span>
+                <span class="motion-file-button">Choose file</span>
                 <span id="motionGuideUploadStatus" class="hint">No video uploaded</span>
                 <button id="motionGuideEditBtn" class="clip-edit-button" type="button" disabled>Edit clip</button>
               </span>
@@ -946,6 +954,26 @@
     </section>
   </div>
 
+  <div id="modelSwitcherModal" class="director-modal model-switcher-modal" aria-hidden="true">
+    <div class="director-modal-backdrop" data-close-model-switcher></div>
+    <section class="director-modal-panel model-switcher-panel" role="dialog" aria-modal="true" aria-labelledby="modelSwitcherTitle">
+      <div class="director-modal-head">
+        <div>
+          <div class="eyebrow">Workflow models</div>
+          <h2 id="modelSwitcherTitle">Models</h2>
+        </div>
+        <button id="modelSwitcherClose" class="modal-icon-button" type="button" aria-label="Close">x</button>
+      </div>
+      <div id="modelSwitcherStatus" class="hint"></div>
+      <div id="modelSwitcherBody" class="model-switcher-body"></div>
+      <div class="director-modal-actions">
+        <button id="modelSwitcherReset" type="button">Reset</button>
+        <button id="modelSwitcherCancel" type="button">Cancel</button>
+        <button id="modelSwitcherApply" class="primary modal-primary" type="button">Apply</button>
+      </div>
+    </section>
+  </div>
+
   <div id="frameExtractModal" class="director-modal frame-extract-modal" aria-hidden="true">
     <div class="director-modal-backdrop" data-close-frame-extract></div>
     <section class="director-modal-panel frame-extract-panel" role="dialog" aria-modal="true" aria-labelledby="frameExtractTitle">
@@ -1024,8 +1052,8 @@
 
   <script src="/static/director-timeline-model.js?v=director-frame-model-1"></script>
   <script src="/static/director-preview.js?v=director-key-delete-scroll-1"></script>
-  <script src="/static/workspace-model.js?v=workspace-model-1"></script>
-  <script src="/static/app.js?v=director-audio-waveform-trim-1"></script>
+  <script src="/static/workspace-model.js?v=model-switcher-3"></script>
+  <script src="/static/app.js?v=model-switcher-3"></script>
   <link rel="stylesheet" href="/static/3dmotion/embedded.css">
   <script type="module" src="/static/3dmotion/assets/index.js"></script>
   <script type="module" src="/static/photography.js?v=photo-automation-1"></script>
