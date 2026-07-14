@@ -3012,6 +3012,12 @@ body.director-workspace-active .director-timeline-shell {
   margin-top: 0;
 }
 
+.director-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 body.director-workspace-active .director-inline-results {
   display: block;
 }

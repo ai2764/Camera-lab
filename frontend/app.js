@@ -7377,6 +7377,7 @@ $("modelSwitcherReset").addEventListener("click", resetModelSwitcher);
 $("modelSwitcherModal").addEventListener("click", (event) => {
   if (event.target?.hasAttribute?.("data-close-model-switcher")) closeModelSwitcher();
 });
+$("directorModelSwitcherBtn").addEventListener("click", openModelSwitcher);
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
   state.sourcePath = "";
   $("sourceStatus").textContent = err.message;

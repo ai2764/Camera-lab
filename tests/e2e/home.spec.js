@@ -88,6 +88,35 @@ test("model switcher reports non-json endpoint errors clearly", async ({ page })
   await expect(page.locator("#modelSwitcherStatus")).toContainText("Model controls unavailable: 404 Not Found");
 });
 
+test("director workspace exposes the model switcher", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      json: {
+        workflow_id: "ltx_director_2",
+        controls: [
+          {
+            id: "35:unet_name",
+            node_id: "35",
+            class_type: "UNETLoader",
+            label: "Director base model",
+            field: "unet_name",
+            category: "main_model",
+            value: "director-a.safetensors",
+            options: ["director-a.safetensors", "director-b.safetensors"],
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/#director");
+  await expect(page.locator("#workflowSelect option[value='ltx_director_2']")).toHaveCount(1);
+
+  await expect(page.locator("#directorModelSwitcherBtn")).toBeVisible();
+  await page.locator("#directorModelSwitcherBtn").click();
+
+  await expect(page.locator('select[data-model-control-id="35:unet_name"]')).toBeVisible();
+});
+
 test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {
