@@ -156,8 +156,17 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  const text = await res.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (_err) {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`.trim());
+      throw new Error("Expected JSON response");
+    }
+  }
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`.trim());
   return data;
 }
 

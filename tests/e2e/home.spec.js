@@ -72,6 +72,22 @@ test("model switcher applies main model and lora overrides", async ({ page }) =>
   });
 });
 
+test("model switcher reports non-json endpoint errors clearly", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "text/html",
+      body: "<!DOCTYPE html><title>Not Found</title>",
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  await page.locator("#modelSwitcherBtn").click();
+
+  await expect(page.locator("#modelSwitcherStatus")).toContainText("Model controls unavailable: 404 Not Found");
+});
+
 test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {
