@@ -935,6 +935,120 @@ function updateRunButtonLabel({ force = false } = {}) {
   button.textContent = runButtonIdleText();
 }
 
+function activeWorkflowForModels() {
+  if (!state.config?.workflows?.length) return null;
+  if (state.workspace === "director") return currentDirectorWorkflow();
+  if (state.workspace === "edit") return currentEditWorkflow();
+  return currentWorkflow();
+}
+
+function workflowModelOverrides(workflowId) {
+  if (!state.modelOverrides[workflowId]) state.modelOverrides[workflowId] = {};
+  return state.modelOverrides[workflowId];
+}
+
+function attachModelOverrides(payload, workflowId) {
+  const overrides = state.modelOverrides[workflowId] || {};
+  if (Object.keys(overrides).length) payload.model_overrides = { ...overrides };
+  return payload;
+}
+
+async function openModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  const modal = $("modelSwitcherModal");
+  const status = $("modelSwitcherStatus");
+  const body = $("modelSwitcherBody");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  if (!workflow) {
+    status.textContent = "Model controls unavailable: workflow config is still loading.";
+    body.innerHTML = "";
+    return;
+  }
+  status.textContent = "Loading models...";
+  body.innerHTML = "";
+  try {
+    const data = await api(`/api/workflow-model-controls?workflow_id=${encodeURIComponent(workflow.id)}`);
+    const controls = data.controls || [];
+    state.modelControlCache[workflow.id] = controls;
+    renderModelSwitcher(workflow.id, controls);
+    status.textContent = controls.length ? "" : "No main model or LoRA controls found for this workflow.";
+  } catch (err) {
+    status.textContent = `Model controls unavailable: ${err.message}`;
+  }
+}
+
+function closeModelSwitcher() {
+  const modal = $("modelSwitcherModal");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function renderModelSwitcher(workflowId, controls) {
+  const body = $("modelSwitcherBody");
+  const overrides = workflowModelOverrides(workflowId);
+  body.innerHTML = "";
+  for (const [category, titleText] of [
+    ["main_model", "Main Model"],
+    ["lora", "LoRA"],
+    ["director_ic_lora", "Director IC-LoRA"],
+  ]) {
+    const rows = controls.filter((control) => control.category === category);
+    if (!rows.length) continue;
+    const group = document.createElement("section");
+    group.className = "model-switcher-section";
+    const title = document.createElement("h3");
+    title.textContent = titleText;
+    group.appendChild(title);
+    for (const control of rows) {
+      const row = document.createElement("label");
+      row.className = "model-switcher-row";
+      const label = document.createElement("span");
+      label.textContent = `${control.label} (${control.class_type}.${control.field})`;
+      const select = document.createElement("select");
+      select.dataset.modelControlId = control.id;
+      const value = overrides[control.id] || control.value || "";
+      for (const optionValue of control.options || []) {
+        const option = document.createElement("option");
+        option.value = optionValue;
+        option.textContent = optionValue;
+        select.appendChild(option);
+      }
+      if (value && ![...select.options].some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = `${value} (unavailable)`;
+        option.disabled = true;
+        select.prepend(option);
+      }
+      select.value = value;
+      row.append(label, select);
+      group.appendChild(row);
+    }
+    body.appendChild(group);
+  }
+}
+
+function applyModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  if (!workflow) return;
+  const controls = state.modelControlCache[workflow.id] || [];
+  const next = {};
+  for (const select of $("modelSwitcherBody").querySelectorAll("select[data-model-control-id]")) {
+    const control = controls.find((item) => item.id === select.dataset.modelControlId);
+    if (control && select.value && select.value !== control.value) next[control.id] = select.value;
+  }
+  state.modelOverrides[workflow.id] = next;
+  closeModelSwitcher();
+}
+
+function resetModelSwitcher() {
+  const workflow = activeWorkflowForModels();
+  if (!workflow) return;
+  state.modelOverrides[workflow.id] = {};
+  renderModelSwitcher(workflow.id, state.modelControlCache[workflow.id] || []);
+}
+
 function collectPayload() {
   const size = currentSize();
   const prompt = $("promptText").value.trim();
@@ -949,7 +1063,7 @@ function collectPayload() {
       const retakeVideo = normalizedDirectorRetakeVideo();
       const duration = directorRetakeTotalSeconds();
       const retakeRange = normalizedDirectorRetakeRange();
-      return {
+      return attachModelOverrides({
         workflow_id: workflow.id,
         camera_move: "director_ref",
         source_path: "",
@@ -981,7 +1095,7 @@ function collectPayload() {
         retake_length: retakeRange.length,
         retake_prompt: $("directorRetakePrompt")?.value.trim() || state.directorRetakePrompt || "",
         retake_strength: Math.max(0, Math.min(1, Number($("directorRetakeStrength")?.value ?? state.directorRetakeStrength) || 1)),
-      };
+      }, workflow.id);
     }
     const segments = collectDirectorSegments();
     const motionSegments = collectDirectorMotionSegments();
@@ -991,7 +1105,7 @@ function collectPayload() {
     const duration = directorOutputDurationSeconds();
     const sheetSegment = isIngredientsIcLora($("directorIcLora")?.value) ? ingredientsSheetSegment(duration) : null;
     const timelineSegments = sheetSegment ? [sheetSegment, ...segments] : segments;
-    return {
+    return attachModelOverrides({
       workflow_id: workflow.id,
       camera_move: "director_ref",
       source_path: "",
@@ -1013,7 +1127,7 @@ function collectPayload() {
       ic_lora_strength: directorIcLoraStrengthValue(),
       reference_images: collectReferenceImages(),
       audio_path: "",
-    };
+    }, workflow.id);
   }
 
   if (isBerniniWorkflow(workflow)) {
@@ -1047,7 +1161,7 @@ function collectPayload() {
     if (!isBerniniImageMode(workflow.mode)) {
       payload.duration = Number($("durationInput").value);
     }
-    return payload;
+    return attachModelOverrides(payload, workflow.id);
   }
 
   if (isInpaintWorkflow(workflow)) {
@@ -1072,10 +1186,10 @@ function collectPayload() {
     if (retakeContext && retakeContext.target_workflow === workflow.id && retakeContextMatchesVideo(retakeContext, state.inpaintSourceVideoPath)) {
       payload.retake_context = retakeContext;
     }
-    return payload;
+    return attachModelOverrides(payload, workflow.id);
   }
 
-  return {
+  return attachModelOverrides({
     workflow_id: $("workflowSelect").value,
     camera_move: $("moveSelect").value,
     source_path: state.sourcePath,
@@ -1088,7 +1202,7 @@ function collectPayload() {
     negative_prompt: $("negativePrompt").value.trim(),
     prompt,
     audio_path: state.audioPath,
-  };
+  }, workflow.id);
 }
 
 function collectReferenceImages() {
@@ -7246,6 +7360,14 @@ $("closeCastingVoiceBtn").addEventListener("click", closeCustomVoiceModal);
 document.querySelector("[data-close-casting-voice-modal]").addEventListener("click", closeCustomVoiceModal);
 window.addEventListener("camera-lab:shot-pack-exported", (event) => importShotPackToDirector(event.detail || {}));
 $("moveSelect").addEventListener("change", resetPrompt);
+$("modelSwitcherBtn").addEventListener("click", openModelSwitcher);
+$("modelSwitcherClose").addEventListener("click", closeModelSwitcher);
+$("modelSwitcherCancel").addEventListener("click", closeModelSwitcher);
+$("modelSwitcherApply").addEventListener("click", applyModelSwitcher);
+$("modelSwitcherReset").addEventListener("click", resetModelSwitcher);
+$("modelSwitcherModal").addEventListener("click", (event) => {
+  if (event.target?.hasAttribute?.("data-close-model-switcher")) closeModelSwitcher();
+});
 $("sourceInput").addEventListener("change", () => uploadImage($("sourceInput").files[0], "source").catch((err) => {
   state.sourcePath = "";
   $("sourceStatus").textContent = err.message;

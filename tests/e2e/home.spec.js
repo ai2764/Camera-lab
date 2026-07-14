@@ -13,6 +13,65 @@ test("home screen loads public Camera Lab controls", async ({ page }) => {
   await expect(page.locator("#photographyWorkspaceTab")).toBeHidden();
 });
 
+test("model switcher applies main model and lora overrides", async ({ page }) => {
+  await page.route("**/api/workflow-model-controls?**", async (route) => {
+    await route.fulfill({
+      json: {
+        workflow_id: "active",
+        controls: [
+          {
+            id: "317:unet_name",
+            node_id: "317",
+            class_type: "UnetLoaderGGUF",
+            label: "Base model",
+            field: "unet_name",
+            category: "main_model",
+            value: "LTX-2.3-distilled-Q4_K_S.gguf",
+            options: ["LTX-2.3-distilled-Q4_K_S.gguf", "LTX-2.3-distilled-Q8_0.gguf"],
+          },
+          {
+            id: "293:lora_name",
+            node_id: "293",
+            class_type: "LoraLoaderModelOnly",
+            label: "Distilled LoRA",
+            field: "lora_name",
+            category: "lora",
+            value: "lora-a.safetensors",
+            options: ["lora-a.safetensors", "lora-b.safetensors"],
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/run", async (route) => {
+    await route.fulfill({
+      json: {
+        batch: { batch_id: "model_switch_test", runs: [{ run_id: "01", status: "queued" }] },
+      },
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  const runRequest = page.waitForRequest("**/api/run");
+  await page.locator("#modelSwitcherBtn").click();
+  await page.locator('select[data-model-control-id="317:unet_name"]').selectOption("LTX-2.3-distilled-Q8_0.gguf");
+  await page.locator('select[data-model-control-id="293:lora_name"]').selectOption("lora-b.safetensors");
+  await page.locator("#modelSwitcherApply").click();
+  await page.evaluate(() => {
+    state.sourcePath = "tasks/camera_lab_uploads/images/source.png";
+    state.middlePath = "tasks/camera_lab_uploads/images/middle.png";
+    state.endPath = "tasks/camera_lab_uploads/images/end.png";
+  });
+  await page.locator("#runBtn").click();
+
+  const payload = JSON.parse((await runRequest).postData() || "{}");
+  expect(payload.model_overrides).toEqual({
+    "317:unet_name": "LTX-2.3-distilled-Q8_0.gguf",
+    "293:lora_name": "lora-b.safetensors",
+  });
+});
+
 test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {

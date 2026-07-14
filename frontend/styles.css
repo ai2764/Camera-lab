@@ -431,6 +431,12 @@ h3 { font-size: 16px; }
   margin-bottom: 14px;
 }
 
+.workflow-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 14px;
+}
+
 label {
   display: block;
   color: var(--muted);
@@ -2517,6 +2523,43 @@ body.director-workspace-active .director-output-zone .director-section-kicker {
 
 .director-modal-head h2 {
   margin-top: 3px;
+}
+
+.model-switcher-panel {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.model-switcher-body {
+  display: grid;
+  gap: 16px;
+  margin: 14px 0;
+}
+
+.model-switcher-section {
+  display: grid;
+  gap: 10px;
+}
+
+.model-switcher-section h3 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.model-switcher-row {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.model-switcher-row span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.model-switcher-row select {
+  margin-top: 0;
 }
 
 .video-preview-panel {
