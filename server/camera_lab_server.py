@@ -2359,6 +2359,29 @@ def workflow_model_controls(workflow_id: str) -> dict[str, Any]:
     return {"workflow_id": workflow_id, "controls": controls}
 
 
+def normalize_model_overrides(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): str(value) for key, value in raw.items() if str(value).strip()}
+
+
+def apply_model_overrides(api: dict[str, dict], workflow_id: str, overrides: dict[str, str]) -> None:
+    if not overrides:
+        return
+    controls = {item["id"]: item for item in workflow_model_controls(workflow_id)["controls"]}
+    for control_id, value in overrides.items():
+        control = controls.get(control_id)
+        if not control:
+            raise ValueError(f"unknown model override: {control_id}")
+        options = [str(item) for item in control.get("options") or []]
+        if options and value not in options:
+            raise ValueError(f"model override {control_id} value is not available: {value}")
+        node = api.get(str(control["node_id"]))
+        if not node:
+            raise ValueError(f"model override node is missing: {control_id}")
+        node.setdefault("inputs", {})[str(control["field"])] = value
+
+
 def workflow_status(workflow: dict) -> dict[str, Any]:
     avail = available_models()
     if workflow.get("builder") == "ltx23_ttp_flf":
@@ -3912,6 +3935,7 @@ def run_batch_worker(batch_id: str) -> None:
                     patch_bernini_api(api, workflow["mode"], run, input_names)
                 else:
                     patch_api(api, workflow, run, input_names)
+            apply_model_overrides(api, run["workflow_id"], normalize_model_overrides(run.get("model_overrides")))
             (run_dir / "api_prompt.json").write_text(json.dumps(api, ensure_ascii=False, indent=2), encoding="utf-8")
             (run_dir / "prompt.txt").write_text(
                 f"{run['variant_name']}\n{width}x{height}\nseed: {run['seed']}\n\n{run['prompt']}\n\nNEGATIVE:\n{run['negative_prompt']}\n",
@@ -4661,6 +4685,10 @@ class Handler(BaseHTTPRequestHandler):
                         "director": {"ic_loras": director_ic_loras()},
                     }
                 )
+            if parsed.path == "/api/workflow-model-controls":
+                query = urllib.parse.parse_qs(parsed.query)
+                workflow_id = (query.get("workflow_id") or [""])[0]
+                return self.send_json(workflow_model_controls(workflow_id))
             if parsed.path == "/api/casting/library":
                 return self.send_json({"clips": casting_library_clips()})
             if parsed.path.startswith("/api/batches/"):

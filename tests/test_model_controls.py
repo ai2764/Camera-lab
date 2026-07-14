@@ -77,3 +77,43 @@ def test_workflow_model_controls_extracts_director_ic_lora(monkeypatch):
 def test_workflow_model_controls_rejects_unknown_workflow():
     with pytest.raises(ValueError, match="unknown workflow"):
         server.workflow_model_controls("missing")
+
+
+def test_apply_model_overrides_patches_valid_values(monkeypatch):
+    api = {
+        "35": {"class_type": "UNETLoader", "inputs": {"unet_name": "model-a.safetensors"}},
+        "293": {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": "lora-a.safetensors"}},
+    }
+    monkeypatch.setattr(
+        server,
+        "workflow_model_controls",
+        lambda _workflow_id: {
+            "workflow_id": "sample",
+            "controls": [
+                {"id": "35:unet_name", "node_id": "35", "field": "unet_name", "options": ["model-a.safetensors", "model-b.safetensors"]},
+                {"id": "293:lora_name", "node_id": "293", "field": "lora_name", "options": ["lora-a.safetensors", "lora-b.safetensors"]},
+            ],
+        },
+    )
+
+    server.apply_model_overrides(api, "sample", {"35:unet_name": "model-b.safetensors", "293:lora_name": "lora-b.safetensors"})
+
+    assert api["35"]["inputs"]["unet_name"] == "model-b.safetensors"
+    assert api["293"]["inputs"]["lora_name"] == "lora-b.safetensors"
+
+
+def test_apply_model_overrides_rejects_wrong_value(monkeypatch):
+    api = {"35": {"class_type": "UNETLoader", "inputs": {"unet_name": "model-a.safetensors"}}}
+    monkeypatch.setattr(
+        server,
+        "workflow_model_controls",
+        lambda _workflow_id: {
+            "workflow_id": "sample",
+            "controls": [
+                {"id": "35:unet_name", "node_id": "35", "field": "unet_name", "options": ["model-a.safetensors"]},
+            ],
+        },
+    )
+
+    with pytest.raises(ValueError, match="not available"):
+        server.apply_model_overrides(api, "sample", {"35:unet_name": "missing.safetensors"})
