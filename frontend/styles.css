@@ -437,6 +437,10 @@ h3 { font-size: 16px; }
   margin: -4px 0 14px;
 }
 
+.director-model-tools {
+  margin-top: -6px;
+}
+
 label {
   display: block;
   color: var(--muted);

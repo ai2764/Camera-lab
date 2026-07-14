@@ -117,6 +117,27 @@ test("director workspace exposes the model switcher", async ({ page }) => {
   await expect(page.locator('select[data-model-control-id="35:unet_name"]')).toBeVisible();
 });
 
+test("model switcher buttons sit below seed controls", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#workflowSelect option")).not.toHaveCount(0);
+
+  const cameraSeedThenModels = await page.evaluate(() => {
+    const seed = document.getElementById("seedInput");
+    const models = document.getElementById("modelSwitcherBtn");
+    return Boolean(seed && models && seed.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(cameraSeedThenModels).toBe(true);
+
+  await page.locator("#directorWorkspaceTab").click();
+  await expect(page.locator("#directorModelSwitcherBtn")).toBeVisible();
+  const directorSeedThenModels = await page.evaluate(() => {
+    const seed = document.getElementById("directorGlobalSeedInput");
+    const models = document.getElementById("directorModelSwitcherBtn");
+    return Boolean(seed && models && seed.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(directorSeedThenModels).toBe(true);
+});
+
 test("unready modules disable workspace tabs and direct hashes fall back to camera", async ({ page }) => {
   await page.route("**/api/config", async (route) => {
     const config = {
