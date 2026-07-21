@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "camera-lab/director-storyboard",
+  "title": "Director storyboard",
+  "type": "object",
+  "required": ["global_prompt", "segments"],
+  "additionalProperties": true,
+  "properties": {
+    "global_prompt": { "type": "string", "minLength": 1 },
+    "negative_prompt": { "type": "string" },
+    "width": { "type": "integer", "minimum": 64, "maximum": 4096 },
+    "height": { "type": "integer", "minimum": 64, "maximum": 4096 },
+    "seed": { "type": ["integer", "null"] },
+    "fps": { "type": "integer", "minimum": 1, "maximum": 60 },
+    "ic_lora_name": { "type": "string" },
+    "ic_lora_strength": { "type": "number", "minimum": 0, "maximum": 2 },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "image": { "type": "string" },
+          "image_path": { "type": "string" },
+          "prompt": { "type": "string" },
+          "local_prompt": { "type": "string" },
+          "start": { "type": "number", "minimum": 0 },
+          "duration": { "type": "number", "minimum": 0.25 },
+          "length_seconds": { "type": "number", "minimum": 0.25 },
+          "strength": { "type": "number", "minimum": 0, "maximum": 10 },
+          "type": { "type": "string", "enum": ["image", "text", "video"] }
+        }
+      }
+    }
+  }
+}
