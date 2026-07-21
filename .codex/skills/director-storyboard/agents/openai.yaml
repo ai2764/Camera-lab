@@ -1,0 +1,7 @@
+interface:
+  display_name: "Director Storyboard"
+  short_description: "Script and keyframes to Camera Lab Director runs"
+  default_prompt: "Use $director-storyboard to turn my script and keyframes into a Director storyboard and run multiple variants."
+
+policy:
+  allow_implicit_invocation: true

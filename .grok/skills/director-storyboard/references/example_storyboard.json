@@ -1,0 +1,25 @@
+{
+  "global_prompt": "A continuous cinematic shot of a young woman with short black hair, wearing a beige trench coat, on a rainy Tokyo street at night. Neon signs reflect on wet asphalt under cool cyan and magenta light. Coherent subject identity, consistent wardrobe and lighting, natural motion, and smooth visual continuity across the full timeline.",
+  "negative_prompt": "blurry, distorted face, identity change, clothing change, flicker, jump cut, text overlay, watermark",
+  "width": 768,
+  "height": 512,
+  "seed": 42,
+  "segments": [
+    {
+      "id": "s1",
+      "image": "tasks/storyboard_examples/frame_a.png",
+      "prompt": "Medium shot. She stands facing the camera under a black umbrella as rain falls. She looks down at her phone, then slowly lifts her gaze toward the street. Camera holds steady with shallow depth of field.",
+      "start": 0.0,
+      "duration": 3.0,
+      "strength": 0.8
+    },
+    {
+      "id": "s2",
+      "image": "tasks/storyboard_examples/frame_b.png",
+      "prompt": "She lowers the umbrella slightly, turns right, and walks toward the crosswalk. Camera slowly tracks right with her. Rain streaks across the frame while neon reflections slide over the wet pavement.",
+      "start": 3.0,
+      "duration": 4.0,
+      "strength": 0.75
+    }
+  ]
+}
