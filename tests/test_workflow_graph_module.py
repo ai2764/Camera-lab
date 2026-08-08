@@ -72,3 +72,42 @@ def test_workflow_to_api_facade_uses_current_server_object_info(monkeypatch):
     }
 
     assert server.workflow_to_api(workflow)["1"]["inputs"] == {"value": 42}
+
+
+def test_workflow_to_api_keeps_dynamic_combo_widget_values(monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "object_info",
+        lambda: {
+            "SaveVideo": {
+                "input_order": {
+                    "required": ["video", "filename_prefix", "format", "codec"],
+                },
+                "input": {
+                    "required": {
+                        "video": ["VIDEO", {}],
+                        "filename_prefix": ["STRING", {}],
+                        "format": ["COMBO", {"options": ["auto", "mp4"]}],
+                        "codec": ["COMFY_DYNAMICCOMBO_V3", {"options": [{"key": "auto"}]}],
+                    },
+                },
+            },
+        },
+    )
+    workflow = {
+        "nodes": [
+            {
+                "id": 1,
+                "type": "SaveVideo",
+                "inputs": [],
+                "widgets_values": ["video/CameraLab", "auto", "auto"],
+            },
+        ],
+        "links": [],
+    }
+
+    assert server.workflow_to_api(workflow)["1"]["inputs"] == {
+        "filename_prefix": "video/CameraLab",
+        "format": "auto",
+        "codec": "auto",
+    }

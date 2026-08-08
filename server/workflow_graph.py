@@ -289,6 +289,8 @@ def is_widget_input(input_def: Any) -> bool:
         return True
     if first in {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}:
         return True
+    if isinstance(first, str) and first.startswith("COMFY_DYNAMICCOMBO"):
+        return True
     return False
 
 
