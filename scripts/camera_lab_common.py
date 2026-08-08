@@ -14,12 +14,17 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from camera_lab_runtime import app_root
+except ModuleNotFoundError:
+    from scripts.camera_lab_runtime import app_root
+
+try:
     from camera_lab_setup.modules import selected_modules
 except ModuleNotFoundError:
     from scripts.camera_lab_setup.modules import selected_modules
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = app_root(Path(__file__))
 TASKS_DIR = REPO_ROOT / "tasks"
 ENV_PATH = REPO_ROOT / ".env"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"

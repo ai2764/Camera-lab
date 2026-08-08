@@ -24,6 +24,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping
 
+try:
+    from scripts.camera_lab_runtime import app_root
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.camera_lab_runtime import app_root
+
 from PIL import Image, ImageDraw
 
 try:
@@ -64,7 +70,7 @@ except ModuleNotFoundError as exc:
     )
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = app_root(Path(__file__))
 WEB_DIR = ROOT / "frontend"
 RUN_ROOT = ROOT / "tasks" / "camera_lab_runs"
 UPLOAD_ROOT = ROOT / "tasks" / "camera_lab_uploads"
@@ -78,13 +84,18 @@ MAX_VIDEO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_3DMOTION_DRIVE_BYTES = 512 * 1024 * 1024
 
 SCRIPTS_DIR = ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from camera_lab_setup.hardware import detect_hardware
-from camera_lab_setup.modules import MODULES
-from camera_lab_setup.resolver import resolve_modules
-from camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
+try:
+    from scripts.camera_lab_setup.hardware import detect_hardware
+    from scripts.camera_lab_setup.modules import MODULES
+    from scripts.camera_lab_setup.resolver import resolve_modules
+    from scripts.camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
+except ModuleNotFoundError:
+    if str(SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+    from camera_lab_setup.hardware import detect_hardware
+    from camera_lab_setup.modules import MODULES
+    from camera_lab_setup.resolver import resolve_modules
+    from camera_lab_setup.visibility import ComfyVisibility, visibility_from_object_info
 
 
 def load_env_file(path: Path, env: MutableMapping[str, str] | None = None) -> MutableMapping[str, str]:

@@ -64,9 +64,9 @@ def detect_hardware(
     disk_usage = disk_usage or shutil.disk_usage
     repo_free_gb = None
     comfy_free_gb = None
-    if repo_root:
+    if repo_root and repo_root.exists():
         repo_free_gb = round(disk_usage(repo_root)[2] / (1024**3))
-    if comfy_root:
+    if comfy_root and comfy_root.exists():
         comfy_free_gb = round(disk_usage(comfy_root)[2] / (1024**3))
 
     return HardwareProfile(
